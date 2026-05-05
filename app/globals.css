@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  @apply bg-white text-ebony-900 antialiased;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #d1d5db transparent;
+}
+
+/* Clean minimal surface */
+.jp-surface {
+  background: #ffffff;
+}
+
+/* Enhanced typography for luxury feel */
+@layer base {
+  h1 {
+    @apply tracking-tight text-ebony-900 font-semibold;
+  }
+  h2 {
+    @apply tracking-tight text-ebony-800 font-semibold;
+  }
+  h3 {
+    @apply tracking-normal text-ebony-800 font-medium;
+  }
+}
+
+/* Simple button utilities */
+@layer components {
+  .btn-primary {
+    @apply bg-gold-600 text-white font-semibold rounded-lg px-4 py-2 transition-all duration-200 hover:bg-gold-700 active:scale-95;
+  }
+  
+  .btn-secondary {
+    @apply bg-white border border-ebony-300 text-ebony-900 font-semibold rounded-lg px-4 py-2 transition-all duration-200 hover:bg-ebony-50;
+  }
+  
+  .btn-accent {
+    @apply bg-ebony-900 text-white font-semibold rounded-lg px-4 py-2 transition-all duration-200 hover:bg-ebony-800 active:scale-95;
+  }
+}

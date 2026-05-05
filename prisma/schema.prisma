@@ -1,0 +1,65 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model StockMaster {
+  id              Int      @id @default(autoincrement())
+  transactionDate DateTime
+  location        String
+
+  gsmCode      String
+  gsmName      String
+  categoryCode String
+  articleName  String
+  qty          Int
+  description  String?
+  carat        String?
+
+  wastageYN     Boolean  @default(false)
+  goldWeight    Decimal
+  goldCost      Decimal
+  wastageMg     Decimal   @default(0)
+  wastage       Decimal
+  labourCharges Decimal
+  otherCosts    Decimal
+  totalCost     Decimal
+  remarks       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Goldsmith {
+  code      String   @id
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Category {
+  code      String   @id
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model System {
+  id                   Int     @id
+  vatRate              Decimal
+  nslRate              Decimal
+  goldCostRatePer8g    Decimal
+  wastageRateMgPer8g   Decimal
+  updatedAt            DateTime @updatedAt
+
+  @@map("system")
+}
