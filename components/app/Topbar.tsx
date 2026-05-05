@@ -16,7 +16,7 @@ export function Topbar() {
   const showBack = pathname.split("/").filter(Boolean).length > 1;
 
   return (
-    <header className="flex items-center justify-between gap-6 border-b border-ebony-100 bg-white px-8 py-5">
+    <header className="flex items-center justify-between gap-4 border-b border-ebony-100 bg-white px-4 py-4 md:gap-6 md:px-8 md:py-5">
       <div className="flex items-start gap-3">
         {showBack && (
           <button
@@ -30,8 +30,8 @@ export function Topbar() {
           </button>
         )}
         <div>
-          <h1 className="text-xl font-semibold tracking-tight text-ebony-900">{title}</h1>
-          <p className="text-sm text-ebony-600">
+          <h1 className="text-lg font-semibold tracking-tight text-ebony-900 md:text-xl">{title}</h1>
+          <p className="text-xs text-ebony-600 md:text-sm">
             Manage your jewelry inventory and sales operations.
           </p>
         </div>
