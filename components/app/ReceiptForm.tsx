@@ -100,6 +100,14 @@ export function ReceiptForm({
   const [subcatForm, setSubcatForm] = useState({ categoryCode: "", name: "" });
   const [subcatSaveState, setSubcatSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [subcatError, setSubcatError] = useState("");
+  const [subcatFile, setSubcatFile] = useState<File | null>(null);
+  const [subcatPreviewUrl, setSubcatPreviewUrl] = useState<string>("");
+
+  useEffect(() => {
+    return () => {
+      if (subcatPreviewUrl) URL.revokeObjectURL(subcatPreviewUrl);
+    };
+  }, [subcatPreviewUrl]);
 
   function update<K extends keyof ReceiptFormState>(key: K, value: ReceiptFormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -333,10 +341,23 @@ export function ReceiptForm({
     }
     setSubcatSaveState("saving");
     try {
+      let imageUrl: string | null = null;
+      if (subcatFile) {
+        const formData = new FormData();
+        formData.append("file", subcatFile);
+        formData.append("folder", "jewelpack/subcategories");
+        const uploadRes = await fetch("/api/cloudinary/upload", { method: "POST", body: formData });
+        const uploadJson = (await uploadRes.json()) as { secure_url?: string; error?: string };
+        if (!uploadRes.ok || !uploadJson.secure_url) {
+          throw new Error(uploadJson.error ?? "Image upload failed");
+        }
+        imageUrl = uploadJson.secure_url;
+      }
+
       const res = await fetch("/api/subcategories", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ categoryCode, name })
+        body: JSON.stringify({ categoryCode, name, imageUrl })
       });
       const json = (await res.json()) as { subcategory?: { code: string } };
       if (!res.ok || !json?.subcategory?.code) throw new Error("Create failed");
@@ -379,6 +400,9 @@ export function ReceiptForm({
                 setSubcatError("");
                 setSubcatSaveState("idle");
                 setSubcatForm({ categoryCode: form.categoryCode || "", name: "" });
+                setSubcatFile(null);
+                if (subcatPreviewUrl) URL.revokeObjectURL(subcatPreviewUrl);
+                setSubcatPreviewUrl("");
                 setSubcategoryModalOpen(true);
               }}
               className="rounded-lg bg-gold-600 px-3 py-2 text-xs font-semibold text-white hover:bg-gold-700 transition-all"
@@ -732,6 +756,35 @@ export function ReceiptForm({
               className="w-full rounded-lg border border-ebony-200 bg-white px-4 py-2.5 outline-none transition-all focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
             />
           </label>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="space-y-2 text-sm">
+              <div className="flex items-center justify-between">
+                <div className="font-semibold text-ebony-700">Image</div>
+                <div className="text-xs font-semibold text-ebony-400">Optional</div>
+              </div>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const next = e.target.files?.[0] ?? null;
+                  setSubcatFile(next);
+                  if (subcatPreviewUrl) URL.revokeObjectURL(subcatPreviewUrl);
+                  setSubcatPreviewUrl(next ? URL.createObjectURL(next) : "");
+                }}
+                className="w-full text-sm"
+              />
+            </label>
+            <div className="flex items-center gap-3">
+              <div className="text-xs font-semibold text-ebony-700">Preview</div>
+              <div className="h-14 w-14 overflow-hidden rounded-xl bg-ebony-50 ring-1 ring-ebony-200">
+                {subcatPreviewUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={subcatPreviewUrl} alt="Preview" className="h-full w-full object-cover" />
+                ) : null}
+              </div>
+            </div>
+          </div>
 
           {subcatError && <div className="text-sm font-semibold text-red-600">{subcatError}</div>}
           {subcatSaveState === "error" && (
