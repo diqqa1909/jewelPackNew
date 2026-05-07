@@ -54,6 +54,7 @@ export function SubcategoriesTable({
     setBusy(true);
     setError("");
     try {
+      if (!file) throw new Error("Please select an image file.");
       const nextImageUrl = await uploadToCloudinary(file);
 
       const res = await fetch("/api/subcategories", {
