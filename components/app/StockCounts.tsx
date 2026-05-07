@@ -5,14 +5,32 @@ import { cn } from "@/lib/utils";
 import { ChevronDown } from "lucide-react";
 import { useMemo, useState } from "react";
 
-type CategoryCount = { categoryCode: string; categoryName: string; qty: number; goldWeight: string; totalCost: string };
+type CategoryCount = {
+  categoryCode: string;
+  categoryName: string;
+  arrivedQty: number;
+  arrivedGoldWeight: string;
+  arrivedTotalCost: string;
+  balanceQty: number;
+  balanceGoldWeight: string;
+  balanceCost: string;
+  soldQty: number;
+  soldGoldWeight: string;
+  soldCost: string;
+};
 type SubcategoryCount = {
   categoryCode: string;
   subcategoryCode: string;
   subcategoryName: string;
-  qty: number;
-  goldWeight: string;
-  totalCost: string;
+  arrivedQty: number;
+  arrivedGoldWeight: string;
+  arrivedTotalCost: string;
+  balanceQty: number;
+  balanceGoldWeight: string;
+  balanceCost: string;
+  soldQty: number;
+  soldGoldWeight: string;
+  soldCost: string;
 };
 
 export function StockCounts({
@@ -35,7 +53,7 @@ export function StockCounts({
       list.push(s);
       map.set(s.categoryCode, list);
     }
-    for (const [k, v] of map.entries()) v.sort((a, b) => b.qty - a.qty);
+    for (const [k, v] of map.entries()) v.sort((a, b) => b.balanceQty - a.balanceQty);
     return map;
   }, [subcategoryCounts]);
 
@@ -47,36 +65,13 @@ export function StockCounts({
     return map;
   }, [subcategories]);
 
-  const nameByCategoryCode = useMemo(() => {
-    return new Map(categories.map((c) => [c.code, c.name]));
-  }, [categories]);
-
-  const totals = useMemo(() => {
-    const qty = categoryCounts.reduce((acc, c) => acc + (c.qty ?? 0), 0);
-    const goldWeight = categoryCounts.reduce((acc, c) => acc + Number(c.goldWeight ?? 0), 0);
-    const totalCost = categoryCounts.reduce((acc, c) => acc + Number(c.totalCost ?? 0), 0);
-    return { qty, goldWeight, totalCost };
-  }, [categoryCounts]);
+  const nameByCategoryCode = useMemo(() => new Map(categories.map((c) => [c.code, c.name])), [categories]);
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-3">
-        <div className="rounded-2xl border border-ebony-100 bg-gradient-to-br from-cream-50 to-white px-5 py-4">
-          <div className="text-xs font-semibold uppercase tracking-widest text-ebony-500">Total Qty</div>
-          <div className="mt-1 text-2xl font-extrabold text-ebony-900">{totals.qty}</div>
-        </div>
-        <div className="rounded-2xl border border-ebony-100 bg-gradient-to-br from-cream-50 to-white px-5 py-4">
-          <div className="text-xs font-semibold uppercase tracking-widest text-ebony-500">Total Weight</div>
-          <div className="mt-1 text-2xl font-extrabold text-ebony-900">{totals.goldWeight.toFixed(3)}g</div>
-        </div>
-        <div className="rounded-2xl border border-ebony-100 bg-gradient-to-br from-gold-50 to-white px-5 py-4">
-          <div className="text-xs font-semibold uppercase tracking-widest text-ebony-500">Total Cost</div>
-          <div className="mt-1 text-2xl font-extrabold text-ebony-900">{totals.totalCost.toFixed(2)}</div>
-        </div>
-      </div>
       {categoryCounts
         .slice()
-        .sort((a, b) => b.qty - a.qty)
+        .sort((a, b) => b.balanceQty - a.balanceQty)
         .map((c) => {
           const isOpen = !!open[c.categoryCode];
           const children = subByCategory.get(c.categoryCode) ?? [];
@@ -104,14 +99,14 @@ export function StockCounts({
                 <div className="flex items-center gap-3">
                   <div className="hidden text-right sm:block">
                     <div className="flex items-center justify-end gap-2">
-                      <div className="rounded-full bg-cream-100 px-3 py-1 text-xs font-bold text-ebony-900">
-                        Qty {c.qty}
-                      </div>
-                      <div className="rounded-full bg-cream-100 px-3 py-1 text-xs font-bold text-ebony-900">
-                        {Number(c.goldWeight ?? 0).toFixed(3)}g
-                      </div>
                       <div className="rounded-full bg-gold-100 px-3 py-1 text-xs font-bold text-ebony-900">
-                        {Number(c.totalCost ?? 0).toFixed(2)}
+                        In hand: {c.balanceQty}
+                      </div>
+                      <div className="rounded-full bg-cream-100 px-3 py-1 text-xs font-bold text-ebony-900">
+                        Arrived: {c.arrivedQty}
+                      </div>
+                      <div className="rounded-full bg-cream-100 px-3 py-1 text-xs font-bold text-ebony-900">
+                        Sold: {c.soldQty}
                       </div>
                     </div>
                   </div>
@@ -126,46 +121,83 @@ export function StockCounts({
 
               {isOpen && (
                 <div className="border-t border-ebony-100 bg-white px-5 py-4">
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    {children.map((s) => (
-                      <div
-                        key={s.subcategoryCode}
-                        className="flex items-center gap-3 rounded-2xl border border-ebony-100 bg-gradient-to-br from-ebony-50 to-white px-3 py-3"
-                      >
-                        {imageBySubCode.get(s.subcategoryCode) ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={imageBySubCode.get(s.subcategoryCode)}
-                            alt={s.subcategoryName}
-                            className="h-11 w-11 rounded-xl object-cover ring-1 ring-ebony-200"
-                          />
-                        ) : (
-                          <div className="h-11 w-11 rounded-xl bg-white ring-1 ring-ebony-200" />
+                  <div className="overflow-x-auto rounded-xl border border-ebony-100">
+                    <table className="min-w-[980px] w-full text-sm">
+                      <thead className="bg-ebony-50 text-left text-xs font-semibold uppercase tracking-widest text-ebony-700">
+                        <tr>
+                          <th className="px-4 py-3">Subcategory</th>
+                          <th className="px-4 py-3 text-right">Arrived Qty</th>
+                          <th className="px-4 py-3 text-right">Arrived Wt</th>
+                          <th className="px-4 py-3 text-right">Arrived Cost</th>
+                          <th className="px-4 py-3 text-right">In Hand Qty</th>
+                          <th className="px-4 py-3 text-right">In Hand Wt</th>
+                          <th className="px-4 py-3 text-right">In Hand Cost</th>
+                          <th className="px-4 py-3 text-right">Sold Qty</th>
+                          <th className="px-4 py-3 text-right">Sold Wt</th>
+                          <th className="px-4 py-3 text-right">Sold Cost</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-ebony-100 bg-white">
+                        {children.map((s) => (
+                          <tr key={s.subcategoryCode} className="hover:bg-cream-50/40">
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-3">
+                                {imageBySubCode.get(s.subcategoryCode) ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img
+                                    src={imageBySubCode.get(s.subcategoryCode)}
+                                    alt={s.subcategoryName}
+                                    className="h-9 w-9 flex-none rounded-lg object-cover ring-1 ring-ebony-200"
+                                  />
+                                ) : (
+                                  <div className="h-9 w-9 flex-none rounded-lg bg-ebony-50 ring-1 ring-ebony-200" />
+                                )}
+                                <div className="min-w-0">
+                                  <div className="truncate font-semibold text-ebony-900">
+                                    {s.subcategoryCode}{" "}
+                                    <span className="font-medium text-ebony-600">{s.subcategoryName}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 text-right font-semibold tabular-nums text-ebony-900">
+                              {s.arrivedQty}
+                            </td>
+                            <td className="px-4 py-3 text-right tabular-nums text-ebony-700">
+                              {Number(s.arrivedGoldWeight ?? 0).toFixed(3)}g
+                            </td>
+                            <td className="px-4 py-3 text-right tabular-nums text-ebony-700">
+                              {Number(s.arrivedTotalCost ?? 0).toFixed(2)}
+                            </td>
+                            <td className="px-4 py-3 text-right font-semibold tabular-nums text-ebony-900">
+                              {s.balanceQty}
+                            </td>
+                            <td className="px-4 py-3 text-right tabular-nums text-ebony-700">
+                              {Number(s.balanceGoldWeight ?? 0).toFixed(3)}g
+                            </td>
+                            <td className="px-4 py-3 text-right tabular-nums text-ebony-700">
+                              {Number(s.balanceCost ?? 0).toFixed(2)}
+                            </td>
+                            <td className="px-4 py-3 text-right font-semibold tabular-nums text-ebony-900">
+                              {s.soldQty}
+                            </td>
+                            <td className="px-4 py-3 text-right tabular-nums text-ebony-700">
+                              {Number(s.soldGoldWeight ?? 0).toFixed(3)}g
+                            </td>
+                            <td className="px-4 py-3 text-right tabular-nums text-ebony-700">
+                              {Number(s.soldCost ?? 0).toFixed(2)}
+                            </td>
+                          </tr>
+                        ))}
+                        {children.length === 0 && (
+                          <tr>
+                            <td className="px-4 py-6 text-sm text-ebony-600" colSpan={10}>
+                              No subcategories.
+                            </td>
+                          </tr>
                         )}
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-semibold text-ebony-900">
-                            {s.subcategoryCode}{" "}
-                            <span className="font-medium text-ebony-600">
-                              {s.subcategoryName}
-                            </span>
-                          </div>
-                          <div className="mt-1 flex flex-wrap gap-2 text-xs font-semibold">
-                            <span className="rounded-full bg-cream-100 px-2.5 py-1 text-ebony-800">
-                              Qty {s.qty}
-                            </span>
-                            <span className="rounded-full bg-cream-100 px-2.5 py-1 text-ebony-800">
-                              {Number(s.goldWeight ?? 0).toFixed(3)}g
-                            </span>
-                            <span className="rounded-full bg-gold-100 px-2.5 py-1 text-ebony-800">
-                              {Number(s.totalCost ?? 0).toFixed(2)}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                    {children.length === 0 && (
-                      <div className="text-sm text-ebony-600">No subcategories.</div>
-                    )}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               )}

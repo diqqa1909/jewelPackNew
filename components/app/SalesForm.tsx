@@ -67,15 +67,62 @@ export function SalesForm() {
   const [error, setError] = useState("");
   const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
   const [categoryRefs] = useState(() => new Map<string, HTMLSelectElement | null>());
+  const [cellRefs] = useState(
+    () => new Map<string, HTMLSelectElement | HTMLInputElement | HTMLButtonElement | null>()
+  );
 
   useEffect(() => {
     if (!pendingFocusId) return;
-    const el = categoryRefs.get(pendingFocusId) ?? null;
-    if (el) {
-      el.focus();
+    const cell = cellRefs.get(`${pendingFocusId}:category`) ?? null;
+    const el = (cell as any) ?? categoryRefs.get(pendingFocusId) ?? null;
+    if (el && typeof (el as any).focus === "function") {
+      (el as any).focus();
       setPendingFocusId(null);
     }
   }, [categoryRefs, pendingFocusId, lines.length]);
+
+  const navCols = ["category", "subcategory", "carat", "qty", "weight", "sellRate"] as const;
+  type NavCol = (typeof navCols)[number];
+
+  function setCellRef(rowId: string, col: NavCol, el: any) {
+    cellRefs.set(`${rowId}:${col}`, el);
+  }
+
+  function focusCell(rowId: string, col: NavCol) {
+    const el = cellRefs.get(`${rowId}:${col}`) ?? null;
+    if (el && typeof (el as any).focus === "function") (el as any).focus();
+  }
+
+  function handleTabNav(e: React.KeyboardEvent, rowId: string, col: NavCol) {
+    if (e.key !== "Tab") return;
+    e.preventDefault();
+
+    const rowIndex = lines.findIndex((l) => l.id === rowId);
+    if (rowIndex < 0) return;
+
+    const colIndex = navCols.indexOf(col);
+    const dir = e.shiftKey ? -1 : 1;
+    let nextRowIndex = rowIndex;
+    let nextColIndex = colIndex + dir;
+
+    if (nextColIndex >= navCols.length) {
+      nextRowIndex = rowIndex + 1;
+      nextColIndex = 0;
+    } else if (nextColIndex < 0) {
+      nextRowIndex = rowIndex - 1;
+      nextColIndex = navCols.length - 1;
+    }
+
+    if (nextRowIndex >= lines.length) {
+      addLine();
+      // focus will happen via pendingFocusId, but we want the first cell
+      // (category) on the new row.
+      return;
+    }
+    if (nextRowIndex < 0) return;
+
+    focusCell(lines[nextRowIndex].id, navCols[nextColIndex]);
+  }
 
   useEffect(() => {
     let active = true;
@@ -345,8 +392,10 @@ export function SalesForm() {
                             onChange={(e) =>
                               updateLine(l.id, { categoryCode: e.target.value, subcategoryCode: "" })
                             }
+                            onKeyDown={(e) => handleTabNav(e, l.id, "category")}
                             ref={(el) => {
                               categoryRefs.set(l.id, el);
+                              setCellRef(l.id, "category", el);
                             }}
                             className="h-10 w-full rounded-none border-0 bg-white px-2 outline-none focus:bg-cream-50"
                           >
@@ -362,6 +411,8 @@ export function SalesForm() {
                           <select
                             value={l.subcategoryCode}
                             onChange={(e) => updateLine(l.id, { subcategoryCode: e.target.value })}
+                            onKeyDown={(e) => handleTabNav(e, l.id, "subcategory")}
+                            ref={(el) => setCellRef(l.id, "subcategory", el)}
                             className="h-10 w-full rounded-none border-0 bg-white px-2 outline-none focus:bg-cream-50"
                           >
                             <option value="">Select subcategory...</option>
@@ -382,6 +433,8 @@ export function SalesForm() {
                           <select
                             value={l.carat}
                             onChange={(e) => updateLine(l.id, { carat: e.target.value as Line["carat"] })}
+                            onKeyDown={(e) => handleTabNav(e, l.id, "carat")}
+                            ref={(el) => setCellRef(l.id, "carat", el)}
                             className="h-10 w-full rounded-none border-0 bg-white px-2 outline-none focus:bg-cream-50"
                           >
                             <option value="">Select...</option>
@@ -394,6 +447,8 @@ export function SalesForm() {
                             inputMode="numeric"
                             value={l.qty}
                             onChange={(e) => updateLine(l.id, { qty: e.target.value })}
+                            onKeyDown={(e) => handleTabNav(e, l.id, "qty")}
+                            ref={(el) => setCellRef(l.id, "qty", el)}
                             className={[
                               "h-10 w-full rounded-none border-0 bg-white px-2 text-right outline-none focus:bg-cream-50",
                               qtyErrors.get(l.id) ? "text-red-700" : ""
@@ -405,6 +460,8 @@ export function SalesForm() {
                             inputMode="decimal"
                             value={l.goldWeight}
                             onChange={(e) => updateLine(l.id, { goldWeight: e.target.value })}
+                            onKeyDown={(e) => handleTabNav(e, l.id, "weight")}
+                            ref={(el) => setCellRef(l.id, "weight", el)}
                             className="h-10 w-full rounded-none border-0 bg-white px-2 text-right outline-none focus:bg-cream-50"
                           />
                         </td>
@@ -414,10 +471,12 @@ export function SalesForm() {
                             value={l.sellRatePer8g}
                             onChange={(e) => updateLine(l.id, { sellRatePer8g: e.target.value })}
                             onKeyDown={(e) => {
+                              if (e.key === "Tab") return handleTabNav(e, l.id, "sellRate");
                               if (e.key !== "Enter") return;
                               e.preventDefault();
                               addLine();
                             }}
+                            ref={(el) => setCellRef(l.id, "sellRate", el)}
                             placeholder="0.00"
                             className="h-10 w-full rounded-none border-0 bg-white px-2 text-right outline-none focus:bg-cream-50"
                           />

@@ -14,13 +14,33 @@ export default async function StockPage() {
     prismaWithRetry((p) =>
       p.stockMaster.groupBy({
         by: ["categoryCode", "articleName"],
-        _sum: { qty: true, goldWeight: true, totalCost: true }
+        _sum: {
+          qty: true,
+          goldWeight: true,
+          totalCost: true,
+          soldQty: true,
+          soldGoldWeight: true,
+          soldCost: true,
+          balanceQty: true,
+          balanceGoldWeight: true,
+          balanceCost: true
+        }
       })
     ),
     prismaWithRetry((p) =>
       p.stockMaster.groupBy({
         by: ["categoryCode", "subcategoryCode", "subcategoryName"],
-        _sum: { qty: true, goldWeight: true, totalCost: true }
+        _sum: {
+          qty: true,
+          goldWeight: true,
+          totalCost: true,
+          soldQty: true,
+          soldGoldWeight: true,
+          soldCost: true,
+          balanceQty: true,
+          balanceGoldWeight: true,
+          balanceCost: true
+        }
       })
     )
   ]);
@@ -28,9 +48,15 @@ export default async function StockPage() {
   const categoryCounts = categoryCountsRaw.map((r) => ({
     categoryCode: r.categoryCode,
     categoryName: r.articleName,
-    qty: r._sum.qty ?? 0,
-    goldWeight: r._sum.goldWeight?.toString() ?? "0",
-    totalCost: r._sum.totalCost?.toString() ?? "0"
+    arrivedQty: r._sum.qty ?? 0,
+    arrivedGoldWeight: r._sum.goldWeight?.toString() ?? "0",
+    arrivedTotalCost: r._sum.totalCost?.toString() ?? "0",
+    soldQty: r._sum.soldQty ?? 0,
+    soldGoldWeight: r._sum.soldGoldWeight?.toString() ?? "0",
+    soldCost: r._sum.soldCost?.toString() ?? "0",
+    balanceQty: r._sum.balanceQty ?? 0,
+    balanceGoldWeight: r._sum.balanceGoldWeight?.toString() ?? "0",
+    balanceCost: r._sum.balanceCost?.toString() ?? "0"
   }));
   const subcategoryCounts = subcategoryCountsRaw
     .filter((r) => r.subcategoryCode != null)
@@ -38,9 +64,15 @@ export default async function StockPage() {
       categoryCode: r.categoryCode,
       subcategoryCode: r.subcategoryCode ?? "",
       subcategoryName: r.subcategoryName ?? "",
-      qty: r._sum.qty ?? 0,
-      goldWeight: r._sum.goldWeight?.toString() ?? "0",
-      totalCost: r._sum.totalCost?.toString() ?? "0"
+      arrivedQty: r._sum.qty ?? 0,
+      arrivedGoldWeight: r._sum.goldWeight?.toString() ?? "0",
+      arrivedTotalCost: r._sum.totalCost?.toString() ?? "0",
+      soldQty: r._sum.soldQty ?? 0,
+      soldGoldWeight: r._sum.soldGoldWeight?.toString() ?? "0",
+      soldCost: r._sum.soldCost?.toString() ?? "0",
+      balanceQty: r._sum.balanceQty ?? 0,
+      balanceGoldWeight: r._sum.balanceGoldWeight?.toString() ?? "0",
+      balanceCost: r._sum.balanceCost?.toString() ?? "0"
     }));
 
   return (
