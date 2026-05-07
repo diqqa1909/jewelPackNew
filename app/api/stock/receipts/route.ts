@@ -7,6 +7,7 @@ type ReceiptPayload = {
   location: string;
   gsmCode: string;
   categoryCode: string;
+  subcategoryCode: string;
   qty: string;
   description?: string;
   carat?: string;
@@ -31,6 +32,9 @@ export async function POST(req: Request) {
   }
   if (!body.categoryCode || body.qty == null) {
     return NextResponse.json({ error: "Missing required fields." }, { status: 400 });
+  }
+  if (!body.subcategoryCode) {
+    return NextResponse.json({ error: "Missing subcategory." }, { status: 400 });
   }
   if (!body.carat) {
     return NextResponse.json({ error: "Missing carat." }, { status: 400 });
@@ -58,6 +62,7 @@ export async function POST(req: Request) {
 
   const gsm = await prisma.goldsmith.findUnique({ where: { code: body.gsmCode } });
   const category = await prisma.category.findUnique({ where: { code: body.categoryCode } });
+  const subcategory = await prisma.subcategory.findUnique({ where: { code: body.subcategoryCode } });
 
   const created = await prisma.stockMaster.create({
     data: {
@@ -67,6 +72,8 @@ export async function POST(req: Request) {
       gsmName: gsm?.name ?? "",
       categoryCode: body.categoryCode,
       articleName: category?.name ?? "",
+      subcategoryCode: body.subcategoryCode,
+      subcategoryName: subcategory?.name ?? "",
       qty,
       description: (body.description ?? "").trim() || null,
       carat: (body.carat ?? "").trim() || null,
@@ -116,6 +123,7 @@ export async function PATCH(req: Request) {
     location: string;
     gsmCode: string;
     categoryCode: string;
+    subcategoryCode: string;
     qty: number;
     description?: string | null;
     carat?: string | null;
@@ -145,6 +153,9 @@ export async function PATCH(req: Request) {
 
   const gsm = body.gsmCode ? await prisma.goldsmith.findUnique({ where: { code: body.gsmCode } }) : null;
   const category = body.categoryCode ? await prisma.category.findUnique({ where: { code: body.categoryCode } }) : null;
+  const subcategory = body.subcategoryCode
+    ? await prisma.subcategory.findUnique({ where: { code: body.subcategoryCode } })
+    : null;
 
   const updated = await prisma.stockMaster.update({
     where: { id: Number(body.id) },
@@ -155,6 +166,8 @@ export async function PATCH(req: Request) {
       gsmName: body.gsmCode ? gsm?.name ?? "" : undefined,
       categoryCode: body.categoryCode,
       articleName: body.categoryCode ? category?.name ?? "" : undefined,
+      subcategoryCode: body.subcategoryCode,
+      subcategoryName: body.subcategoryCode ? subcategory?.name ?? "" : undefined,
       qty: body.qty,
       description: body.description ?? undefined,
       carat: body.carat ?? undefined,

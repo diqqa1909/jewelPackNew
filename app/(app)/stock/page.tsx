@@ -1,19 +1,43 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
 import Link from "next/link";
 import { prismaWithRetry } from "@/lib/prisma";
-import { StocksTable } from "@/components/app/StocksTable";
+import { StockCounts } from "@/components/app/StockCounts";
 
 export const dynamic = "force-dynamic";
 
 export default async function StockPage() {
-  const rows = await prismaWithRetry((p) =>
+  const [categories, subcategories, categoryCountsRaw, subcategoryCountsRaw] = await Promise.all([
+    prismaWithRetry((p) => p.category.findMany({ orderBy: { code: "asc" } })),
     prismaWithRetry((p) =>
-      p.stockMaster.findMany({
-        orderBy: { createdAt: "desc" },
-        take: 200
+      p.subcategory.findMany({ orderBy: [{ categoryCode: "asc" }, { code: "asc" }] })
+    ),
+    prismaWithRetry((p) =>
+      p.stockMaster.groupBy({
+        by: ["categoryCode", "articleName"],
+        _sum: { qty: true }
+      })
+    ),
+    prismaWithRetry((p) =>
+      p.stockMaster.groupBy({
+        by: ["categoryCode", "subcategoryCode", "subcategoryName"],
+        _sum: { qty: true }
       })
     )
-  );
+  ]);
+
+  const categoryCounts = categoryCountsRaw.map((r) => ({
+    categoryCode: r.categoryCode,
+    categoryName: r.articleName,
+    qty: r._sum.qty ?? 0
+  }));
+  const subcategoryCounts = subcategoryCountsRaw
+    .filter((r) => r.subcategoryCode != null)
+    .map((r) => ({
+      categoryCode: r.categoryCode,
+      subcategoryCode: r.subcategoryCode ?? "",
+      subcategoryName: r.subcategoryName ?? "",
+      qty: r._sum.qty ?? 0
+    }));
 
   return (
     <div className="space-y-6">
@@ -35,10 +59,15 @@ export default async function StockPage() {
       <Card>
         <CardHeader>
           <CardTitle>Stock Overview</CardTitle>
-          <CardDescription>Latest receipts added to StockMaster.</CardDescription>
+          <CardDescription>Counts by category. Tap to expand subcategory counts.</CardDescription>
         </CardHeader>
         <CardContent>
-          <StocksTable initial={rows} />
+          <StockCounts
+            categories={categories.map((c) => ({ code: c.code, name: c.name }))}
+            subcategories={subcategories}
+            categoryCounts={categoryCounts}
+            subcategoryCounts={subcategoryCounts}
+          />
         </CardContent>
       </Card>
     </div>

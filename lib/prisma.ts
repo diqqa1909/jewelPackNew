@@ -29,7 +29,15 @@ function createClient() {
   });
 }
 
-export const prisma = globalThis.__prisma ?? createClient();
+// In dev, hot-reloading can keep an older PrismaClient instance in `globalThis`.
+// If the schema changes (new models), that old instance may not expose the new delegates.
+const cached = globalThis.__prisma;
+const needsRefresh =
+  process.env.NODE_ENV !== "production" &&
+  cached &&
+  typeof (cached as unknown as { subcategory?: unknown }).subcategory === "undefined";
+
+export const prisma = needsRefresh ? createClient() : cached ?? createClient();
 
 if (process.env.NODE_ENV !== "production") globalThis.__prisma = prisma;
 

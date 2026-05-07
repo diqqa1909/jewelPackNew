@@ -21,6 +21,8 @@ model StockMaster {
   gsmName      String
   categoryCode String
   articleName  String
+  subcategoryCode String?
+  subcategoryName String?
   qty          Int
   description  String?
   carat        String?
@@ -49,8 +51,19 @@ model Goldsmith {
 model Category {
   code      String   @id
   name      String
+  subcategories Subcategory[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model Subcategory {
+  code         String   @id
+  name         String
+  imageUrl     String?
+  categoryCode String
+  category     Category @relation(fields: [categoryCode], references: [code], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 model System {

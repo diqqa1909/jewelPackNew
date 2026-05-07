@@ -13,6 +13,7 @@ type ReceiptFormState = {
   gsmName: string;
   categoryCode: string;
   articleName: string;
+  subcategoryCode: string;
   qty: string;
   description: string;
   carat: "" | "18K" | "22K";
@@ -53,6 +54,7 @@ function emptyForm(): ReceiptFormState {
     gsmName: "",
     categoryCode: "",
     articleName: "",
+    subcategoryCode: "",
     qty: "",
     description: "",
     carat: "",
@@ -79,6 +81,9 @@ export function ReceiptForm({
   const [loading, setLoading] = useState(mode === "edit");
   const [goldsmiths, setGoldsmiths] = useState<Array<{ code: string; name: string }>>([]);
   const [categories, setCategories] = useState<Array<{ code: string; name: string }>>([]);
+  const [subcategories, setSubcategories] = useState<
+    Array<{ code: string; name: string; categoryCode: string }>
+  >([]);
   const [system, setSystem] = useState<{ goldCostRatePer8g: number; wastageRateMgPer8g: number } | null>(
     null
   );
@@ -105,7 +110,8 @@ export function ReceiptForm({
     setForm((prev) => ({
       ...prev,
       categoryCode: code,
-      articleName: match?.name ?? ""
+      articleName: match?.name ?? "",
+      subcategoryCode: ""
     }));
     setErrors((prev) => ({ ...prev, categoryCode: undefined, articleName: undefined, form: undefined }));
   }
@@ -114,14 +120,16 @@ export function ReceiptForm({
     let active = true;
     async function load() {
       try {
-        const [gs, cs, sys] = await Promise.all([
+        const [gs, cs, subs, sys] = await Promise.all([
           fetch("/api/goldsmiths", { cache: "no-store" }).then((r) => r.json()),
           fetch("/api/categories", { cache: "no-store" }).then((r) => r.json()),
+          fetch("/api/subcategories", { cache: "no-store" }).then((r) => r.json()),
           fetch("/api/system", { cache: "no-store" }).then((r) => r.json())
         ]);
         if (!active) return;
         setGoldsmiths(gs.goldsmiths ?? []);
         setCategories(cs.categories ?? []);
+        setSubcategories(subs.subcategories ?? []);
         const data = sys.data ?? null;
         setSystem({
           goldCostRatePer8g: Number(data?.goldCostRatePer8g ?? 0) || 0,
@@ -136,6 +144,11 @@ export function ReceiptForm({
       active = false;
     };
   }, []);
+
+  const filteredSubcategories = useMemo(() => {
+    if (!form.categoryCode) return [];
+    return subcategories.filter((s) => s.categoryCode === form.categoryCode);
+  }, [form.categoryCode, subcategories]);
 
   useEffect(() => {
     if (form.wastageYN !== "Y" && form.wastageMg !== "") update("wastageMg", "");
@@ -159,6 +172,7 @@ export function ReceiptForm({
           gsmName: row.gsmName,
           categoryCode: row.categoryCode,
           articleName: row.articleName,
+          subcategoryCode: row.subcategoryCode ?? "",
           qty: String(row.qty),
           description: row.description ?? "",
           carat: (row.carat as ReceiptFormState["carat"]) ?? "",
@@ -206,6 +220,7 @@ export function ReceiptForm({
     if (!form.location.trim()) next.location = "Required";
     if (!form.gsmCode.trim()) next.gsmCode = "Required";
     if (!form.categoryCode.trim()) next.categoryCode = "Required";
+    if (!form.subcategoryCode.trim()) next.subcategoryCode = "Required";
     if (!form.carat) next.carat = "Required";
     if (!isPositiveNumber(form.qty)) next.qty = "Enter a valid qty";
     if (!isPositiveNumber(form.goldWeight)) next.goldWeight = "Enter a valid gold weight";
@@ -341,6 +356,28 @@ export function ReceiptForm({
               />
             </label>
 
+            <label className="space-y-2 text-sm md:col-span-2">
+              <div className="font-bold text-ebony-700">Subcategory</div>
+              <select
+                value={form.subcategoryCode}
+                onChange={(e) => update("subcategoryCode", e.target.value)}
+                disabled={!form.categoryCode}
+                className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 text-sm outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30 disabled:opacity-60"
+              >
+                <option value="">
+                  {form.categoryCode ? "Select subcategory..." : "Select category first"}
+                </option>
+                {filteredSubcategories.map((s) => (
+                  <option key={s.code} value={s.code}>
+                    {s.code}
+                  </option>
+                ))}
+              </select>
+              {errors.subcategoryCode && (
+                <div className="text-xs text-red-600">{errors.subcategoryCode}</div>
+              )}
+            </label>
+
             <label className="space-y-2 text-sm">
               <div className="font-bold text-ebony-700">Qty</div>
               <input
@@ -367,15 +404,7 @@ export function ReceiptForm({
               {errors.carat && <div className="text-xs text-red-600">{errors.carat}</div>}
             </label>
 
-            <label className="space-y-2 text-sm md:col-span-2">
-              <div className="font-bold text-ebony-700">Description</div>
-              <input
-                value={form.description}
-                onChange={(e) => update("description", e.target.value)}
-                placeholder="Notes about the item/receipt..."
-                className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
-              />
-            </label>
+            {/* Subcategory replaces description per workflow */}
 
             <label className="space-y-2 text-sm">
               <div className="font-bold text-ebony-700">Wastage (Y/N)</div>
@@ -490,4 +519,3 @@ export function ReceiptForm({
     </Card>
   );
 }
-
