@@ -26,8 +26,8 @@ export function SubcategoriesTable({
   }, [previewUrl]);
 
   const canSave = useMemo(
-    () => name.trim() !== "" && categoryCode.trim() !== "" && file != null && !busy,
-    [busy, categoryCode, file, name]
+    () => name.trim() !== "" && categoryCode.trim() !== "" && !busy,
+    [busy, categoryCode, name]
   );
 
   async function uploadToCloudinary(selected: File): Promise<string> {
@@ -54,8 +54,7 @@ export function SubcategoriesTable({
     setBusy(true);
     setError("");
     try {
-      if (!file) throw new Error("Please select an image file.");
-      const nextImageUrl = await uploadToCloudinary(file);
+      const nextImageUrl = file ? await uploadToCloudinary(file) : "";
 
       const res = await fetch("/api/subcategories", {
         method: "POST",

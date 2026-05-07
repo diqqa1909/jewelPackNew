@@ -23,6 +23,8 @@ model StockMaster {
   articleName  String
   subcategoryCode String?
   subcategoryName String?
+  category     Category @relation(fields: [categoryCode], references: [code], onDelete: Cascade)
+  subcategory  Subcategory? @relation(fields: [subcategoryCode], references: [code], onDelete: Cascade)
   qty          Int
   description  String?
   carat        String?
@@ -39,6 +41,9 @@ model StockMaster {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([categoryCode])
+  @@index([subcategoryCode])
 }
 
 model Goldsmith {
@@ -52,6 +57,7 @@ model Category {
   code      String   @id
   name      String
   subcategories Subcategory[]
+  stock     StockMaster[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -62,6 +68,7 @@ model Subcategory {
   imageUrl     String?
   categoryCode String
   category     Category @relation(fields: [categoryCode], references: [code], onDelete: Cascade)
+  stock        StockMaster[]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
