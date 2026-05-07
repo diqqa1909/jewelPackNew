@@ -116,6 +116,8 @@ model SalesNTX {
   totalQty      Int
   totalGoldWeight Decimal
   totalCost     Decimal
+  sellRatePer8g Decimal @default(0)
+  sellSubTotal  Decimal @default(0)
   remarks       String?
 
   items         Sale[]
@@ -141,6 +143,7 @@ model Sale {
   qty             Int
   goldWeight      Decimal
   cost            Decimal
+  sellCost        Decimal @default(0)
 
   createdAt DateTime @default(now())
 

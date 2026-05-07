@@ -49,6 +49,7 @@ export function SalesForm() {
   const [transactionDate, setTransactionDate] = useState(todayISO());
   const [customerId, setCustomerId] = useState<number | "">("");
   const [remarks, setRemarks] = useState("");
+  const [sellRatePer8g, setSellRatePer8g] = useState("");
   const [lines, setLines] = useState<Line[]>([
     { id: uid(), categoryCode: "", subcategoryCode: "", carat: "", qty: "", goldWeight: "" }
   ]);
@@ -108,6 +109,17 @@ export function SalesForm() {
     return { totalItems: lines.filter((l) => l.subcategoryCode).length, totalQty, totalWeight };
   }, [lines]);
 
+  const sellSubTotal = useMemo(() => {
+    const rate = Math.max(0, toNumber(sellRatePer8g));
+    let sum = 0;
+    for (const l of lines) {
+      const w = Math.max(0, toNumber(l.goldWeight));
+      if (!w) continue;
+      sum += (w / 8) * rate;
+    }
+    return sum;
+  }, [lines, sellRatePer8g]);
+
   function updateLine(id: string, patch: Partial<Line>) {
     setLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
     setError("");
@@ -151,12 +163,13 @@ export function SalesForm() {
       const res = await fetch("/api/sales", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ transactionDate, customerId: cid, remarks, items })
+        body: JSON.stringify({ transactionDate, customerId: cid, remarks, sellRatePer8g, items })
       });
       const json = (await res.json().catch(() => null)) as { error?: string } | null;
       if (!res.ok) throw new Error(json?.error ?? "Save failed");
       setLines([{ id: uid(), categoryCode: "", subcategoryCode: "", carat: "", qty: "", goldWeight: "" }]);
       setRemarks("");
+      setSellRatePer8g("");
       router.push("/sales");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Save failed");
@@ -204,6 +217,25 @@ export function SalesForm() {
           </label>
         </div>
 
+        <div className="grid gap-4 md:grid-cols-3">
+          <label className="space-y-2 text-sm">
+            <div className="font-semibold text-ebony-700">Sell Rate (per 8g)</div>
+            <input
+              inputMode="decimal"
+              value={sellRatePer8g}
+              onChange={(e) => setSellRatePer8g(e.target.value)}
+              placeholder="0.00"
+              className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
+            />
+            <div className="text-xs font-semibold text-ebony-400">Used to calculate sell cost per item.</div>
+          </label>
+          <div className="md:col-span-2 rounded-2xl border border-ebony-100 bg-gradient-to-br from-gold-50 to-white px-5 py-4">
+            <div className="text-xs font-semibold uppercase tracking-widest text-ebony-500">Sell Subtotal</div>
+            <div className="mt-1 text-2xl font-extrabold text-ebony-900">{sellSubTotal.toFixed(2)}</div>
+            <div className="mt-1 text-xs text-ebony-500">Sum of (weight ÷ 8 × sell rate) for all rows.</div>
+          </div>
+        </div>
+
         <div className="rounded-2xl border border-ebony-100 bg-white">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ebony-100 px-4 py-3">
             <div className="text-sm font-semibold text-ebony-900">Items</div>
@@ -228,6 +260,7 @@ export function SalesForm() {
                     <th className="px-4 py-3">Carat</th>
                     <th className="px-4 py-3 text-right">Qty</th>
                     <th className="px-4 py-3 text-right">Weight (g)</th>
+                    <th className="px-4 py-3 text-right">Sell Cost</th>
                     <th className="px-4 py-3">Available</th>
                     <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
@@ -236,6 +269,8 @@ export function SalesForm() {
                   {lines.map((l) => {
                     const subs = l.categoryCode ? subsByCategory.get(l.categoryCode) ?? [] : subcategories;
                     const avail = l.subcategoryCode && l.carat ? availabilityKeyed.get(`${l.subcategoryCode}||${l.carat}`) : null;
+                    const sellRate = Math.max(0, toNumber(sellRatePer8g));
+                    const sellCost = (Math.max(0, toNumber(l.goldWeight)) / 8) * sellRate;
                     return (
                       <tr key={l.id} className="bg-white">
                         <td className="px-4 py-3">
@@ -298,6 +333,11 @@ export function SalesForm() {
                             className="w-36 rounded-lg border border-ebony-200 bg-white px-3 py-2 text-right outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
                           />
                         </td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="w-36 rounded-lg bg-cream-100 px-3 py-2 text-right font-bold text-ebony-900">
+                            {Number.isFinite(sellCost) ? sellCost.toFixed(2) : "0.00"}
+                          </div>
+                        </td>
                         <td className="px-4 py-3">
                           {avail ? (
                             <div className="text-xs font-semibold text-ebony-700">
@@ -326,13 +366,18 @@ export function SalesForm() {
           )}
 
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-ebony-100 px-4 py-3">
-            <button
-              type="button"
-              onClick={addLine}
-              className="rounded-lg border border-ebony-300 bg-white px-4 py-2 text-sm font-semibold text-ebony-700 hover:bg-ebony-50"
-            >
-              + Add Row
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={addLine}
+                className="rounded-lg border border-ebony-300 bg-white px-4 py-2 text-sm font-semibold text-ebony-700 hover:bg-ebony-50"
+              >
+                + Add Row
+              </button>
+              <span className="rounded-full bg-gold-100 px-3 py-1 text-xs font-bold text-ebony-900">
+                Subtotal {sellSubTotal.toFixed(2)}
+              </span>
+            </div>
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -367,4 +412,3 @@ export function SalesForm() {
     </Card>
   );
 }
-

@@ -28,51 +28,67 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const body = (await req.json()) as Partial<{
-    transactionDate: string;
-    customerId: number;
-    remarks?: string;
-    items: SaleLineInput[];
-  }>;
+  try {
+    const body = (await req.json()) as Partial<{
+      transactionDate: string;
+      customerId: number;
+      remarks?: string;
+      sellRatePer8g?: string;
+      items: SaleLineInput[];
+    }>;
 
-  if (!body.transactionDate) return NextResponse.json({ error: "Missing date" }, { status: 400 });
-  const customerId = Number(body.customerId);
-  if (!Number.isFinite(customerId)) return NextResponse.json({ error: "Missing customer" }, { status: 400 });
-  const items = Array.isArray(body.items) ? body.items : [];
-  if (items.length === 0) return NextResponse.json({ error: "Add at least one item" }, { status: 400 });
+    if (!body.transactionDate) return NextResponse.json({ error: "Missing date" }, { status: 400 });
+    const customerId = Number(body.customerId);
+    if (!Number.isFinite(customerId)) return NextResponse.json({ error: "Missing customer" }, { status: 400 });
+    const items = Array.isArray(body.items) ? body.items : [];
+    if (items.length === 0) return NextResponse.json({ error: "Add at least one item" }, { status: 400 });
 
-  const txDate = new Date(body.transactionDate);
-  if (Number.isNaN(txDate.getTime())) return NextResponse.json({ error: "Invalid date" }, { status: 400 });
+    const txDate = new Date(body.transactionDate);
+    if (Number.isNaN(txDate.getTime())) return NextResponse.json({ error: "Invalid date" }, { status: 400 });
 
-  const customer = await prisma.customer.findUnique({ where: { id: customerId } });
-  if (!customer) return NextResponse.json({ error: "Invalid customer" }, { status: 400 });
+    const customer = await prisma.customer.findUnique({ where: { id: customerId } });
+    if (!customer) return NextResponse.json({ error: "Invalid customer" }, { status: 400 });
 
-  // Normalize + validate client rows (aggregate same subcategory+carat)
-  const normalized: Array<{ subcategoryCode: string; carat: string | null; qty: number; goldWeight: Prisma.Decimal }> =
-    [];
-  for (const row of items) {
-    const subcategoryCode = (row.subcategoryCode ?? "").trim();
-    if (!subcategoryCode) return NextResponse.json({ error: "Missing subcategory" }, { status: 400 });
-    const qty = Number(row.qty);
-    if (!Number.isFinite(qty) || qty <= 0) return NextResponse.json({ error: "Invalid qty" }, { status: 400 });
-    const weight = decimal(String(row.goldWeight ?? "0"));
-    if (weight.lessThanOrEqualTo(new Prisma.Decimal("0")))
-      return NextResponse.json({ error: "Invalid weight" }, { status: 400 });
-    const carat = (row.carat ?? "").trim();
-    const caratValue = carat === "18K" || carat === "22K" ? carat : "";
-    normalized.push({ subcategoryCode, carat: caratValue || null, qty, goldWeight: weight });
-  }
+    const sellRatePer8g = decimal(String(body.sellRatePer8g ?? "0"));
 
-  const aggregated = new Map<string, { subcategoryCode: string; carat: string | null; qty: number; goldWeight: Prisma.Decimal }>();
-  for (const r of normalized) {
-    const key = `${r.subcategoryCode}||${r.carat ?? ""}`;
-    const prev = aggregated.get(key);
-    if (!prev) aggregated.set(key, { ...r });
-    else aggregated.set(key, { ...prev, qty: prev.qty + r.qty, goldWeight: prev.goldWeight.plus(r.goldWeight) });
-  }
-  const requested = Array.from(aggregated.values());
+    // Normalize + validate client rows (aggregate same subcategory+carat)
+    const normalized: Array<{
+      subcategoryCode: string;
+      carat: string | null;
+      qty: number;
+      goldWeight: Prisma.Decimal;
+    }> = [];
+    for (const row of items) {
+      const subcategoryCode = (row.subcategoryCode ?? "").trim();
+      if (!subcategoryCode) return NextResponse.json({ error: "Missing subcategory" }, { status: 400 });
+      const qty = Number(row.qty);
+      if (!Number.isFinite(qty) || qty <= 0) return NextResponse.json({ error: "Invalid qty" }, { status: 400 });
+      const weight = decimal(String(row.goldWeight ?? "0"));
+      if (weight.lessThanOrEqualTo(new Prisma.Decimal("0")))
+        return NextResponse.json({ error: "Invalid weight" }, { status: 400 });
+      const carat = (row.carat ?? "").trim();
+      const caratValue = carat === "18K" || carat === "22K" ? carat : "";
+      normalized.push({ subcategoryCode, carat: caratValue || null, qty, goldWeight: weight });
+    }
 
-  const result = await prisma.$transaction(async (tx) => {
+    const aggregated = new Map<
+      string,
+      { subcategoryCode: string; carat: string | null; qty: number; goldWeight: Prisma.Decimal }
+    >();
+    for (const r of normalized) {
+      const key = `${r.subcategoryCode}||${r.carat ?? ""}`;
+      const prev = aggregated.get(key);
+      if (!prev) aggregated.set(key, { ...r });
+      else
+        aggregated.set(key, {
+          ...prev,
+          qty: prev.qty + r.qty,
+          goldWeight: prev.goldWeight.plus(r.goldWeight)
+        });
+    }
+    const requested = Array.from(aggregated.values());
+
+    const result = await prisma.$transaction(async (tx) => {
     // Generate sale number (date-based)
     const yyyy = txDate.getFullYear();
     const mm = String(txDate.getMonth() + 1).padStart(2, "0");
@@ -95,6 +111,8 @@ export async function POST(req: Request) {
         totalQty: 0,
         totalGoldWeight: new Prisma.Decimal("0"),
         totalCost: new Prisma.Decimal("0"),
+        sellRatePer8g,
+        sellSubTotal: new Prisma.Decimal("0"),
         remarks: (body.remarks ?? "").trim() || null
       }
     });
@@ -103,6 +121,7 @@ export async function POST(req: Request) {
     let headerTotalItems = 0;
     let headerTotalWeight = new Prisma.Decimal("0");
     let headerTotalCost = new Prisma.Decimal("0");
+    let headerSellSubTotal = new Prisma.Decimal("0");
 
     for (const reqLine of requested) {
       // FIFO allocate from StockMaster balances
@@ -140,6 +159,7 @@ export async function POST(req: Request) {
           ? new Prisma.Decimal("0")
           : r.balanceCost.div(r.balanceGoldWeight);
         const takeCost = effectiveWeight.mul(perGramCost);
+        const lineSellCost = effectiveWeight.div(new Prisma.Decimal("8")).mul(sellRatePer8g);
 
         await tx.sale.create({
           data: {
@@ -150,7 +170,8 @@ export async function POST(req: Request) {
             carat: r.carat,
             qty: takeQty,
             goldWeight: effectiveWeight,
-            cost: takeCost
+            cost: takeCost,
+            sellCost: lineSellCost
           }
         });
 
@@ -180,6 +201,7 @@ export async function POST(req: Request) {
         headerTotalItems += 1;
         headerTotalWeight = headerTotalWeight.plus(effectiveWeight);
         headerTotalCost = headerTotalCost.plus(takeCost);
+        headerSellSubTotal = headerSellSubTotal.plus(lineSellCost);
       }
 
       if (remainingQty > 0 || remainingWeight.greaterThan(new Prisma.Decimal("0"))) {
@@ -193,13 +215,18 @@ export async function POST(req: Request) {
         totalItems: headerTotalItems,
         totalQty: headerTotalQty,
         totalGoldWeight: headerTotalWeight,
-        totalCost: headerTotalCost
+        totalCost: headerTotalCost,
+        sellSubTotal: headerSellSubTotal
       }
     });
 
     return { header: updatedHeader };
-  });
+    });
 
-  return NextResponse.json({ ok: true, sale: result.header });
+    return NextResponse.json({ ok: true, sale: result.header });
+  } catch (e) {
+    const message =
+      e instanceof Error ? e.message : "Unable to save sale. Please try again.";
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
 }
-
