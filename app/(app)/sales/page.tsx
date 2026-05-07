@@ -35,8 +35,7 @@ export default async function SalesPage() {
               <thead className="bg-ebony-50 text-left text-xs font-semibold uppercase tracking-widest text-ebony-700">
                 <tr>
                   <th className="px-5 py-4">Sale No</th>
-                  <th className="px-5 py-4">Date</th>
-                  <th className="px-5 py-4">Customer</th>
+                  <th className="px-5 py-4">Date — Customer</th>
                   <th className="px-5 py-4 text-right">Items</th>
                   <th className="px-5 py-4 text-right">Qty</th>
                   <th className="px-5 py-4 text-right">Weight</th>
@@ -48,9 +47,11 @@ export default async function SalesPage() {
                   <tr key={s.id} className="bg-white">
                     <td className="px-5 py-4 font-semibold text-ebony-900">{s.saleNo}</td>
                     <td className="px-5 py-4 text-ebony-700">
-                      {new Date(s.transactionDate).toISOString().slice(0, 10)}
+                      <div className="font-semibold text-ebony-900">
+                        {new Date(s.transactionDate).toISOString().slice(0, 10)}
+                      </div>
+                      <div className="text-xs text-ebony-600">{s.customer.name}</div>
                     </td>
-                    <td className="px-5 py-4 text-ebony-700">{s.customer.name}</td>
                     <td className="px-5 py-4 text-right font-semibold text-ebony-900">{s.totalItems}</td>
                     <td className="px-5 py-4 text-right text-ebony-700">{s.totalQty}</td>
                     <td className="px-5 py-4 text-right text-ebony-700">
@@ -63,7 +64,7 @@ export default async function SalesPage() {
                 ))}
                 {sales.length === 0 && (
                   <tr>
-                    <td className="px-5 py-8 text-center text-sm text-ebony-600" colSpan={7}>
+                    <td className="px-5 py-8 text-center text-sm text-ebony-600" colSpan={6}>
                       No sales yet.
                     </td>
                   </tr>
@@ -76,4 +77,3 @@ export default async function SalesPage() {
     </div>
   );
 }
-

@@ -7,6 +7,7 @@ type SaleLineInput = {
   carat: "" | "18K" | "22K";
   qty: number;
   goldWeight: string;
+  sellRatePer8g: string;
 };
 
 function decimal(value: string) {
@@ -18,7 +19,29 @@ function clampDecimalNonNegative(d: Prisma.Decimal) {
   return d.lessThan(new Prisma.Decimal("0")) ? new Prisma.Decimal("0") : d;
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  const preview = url.searchParams.get("preview") === "1";
+  if (preview) {
+    const dateRaw = (url.searchParams.get("transactionDate") ?? "").trim();
+    const txDate = dateRaw ? new Date(dateRaw) : new Date();
+    if (Number.isNaN(txDate.getTime())) {
+      return NextResponse.json({ error: "Invalid date" }, { status: 400 });
+    }
+    const yyyy = txDate.getFullYear();
+    const mm = String(txDate.getMonth() + 1).padStart(2, "0");
+    const dd = String(txDate.getDate()).padStart(2, "0");
+    const prefix = `SAL-${yyyy}${mm}${dd}-`;
+    const last = await prisma.salesNTX.findFirst({
+      where: { saleNo: { startsWith: prefix } },
+      orderBy: { saleNo: "desc" }
+    });
+    const lastSeq = last?.saleNo ? Number(last.saleNo.slice(prefix.length)) : 0;
+    const nextSeq = Number.isFinite(lastSeq) ? lastSeq + 1 : 1;
+    const saleNo = `${prefix}${String(nextSeq).padStart(4, "0")}`;
+    return NextResponse.json({ saleNo });
+  }
+
   const sales = await prisma.salesNTX.findMany({
     orderBy: { createdAt: "desc" },
     take: 200,
@@ -33,7 +56,6 @@ export async function POST(req: Request) {
       transactionDate: string;
       customerId: number;
       remarks?: string;
-      sellRatePer8g?: string;
       items: SaleLineInput[];
     }>;
 
@@ -49,14 +71,13 @@ export async function POST(req: Request) {
     const customer = await prisma.customer.findUnique({ where: { id: customerId } });
     if (!customer) return NextResponse.json({ error: "Invalid customer" }, { status: 400 });
 
-    const sellRatePer8g = decimal(String(body.sellRatePer8g ?? "0"));
-
     // Normalize + validate client rows (aggregate same subcategory+carat)
     const normalized: Array<{
       subcategoryCode: string;
       carat: string | null;
       qty: number;
       goldWeight: Prisma.Decimal;
+      sellRatePer8g: Prisma.Decimal;
     }> = [];
     for (const row of items) {
       const subcategoryCode = (row.subcategoryCode ?? "").trim();
@@ -66,17 +87,20 @@ export async function POST(req: Request) {
       const weight = decimal(String(row.goldWeight ?? "0"));
       if (weight.lessThanOrEqualTo(new Prisma.Decimal("0")))
         return NextResponse.json({ error: "Invalid weight" }, { status: 400 });
+      const rate = decimal(String(row.sellRatePer8g ?? "0"));
+      if (rate.lessThanOrEqualTo(new Prisma.Decimal("0")))
+        return NextResponse.json({ error: "Invalid sell rate" }, { status: 400 });
       const carat = (row.carat ?? "").trim();
       const caratValue = carat === "18K" || carat === "22K" ? carat : "";
-      normalized.push({ subcategoryCode, carat: caratValue || null, qty, goldWeight: weight });
+      normalized.push({ subcategoryCode, carat: caratValue || null, qty, goldWeight: weight, sellRatePer8g: rate });
     }
 
     const aggregated = new Map<
       string,
-      { subcategoryCode: string; carat: string | null; qty: number; goldWeight: Prisma.Decimal }
+      { subcategoryCode: string; carat: string | null; qty: number; goldWeight: Prisma.Decimal; sellRatePer8g: Prisma.Decimal }
     >();
     for (const r of normalized) {
-      const key = `${r.subcategoryCode}||${r.carat ?? ""}`;
+      const key = `${r.subcategoryCode}||${r.carat ?? ""}||${r.sellRatePer8g.toString()}`;
       const prev = aggregated.get(key);
       if (!prev) aggregated.set(key, { ...r });
       else
@@ -111,7 +135,6 @@ export async function POST(req: Request) {
         totalQty: 0,
         totalGoldWeight: new Prisma.Decimal("0"),
         totalCost: new Prisma.Decimal("0"),
-        sellRatePer8g,
         sellSubTotal: new Prisma.Decimal("0"),
         remarks: (body.remarks ?? "").trim() || null
       }
@@ -159,7 +182,7 @@ export async function POST(req: Request) {
           ? new Prisma.Decimal("0")
           : r.balanceCost.div(r.balanceGoldWeight);
         const takeCost = effectiveWeight.mul(perGramCost);
-        const lineSellCost = effectiveWeight.div(new Prisma.Decimal("8")).mul(sellRatePer8g);
+        const lineSellCost = effectiveWeight.div(new Prisma.Decimal("8")).mul(reqLine.sellRatePer8g);
 
         await tx.sale.create({
           data: {
@@ -171,6 +194,7 @@ export async function POST(req: Request) {
             qty: takeQty,
             goldWeight: effectiveWeight,
             cost: takeCost,
+            sellRatePer8g: reqLine.sellRatePer8g,
             sellCost: lineSellCost
           }
         });

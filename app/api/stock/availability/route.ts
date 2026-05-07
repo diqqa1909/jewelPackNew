@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   const rows = await prisma.stockMaster.groupBy({
     by: ["subcategoryCode", "carat"],
@@ -17,4 +19,3 @@ export async function GET() {
     }))
   });
 }
-

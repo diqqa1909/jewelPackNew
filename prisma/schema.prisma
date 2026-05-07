@@ -143,6 +143,7 @@ model Sale {
   qty             Int
   goldWeight      Decimal
   cost            Decimal
+  sellRatePer8g   Decimal @default(0)
   sellCost        Decimal @default(0)
 
   createdAt DateTime @default(now())
