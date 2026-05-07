@@ -37,6 +37,15 @@ export async function DELETE(req: Request) {
   const url = new URL(req.url);
   const code = (url.searchParams.get("code") ?? "").trim();
   if (!code) return NextResponse.json({ error: "Missing code" }, { status: 400 });
+
+  const stockCount = await prisma.stockMaster.count({ where: { subcategoryCode: code } });
+  if (stockCount > 0) {
+    return NextResponse.json(
+      { error: `Unable to delete. Stock exists for subcategory ${code}.` },
+      { status: 409 }
+    );
+  }
+
   await prisma.subcategory.delete({ where: { code } });
   return NextResponse.json({ ok: true });
 }

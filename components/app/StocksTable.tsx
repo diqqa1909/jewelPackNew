@@ -30,7 +30,7 @@ export function StocksTable({ initial }: Props) {
     const q = query.trim().toLowerCase();
     if (!q) return true;
     return (
-      r.location.toLowerCase().includes(q) ||
+      (r.location ?? "").toLowerCase().includes(q) ||
       r.gsmCode.toLowerCase().includes(q) ||
       r.gsmName.toLowerCase().includes(q) ||
       r.categoryCode.toLowerCase().includes(q) ||
@@ -67,9 +67,9 @@ export function StocksTable({ initial }: Props) {
             {filtered.map((r) => (
               <tr key={r.id} className="bg-white hover:bg-ebony-50 transition-colors">
                 <td className="px-5 py-4 font-semibold text-ebony-900">
-                  {new Date(r.transactionDate).toISOString().slice(0, 10)}
+                 {new Date(r.transactionDate).toISOString().slice(0, 10)}
                 </td>
-                <td className="px-5 py-4 text-ebony-700">{r.location}</td>
+                <td className="px-5 py-4 text-ebony-700">{r.location ?? "—"}</td>
                 <td className="px-5 py-4 text-ebony-700">
                   <div className="font-semibold text-ebony-900">{r.gsmCode}</div>
                   <div className="text-xs text-ebony-600">{r.gsmName}</div>
@@ -113,4 +113,3 @@ export function StocksTable({ initial }: Props) {
     </div>
   );
 }
-

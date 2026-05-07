@@ -88,12 +88,18 @@ export function SubcategoriesTable({
     const ok = confirm(`Delete subcategory ${targetCode}?`);
     if (!ok) return;
     setBusy(true);
+    setError("");
     try {
       const res = await fetch(`/api/subcategories?code=${encodeURIComponent(targetCode)}`, {
         method: "DELETE"
       });
-      if (!res.ok) throw new Error("Delete failed");
+      if (!res.ok) {
+        const msg = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(msg?.error ?? "Delete failed");
+      }
       setRows((prev) => prev.filter((r) => r.code !== targetCode));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to delete");
     } finally {
       setBusy(false);
     }

@@ -15,16 +15,16 @@ datasource db {
 model StockMaster {
   id              Int      @id @default(autoincrement())
   transactionDate DateTime
-  location        String
+  location        String?
 
   gsmCode      String
   gsmName      String
   categoryCode String
   articleName  String
-  subcategoryCode String?
-  subcategoryName String?
-  category     Category @relation(fields: [categoryCode], references: [code], onDelete: Cascade)
-  subcategory  Subcategory? @relation(fields: [subcategoryCode], references: [code], onDelete: Cascade)
+  subcategoryCode String
+  subcategoryName String
+  category     Category @relation(fields: [categoryCode], references: [code], onDelete: Restrict)
+  subcategory  Subcategory @relation(fields: [subcategoryCode], references: [code], onDelete: Restrict)
   qty          Int
   description  String?
   carat        String?
@@ -67,7 +67,7 @@ model Subcategory {
   name         String
   imageUrl     String?
   categoryCode String
-  category     Category @relation(fields: [categoryCode], references: [code], onDelete: Cascade)
+  category     Category @relation(fields: [categoryCode], references: [code], onDelete: Restrict)
   stock        StockMaster[]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt

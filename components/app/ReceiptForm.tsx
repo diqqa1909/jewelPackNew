@@ -1,6 +1,7 @@
 "use client";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
+import { Modal } from "@/components/ui/Modal";
 import type { StockMaster } from "@/lib/generated/prisma";
 import { useRouter } from "next/navigation";
 import type React from "react";
@@ -87,6 +88,18 @@ export function ReceiptForm({
   const [system, setSystem] = useState<{ goldCostRatePer8g: number; wastageRateMgPer8g: number } | null>(
     null
   );
+  const [systemModalOpen, setSystemModalOpen] = useState(false);
+  const [subcategoryModalOpen, setSubcategoryModalOpen] = useState(false);
+  const [systemForm, setSystemForm] = useState({
+    vatRate: "",
+    nslRate: "",
+    goldCostRatePer8g: "",
+    wastageRateMgPer8g: ""
+  });
+  const [systemSaveState, setSystemSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [subcatForm, setSubcatForm] = useState({ categoryCode: "", name: "" });
+  const [subcatSaveState, setSubcatSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [subcatError, setSubcatError] = useState("");
 
   function update<K extends keyof ReceiptFormState>(key: K, value: ReceiptFormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -135,6 +148,14 @@ export function ReceiptForm({
           goldCostRatePer8g: Number(data?.goldCostRatePer8g ?? 0) || 0,
           wastageRateMgPer8g: Number(data?.wastageRateMgPer8g ?? 0) || 0
         });
+        if (data) {
+          setSystemForm({
+            vatRate: String(data.vatRate ?? ""),
+            nslRate: String(data.nslRate ?? ""),
+            goldCostRatePer8g: String(data.goldCostRatePer8g ?? ""),
+            wastageRateMgPer8g: String(data.wastageRateMgPer8g ?? "")
+          });
+        }
       } catch {
         // ignore
       }
@@ -167,12 +188,12 @@ export function ReceiptForm({
         if (!active || !row) return;
         setForm({
           transactionDate: new Date(row.transactionDate).toISOString().slice(0, 10),
-          location: row.location,
+          location: row.location ?? "",
           gsmCode: row.gsmCode,
           gsmName: row.gsmName,
           categoryCode: row.categoryCode,
           articleName: row.articleName,
-          subcategoryCode: row.subcategoryCode ?? "",
+          subcategoryCode: row.subcategoryCode,
           qty: String(row.qty),
           description: row.description ?? "",
           carat: (row.carat as ReceiptFormState["carat"]) ?? "",
@@ -217,7 +238,6 @@ export function ReceiptForm({
   function validate(): boolean {
     const next: Errors = {};
     if (!form.transactionDate) next.transactionDate = "Required";
-    if (!form.location.trim()) next.location = "Required";
     if (!form.gsmCode.trim()) next.gsmCode = "Required";
     if (!form.categoryCode.trim()) next.categoryCode = "Required";
     if (!form.subcategoryCode.trim()) next.subcategoryCode = "Required";
@@ -263,13 +283,110 @@ export function ReceiptForm({
     }
   }
 
+  async function refreshSubcategories() {
+    const subs = await fetch("/api/subcategories", { cache: "no-store" }).then((r) => r.json());
+    setSubcategories(subs.subcategories ?? []);
+  }
+
+  async function refreshSystem() {
+    const sys = await fetch("/api/system", { cache: "no-store" }).then((r) => r.json());
+    const data = sys.data ?? null;
+    setSystem({
+      goldCostRatePer8g: Number(data?.goldCostRatePer8g ?? 0) || 0,
+      wastageRateMgPer8g: Number(data?.wastageRateMgPer8g ?? 0) || 0
+    });
+    setSystemForm({
+      vatRate: String(data?.vatRate ?? ""),
+      nslRate: String(data?.nslRate ?? ""),
+      goldCostRatePer8g: String(data?.goldCostRatePer8g ?? ""),
+      wastageRateMgPer8g: String(data?.wastageRateMgPer8g ?? "")
+    });
+  }
+
+  async function saveSystemData(e: React.FormEvent) {
+    e.preventDefault();
+    setSystemSaveState("saving");
+    try {
+      const res = await fetch("/api/system", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(systemForm)
+      });
+      if (!res.ok) throw new Error("Save failed");
+      await refreshSystem();
+      setSystemSaveState("saved");
+      setTimeout(() => setSystemSaveState("idle"), 1500);
+      setSystemModalOpen(false);
+    } catch {
+      setSystemSaveState("error");
+    }
+  }
+
+  async function addSubcategory(e: React.FormEvent) {
+    e.preventDefault();
+    setSubcatError("");
+    const categoryCode = (subcatForm.categoryCode ?? "").trim();
+    const name = (subcatForm.name ?? "").trim();
+    if (!categoryCode || !name) {
+      setSubcatError("Category and subcategory name are required.");
+      return;
+    }
+    setSubcatSaveState("saving");
+    try {
+      const res = await fetch("/api/subcategories", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ categoryCode, name })
+      });
+      const json = (await res.json()) as { subcategory?: { code: string } };
+      if (!res.ok || !json?.subcategory?.code) throw new Error("Create failed");
+      await refreshSubcategories();
+      update("subcategoryCode", json.subcategory.code);
+      setSubcatSaveState("saved");
+      setTimeout(() => setSubcatSaveState("idle"), 1500);
+      setSubcategoryModalOpen(false);
+    } catch {
+      setSubcatSaveState("error");
+      setSubcatError("Unable to add subcategory.");
+    }
+  }
+
   const title = mode === "edit" ? "Edit Receipt" : "Add New Receipt";
 
   return (
     <Card className="max-w-5xl">
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        <CardDescription>Capture inbound stock receipt details.</CardDescription>
+      <CardHeader className="space-y-1">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-1">
+            <CardTitle>{title}</CardTitle>
+            <CardDescription>Capture inbound stock receipt details.</CardDescription>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={async () => {
+                await refreshSystem();
+                setSystemSaveState("idle");
+                setSystemModalOpen(true);
+              }}
+              className="rounded-lg border border-ebony-300 bg-white px-3 py-2 text-xs font-semibold text-ebony-700 hover:bg-ebony-50 transition-all"
+            >
+              Edit System Data
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSubcatError("");
+                setSubcatSaveState("idle");
+                setSubcatForm({ categoryCode: form.categoryCode || "", name: "" });
+                setSubcategoryModalOpen(true);
+              }}
+              className="rounded-lg bg-gold-600 px-3 py-2 text-xs font-semibold text-white hover:bg-gold-700 transition-all"
+            >
+              Add Subcategory
+            </button>
+          </div>
+        </div>
       </CardHeader>
       <CardContent>
         {loading ? (
@@ -294,7 +411,10 @@ export function ReceiptForm({
             </label>
 
             <label className="space-y-2 text-sm">
-              <div className="font-bold text-ebony-700">Location</div>
+              <div className="flex items-center justify-between">
+                <div className="font-bold text-ebony-700">Location</div>
+                <div className="text-xs font-semibold text-ebony-400">Optional</div>
+              </div>
               <input
                 value={form.location}
                 onChange={(e) => update("location", e.target.value)}
@@ -516,6 +636,126 @@ export function ReceiptForm({
           </form>
         )}
       </CardContent>
+
+      <Modal open={systemModalOpen} onClose={() => setSystemModalOpen(false)} title="System Data">
+        <form onSubmit={saveSystemData} className="grid gap-5 md:grid-cols-2">
+          <label className="space-y-2 text-sm">
+            <div className="font-semibold text-ebony-700">VAT Rate</div>
+            <input
+              inputMode="decimal"
+              value={systemForm.vatRate}
+              onChange={(e) => setSystemForm((p) => ({ ...p, vatRate: e.target.value }))}
+              placeholder="e.g. 18"
+              className="w-full rounded-lg border border-ebony-200 bg-white px-4 py-2.5 outline-none transition-all focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+            />
+          </label>
+
+          <label className="space-y-2 text-sm">
+            <div className="font-semibold text-ebony-700">NSL Rate</div>
+            <input
+              inputMode="decimal"
+              value={systemForm.nslRate}
+              onChange={(e) => setSystemForm((p) => ({ ...p, nslRate: e.target.value }))}
+              placeholder="e.g. 2.5"
+              className="w-full rounded-lg border border-ebony-200 bg-white px-4 py-2.5 outline-none transition-all focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+            />
+          </label>
+
+          <label className="space-y-2 text-sm">
+            <div className="font-semibold text-ebony-700">Gold Cost Rate (per 8 grams)</div>
+            <input
+              inputMode="decimal"
+              value={systemForm.goldCostRatePer8g}
+              onChange={(e) => setSystemForm((p) => ({ ...p, goldCostRatePer8g: e.target.value }))}
+              placeholder="e.g. 0.00"
+              className="w-full rounded-lg border border-ebony-200 bg-white px-4 py-2.5 outline-none transition-all focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+            />
+          </label>
+
+          <label className="space-y-2 text-sm">
+            <div className="font-semibold text-ebony-700">Wastage Rate (mg per 8 grams)</div>
+            <input
+              inputMode="decimal"
+              value={systemForm.wastageRateMgPer8g}
+              onChange={(e) => setSystemForm((p) => ({ ...p, wastageRateMgPer8g: e.target.value }))}
+              placeholder="e.g. 0"
+              className="w-full rounded-lg border border-ebony-200 bg-white px-4 py-2.5 outline-none transition-all focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+            />
+          </label>
+
+          <div className="md:col-span-2 flex items-center justify-end gap-3 pt-2">
+            {systemSaveState === "error" && (
+              <span className="text-sm font-semibold text-red-600">Save failed</span>
+            )}
+            <button
+              type="button"
+              onClick={() => setSystemModalOpen(false)}
+              className="rounded-lg border border-ebony-300 bg-white px-5 py-2.5 text-sm font-semibold text-ebony-700 hover:bg-ebony-50 transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={systemSaveState === "saving"}
+              className="rounded-lg bg-gold-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-gold-700 transition-all disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {systemSaveState === "saving" ? "Saving..." : "Save"}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal open={subcategoryModalOpen} onClose={() => setSubcategoryModalOpen(false)} title="Add Subcategory">
+        <form onSubmit={addSubcategory} className="grid gap-5">
+          <label className="space-y-2 text-sm">
+            <div className="font-semibold text-ebony-700">Category</div>
+            <select
+              value={subcatForm.categoryCode}
+              onChange={(e) => setSubcatForm((p) => ({ ...p, categoryCode: e.target.value }))}
+              className="w-full rounded-lg border border-ebony-200 bg-white px-4 py-2.5 outline-none transition-all focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+            >
+              <option value="">Select category...</option>
+              {categories.map((c) => (
+                <option key={c.code} value={c.code}>
+                  {c.code} — {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="space-y-2 text-sm">
+            <div className="font-semibold text-ebony-700">Subcategory Name</div>
+            <input
+              value={subcatForm.name}
+              onChange={(e) => setSubcatForm((p) => ({ ...p, name: e.target.value }))}
+              placeholder="e.g. Bangles, Rings, Chains"
+              className="w-full rounded-lg border border-ebony-200 bg-white px-4 py-2.5 outline-none transition-all focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+            />
+          </label>
+
+          {subcatError && <div className="text-sm font-semibold text-red-600">{subcatError}</div>}
+          {subcatSaveState === "error" && (
+            <div className="text-sm font-semibold text-red-600">Save failed</div>
+          )}
+
+          <div className="flex items-center justify-end gap-3 pt-1">
+            <button
+              type="button"
+              onClick={() => setSubcategoryModalOpen(false)}
+              className="rounded-lg border border-ebony-300 bg-white px-5 py-2.5 text-sm font-semibold text-ebony-700 hover:bg-ebony-50 transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={subcatSaveState === "saving"}
+              className="rounded-lg bg-gold-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-gold-700 transition-all disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {subcatSaveState === "saving" ? "Saving..." : "Add"}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </Card>
   );
 }

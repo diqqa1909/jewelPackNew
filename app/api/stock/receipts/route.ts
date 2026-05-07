@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 
 type ReceiptPayload = {
   transactionDate: string;
-  location: string;
+  location?: string;
   gsmCode: string;
   categoryCode: string;
   subcategoryCode: string;
@@ -27,7 +27,7 @@ function decimal(value: string) {
 export async function POST(req: Request) {
   const body = (await req.json()) as Partial<ReceiptPayload>;
 
-  if (!body.transactionDate || !body.location || !body.gsmCode) {
+  if (!body.transactionDate || !body.gsmCode) {
     return NextResponse.json({ error: "Missing required fields." }, { status: 400 });
   }
   if (!body.categoryCode || body.qty == null) {
@@ -63,17 +63,23 @@ export async function POST(req: Request) {
   const gsm = await prisma.goldsmith.findUnique({ where: { code: body.gsmCode } });
   const category = await prisma.category.findUnique({ where: { code: body.categoryCode } });
   const subcategory = await prisma.subcategory.findUnique({ where: { code: body.subcategoryCode } });
+  if (!category) {
+    return NextResponse.json({ error: "Invalid category." }, { status: 400 });
+  }
+  if (!subcategory) {
+    return NextResponse.json({ error: "Invalid subcategory." }, { status: 400 });
+  }
 
   const created = await prisma.stockMaster.create({
     data: {
       transactionDate: new Date(body.transactionDate),
-      location: body.location,
+      location: (body.location ?? "").trim() || null,
       gsmCode: body.gsmCode,
       gsmName: gsm?.name ?? "",
       categoryCode: body.categoryCode,
-      articleName: category?.name ?? "",
+      articleName: category.name,
       subcategoryCode: body.subcategoryCode,
-      subcategoryName: subcategory?.name ?? "",
+      subcategoryName: subcategory.name,
       qty,
       description: (body.description ?? "").trim() || null,
       carat: (body.carat ?? "").trim() || null,
@@ -120,7 +126,7 @@ export async function PATCH(req: Request) {
   const body = (await req.json()) as Partial<{
     id: number;
     transactionDate: string;
-    location: string;
+    location?: string | null;
     gsmCode: string;
     categoryCode: string;
     subcategoryCode: string;
@@ -138,6 +144,12 @@ export async function PATCH(req: Request) {
   if (body.id == null || !Number.isFinite(Number(body.id))) {
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   }
+  if (!body.subcategoryCode) {
+    return NextResponse.json({ error: "Missing subcategory." }, { status: 400 });
+  }
+  if (!body.categoryCode) {
+    return NextResponse.json({ error: "Missing category." }, { status: 400 });
+  }
 
   const system = await prisma.system.findUnique({ where: { id: 1 } });
   const goldRatePer8g = system?.goldCostRatePer8g ?? new Prisma.Decimal("0");
@@ -152,22 +164,27 @@ export async function PATCH(req: Request) {
   const totalCost = goldCost.plus(wastageCost).plus(labourCharges).plus(otherCosts);
 
   const gsm = body.gsmCode ? await prisma.goldsmith.findUnique({ where: { code: body.gsmCode } }) : null;
-  const category = body.categoryCode ? await prisma.category.findUnique({ where: { code: body.categoryCode } }) : null;
-  const subcategory = body.subcategoryCode
-    ? await prisma.subcategory.findUnique({ where: { code: body.subcategoryCode } })
-    : null;
+  const category = await prisma.category.findUnique({ where: { code: body.categoryCode } });
+  const subcategory = await prisma.subcategory.findUnique({ where: { code: body.subcategoryCode } });
+  if (!category) {
+    return NextResponse.json({ error: "Invalid category." }, { status: 400 });
+  }
+  if (!subcategory) {
+    return NextResponse.json({ error: "Invalid subcategory." }, { status: 400 });
+  }
 
   const updated = await prisma.stockMaster.update({
     where: { id: Number(body.id) },
     data: {
       transactionDate: body.transactionDate ? new Date(body.transactionDate) : undefined,
-      location: body.location,
+      location:
+        body.location === undefined ? undefined : (String(body.location ?? "").trim() || null),
       gsmCode: body.gsmCode,
       gsmName: body.gsmCode ? gsm?.name ?? "" : undefined,
       categoryCode: body.categoryCode,
-      articleName: body.categoryCode ? category?.name ?? "" : undefined,
+      articleName: category.name,
       subcategoryCode: body.subcategoryCode,
-      subcategoryName: body.subcategoryCode ? subcategory?.name ?? "" : undefined,
+      subcategoryName: subcategory.name,
       qty: body.qty,
       description: body.description ?? undefined,
       carat: body.carat ?? undefined,

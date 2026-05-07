@@ -14,13 +14,13 @@ export default async function StockPage() {
     prismaWithRetry((p) =>
       p.stockMaster.groupBy({
         by: ["categoryCode", "articleName"],
-        _sum: { qty: true }
+        _sum: { qty: true, goldWeight: true, totalCost: true }
       })
     ),
     prismaWithRetry((p) =>
       p.stockMaster.groupBy({
         by: ["categoryCode", "subcategoryCode", "subcategoryName"],
-        _sum: { qty: true }
+        _sum: { qty: true, goldWeight: true, totalCost: true }
       })
     )
   ]);
@@ -28,7 +28,9 @@ export default async function StockPage() {
   const categoryCounts = categoryCountsRaw.map((r) => ({
     categoryCode: r.categoryCode,
     categoryName: r.articleName,
-    qty: r._sum.qty ?? 0
+    qty: r._sum.qty ?? 0,
+    goldWeight: r._sum.goldWeight?.toString() ?? "0",
+    totalCost: r._sum.totalCost?.toString() ?? "0"
   }));
   const subcategoryCounts = subcategoryCountsRaw
     .filter((r) => r.subcategoryCode != null)
@@ -36,7 +38,9 @@ export default async function StockPage() {
       categoryCode: r.categoryCode,
       subcategoryCode: r.subcategoryCode ?? "",
       subcategoryName: r.subcategoryName ?? "",
-      qty: r._sum.qty ?? 0
+      qty: r._sum.qty ?? 0,
+      goldWeight: r._sum.goldWeight?.toString() ?? "0",
+      totalCost: r._sum.totalCost?.toString() ?? "0"
     }));
 
   return (

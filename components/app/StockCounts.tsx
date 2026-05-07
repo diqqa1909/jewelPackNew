@@ -5,12 +5,14 @@ import { cn } from "@/lib/utils";
 import { ChevronDown } from "lucide-react";
 import { useMemo, useState } from "react";
 
-type CategoryCount = { categoryCode: string; categoryName: string; qty: number };
+type CategoryCount = { categoryCode: string; categoryName: string; qty: number; goldWeight: string; totalCost: string };
 type SubcategoryCount = {
   categoryCode: string;
   subcategoryCode: string;
   subcategoryName: string;
   qty: number;
+  goldWeight: string;
+  totalCost: string;
 };
 
 export function StockCounts({
@@ -79,8 +81,13 @@ export function StockCounts({
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <div className="rounded-lg bg-cream-100 px-3 py-1 text-sm font-bold text-ebony-900">
-                    {c.qty}
+                  <div className="text-right">
+                    <div className="rounded-lg bg-cream-100 px-3 py-1 text-sm font-bold text-ebony-900">
+                      Qty {c.qty}
+                    </div>
+                    <div className="mt-1 text-xs text-ebony-600">
+                      Wt {c.goldWeight}g · Cost {c.totalCost}
+                    </div>
                   </div>
                   <ChevronDown
                     className={cn(
@@ -116,7 +123,9 @@ export function StockCounts({
                               {s.subcategoryName}
                             </span>
                           </div>
-                          <div className="text-xs text-ebony-500">Qty: {s.qty}</div>
+                          <div className="text-xs text-ebony-500">
+                            Qty {s.qty} · Wt {s.goldWeight}g · Cost {s.totalCost}
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -137,4 +146,3 @@ export function StockCounts({
     </div>
   );
 }
-
