@@ -24,6 +24,10 @@ function decimal(value: string) {
   return new Prisma.Decimal(trimmed === "" ? "0" : trimmed);
 }
 
+function clampDecimalNonNegative(d: Prisma.Decimal) {
+  return d.lessThan(new Prisma.Decimal("0")) ? new Prisma.Decimal("0") : d;
+}
+
 export async function POST(req: Request) {
   const body = (await req.json()) as Partial<ReceiptPayload>;
 
@@ -91,6 +95,12 @@ export async function POST(req: Request) {
       labourCharges,
       otherCosts,
       totalCost,
+      soldQty: 0,
+      balanceQty: qty,
+      soldGoldWeight: new Prisma.Decimal("0"),
+      balanceGoldWeight: goldWeight,
+      soldCost: new Prisma.Decimal("0"),
+      balanceCost: totalCost,
       remarks: (body.remarks ?? "").trim() || null
     }
   });
@@ -173,6 +183,9 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: "Invalid subcategory." }, { status: 400 });
   }
 
+  const existing = await prisma.stockMaster.findUnique({ where: { id: Number(body.id) } });
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
   const updated = await prisma.stockMaster.update({
     where: { id: Number(body.id) },
     data: {
@@ -196,6 +209,16 @@ export async function PATCH(req: Request) {
       labourCharges,
       otherCosts,
       totalCost,
+      balanceQty:
+        body.qty == null ? undefined : Math.max(0, Number(body.qty) - (existing.soldQty ?? 0)),
+      balanceGoldWeight:
+        body.goldWeight == null
+          ? undefined
+          : clampDecimalNonNegative(goldWeight.minus(existing.soldGoldWeight)),
+      balanceCost:
+        body.goldWeight == null && body.labourCharges == null && body.otherCosts == null && body.wastageMg == null
+          ? undefined
+          : clampDecimalNonNegative(totalCost.minus(existing.soldCost)),
       remarks: body.remarks ?? undefined
     }
   });

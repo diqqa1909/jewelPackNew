@@ -37,6 +37,13 @@ model StockMaster {
   labourCharges Decimal
   otherCosts    Decimal
   totalCost     Decimal
+  // Balances (updated as items are sold)
+  soldQty          Int     @default(0)
+  balanceQty       Int
+  soldGoldWeight   Decimal @default(0)
+  balanceGoldWeight Decimal
+  soldCost         Decimal @default(0)
+  balanceCost      Decimal
   remarks       String?
 
   createdAt DateTime @default(now())
@@ -44,6 +51,8 @@ model StockMaster {
 
   @@index([categoryCode])
   @@index([subcategoryCode])
+
+  sales Sale[]
 }
 
 model Goldsmith {
@@ -82,4 +91,61 @@ model System {
   updatedAt            DateTime @updatedAt
 
   @@map("system")
+}
+
+model Customer {
+  id        Int      @id @default(autoincrement())
+  name      String
+  phone     String?
+  email     String?
+  address   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sales     SalesNTX[]
+}
+
+model SalesNTX {
+  id            Int      @id @default(autoincrement())
+  saleNo        String   @unique
+  transactionDate DateTime
+  customerId    Int
+  customer      Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+
+  totalItems    Int
+  totalQty      Int
+  totalGoldWeight Decimal
+  totalCost     Decimal
+  remarks       String?
+
+  items         Sale[]
+  createdAt     DateTime @default(now())
+
+  @@map("salesNTX")
+  @@index([transactionDate])
+  @@index([customerId])
+}
+
+model Sale {
+  id            Int      @id @default(autoincrement())
+  salesNTXId    Int
+  salesNTX      SalesNTX @relation(fields: [salesNTXId], references: [id], onDelete: Restrict)
+
+  // The receipt row this sale line consumed from (FIFO allocation)
+  stockMasterId Int
+  stockMaster   StockMaster @relation(fields: [stockMasterId], references: [id], onDelete: Restrict)
+
+  categoryCode    String
+  subcategoryCode String
+  carat           String?
+  qty             Int
+  goldWeight      Decimal
+  cost            Decimal
+
+  createdAt DateTime @default(now())
+
+  @@map("sales")
+  @@index([salesNTXId])
+  @@index([stockMasterId])
+  @@index([subcategoryCode])
 }

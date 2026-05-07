@@ -1,45 +1,73 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
+import Link from "next/link";
+import { prismaWithRetry } from "@/lib/prisma";
 
-const invoices = [
-  { id: "INV-10421", date: "2026-05-03", customer: "Nimal Jewellery", total: "LKR 184,500", status: "Paid" },
-  { id: "INV-10420", date: "2026-05-02", customer: "Ashan Perera", total: "LKR 92,000", status: "Pending" },
-  { id: "INV-10419", date: "2026-05-01", customer: "Sahana Gems", total: "LKR 318,250", status: "Paid" }
-];
+export const dynamic = "force-dynamic";
 
-export default function SalesPage() {
+export default async function SalesPage() {
+  const sales = await prismaWithRetry((p) =>
+    p.salesNTX.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 200,
+      include: { customer: true }
+    })
+  );
+
   return (
     <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-end gap-3">
+        <Link
+          href="/sales/new"
+          className="rounded-lg bg-gold-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-gold-700 transition-all"
+        >
+          New Sale
+        </Link>
+      </div>
+
       <Card>
         <CardHeader>
           <CardTitle>Sales</CardTitle>
-          <CardDescription>Invoices, payments, and outstanding balances.</CardDescription>
+          <CardDescription>Sales receipts (header totals). Click “New Sale” to add items.</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="overflow-hidden rounded-xl border border-slate-200">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+          <div className="overflow-x-auto rounded-lg border border-ebony-100 bg-white">
+            <table className="min-w-[860px] w-full text-sm">
+              <thead className="bg-ebony-50 text-left text-xs font-semibold uppercase tracking-widest text-ebony-700">
                 <tr>
-                  <th className="px-4 py-3">Invoice</th>
-                  <th className="px-4 py-3">Date</th>
-                  <th className="px-4 py-3">Customer</th>
-                  <th className="px-4 py-3">Total</th>
-                  <th className="px-4 py-3">Status</th>
+                  <th className="px-5 py-4">Sale No</th>
+                  <th className="px-5 py-4">Date</th>
+                  <th className="px-5 py-4">Customer</th>
+                  <th className="px-5 py-4 text-right">Items</th>
+                  <th className="px-5 py-4 text-right">Qty</th>
+                  <th className="px-5 py-4 text-right">Weight</th>
+                  <th className="px-5 py-4 text-right">Cost</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
-                {invoices.map((row) => (
-                  <tr key={row.id} className="bg-white">
-                    <td className="px-4 py-3 font-medium">{row.id}</td>
-                    <td className="px-4 py-3">{row.date}</td>
-                    <td className="px-4 py-3">{row.customer}</td>
-                    <td className="px-4 py-3">{row.total}</td>
-                    <td className="px-4 py-3">
-                      <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
-                        {row.status}
-                      </span>
+              <tbody className="divide-y divide-ebony-100">
+                {sales.map((s) => (
+                  <tr key={s.id} className="bg-white">
+                    <td className="px-5 py-4 font-semibold text-ebony-900">{s.saleNo}</td>
+                    <td className="px-5 py-4 text-ebony-700">
+                      {new Date(s.transactionDate).toISOString().slice(0, 10)}
+                    </td>
+                    <td className="px-5 py-4 text-ebony-700">{s.customer.name}</td>
+                    <td className="px-5 py-4 text-right font-semibold text-ebony-900">{s.totalItems}</td>
+                    <td className="px-5 py-4 text-right text-ebony-700">{s.totalQty}</td>
+                    <td className="px-5 py-4 text-right text-ebony-700">
+                      {Number(s.totalGoldWeight.toString()).toFixed(3)}g
+                    </td>
+                    <td className="px-5 py-4 text-right font-semibold text-ebony-900">
+                      {Number(s.totalCost.toString()).toFixed(2)}
                     </td>
                   </tr>
                 ))}
+                {sales.length === 0 && (
+                  <tr>
+                    <td className="px-5 py-8 text-center text-sm text-ebony-600" colSpan={7}>
+                      No sales yet.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
