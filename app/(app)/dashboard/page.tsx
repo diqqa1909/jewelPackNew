@@ -1,33 +1,72 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
+import { Prisma } from "@/lib/generated/prisma";
+import { prismaWithRetry } from "@/lib/prisma";
 
-const kpis = [
-  { label: "On-hand Items", value: "1,284", note: "Across 38 categories" },
-  { label: "Low Stock", value: "23", note: "Reorder recommended" },
-  { label: "Sales (30d)", value: "LKR 4.82M", note: "Invoices: 214" },
-  { label: "Gross Margin", value: "18.6%", note: "Last 30 days" }
-];
-
-const recentSales = [
-  { id: "INV-10421", customer: "Nimal Jewellery", amount: "LKR 184,500", status: "Paid" },
-  { id: "INV-10420", customer: "Ashan Perera", amount: "LKR 92,000", status: "Pending" },
-  { id: "INV-10419", customer: "Sahana Gems", amount: "LKR 318,250", status: "Paid" },
-  { id: "INV-10418", customer: "Malithi Silva", amount: "LKR 41,000", status: "Partial" }
-];
-
-function getStatusBadgeStyles(status: string) {
-  switch (status) {
-    case "Paid":
-      return "bg-green-100 text-green-800 ring-green-300 border-green-300";
-    case "Pending":
-      return "bg-amber-100 text-amber-800 ring-amber-300 border-amber-300";
-    case "Partial":
-      return "bg-blue-100 text-blue-800 ring-blue-300 border-blue-300";
-    default:
-      return "bg-gray-100 text-gray-700 ring-gray-300 border-gray-300";
+function formatLkr(value: number) {
+  const n = Number.isFinite(value) ? value : 0;
+  try {
+    return new Intl.NumberFormat("en-LK", { style: "currency", currency: "LKR", maximumFractionDigits: 0 }).format(n);
+  } catch {
+    return `LKR ${Math.round(n).toLocaleString("en-US")}`;
   }
 }
 
-export default function DashboardPage() {
+function toNumber(d: unknown) {
+  if (typeof d === "number") return d;
+  if (d && typeof (d as any).toString === "function") {
+    const n = Number((d as any).toString());
+    return Number.isFinite(n) ? n : 0;
+  }
+  return 0;
+}
+
+export default async function DashboardPage() {
+  const now = new Date();
+  const from30d = new Date(now);
+  from30d.setDate(from30d.getDate() - 30);
+
+  const [stockAgg, categoryCount, lowStockCount, invAgg, recentInvoices] = await Promise.all([
+    prismaWithRetry((p) =>
+      p.stockMaster.aggregate({
+        _sum: { balanceQty: true },
+        _count: { _all: true }
+      })
+    ),
+    prismaWithRetry((p) => p.category.count()),
+    prismaWithRetry((p) =>
+      p.stockMaster.count({
+        where: { balanceQty: { gt: 0, lte: 2 } }
+      })
+    ),
+    prismaWithRetry((p) =>
+      p.salesNTX.aggregate({
+        where: { transactionDate: { gte: from30d } },
+        _sum: { sellSubTotal: true, totalCost: true },
+        _count: { _all: true }
+      })
+    ),
+    prismaWithRetry((p) =>
+      p.salesNTX.findMany({
+        orderBy: { createdAt: "desc" },
+        take: 8,
+        include: { customer: true, salesman: true }
+      })
+    )
+  ]);
+
+  const onHandItems = stockAgg._sum.balanceQty ?? 0;
+  const invAmount30d = toNumber(invAgg._sum.sellSubTotal ?? new Prisma.Decimal("0"));
+  const invCost30d = toNumber(invAgg._sum.totalCost ?? new Prisma.Decimal("0"));
+  const invCount30d = invAgg._count._all ?? 0;
+  const grossMarginPct = invAmount30d > 0 ? ((invAmount30d - invCost30d) / invAmount30d) * 100 : 0;
+
+  const kpis = [
+    { label: "On-hand Items", value: String(onHandItems), note: `Across ${categoryCount} categories` },
+    { label: "Low Stock", value: String(lowStockCount), note: "Balance qty â‰¤ 2" },
+    { label: "Invoices (30d)", value: formatLkr(invAmount30d), note: `Invoices: ${invCount30d}` },
+    { label: "Gross Margin (30d)", value: `${grossMarginPct.toFixed(1)}%`, note: "Based on invoice amount vs cost" }
+  ];
+
   return (
     <div className="space-y-6">
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -44,11 +83,11 @@ export default function DashboardPage() {
         ))}
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-3">
-        <Card className="xl:col-span-2">
+      <section className="grid gap-6">
+        <Card>
           <CardHeader>
-            <CardTitle>Recent Sales</CardTitle>
-            <CardDescription>Latest invoices and payment status.</CardDescription>
+            <CardTitle>Recent Invoices</CardTitle>
+            <CardDescription>Latest invoices (most recent first).</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="overflow-hidden rounded-lg border border-ebony-100">
@@ -58,48 +97,35 @@ export default function DashboardPage() {
                     <th className="px-5 py-4">Invoice</th>
                     <th className="px-5 py-4">Customer</th>
                     <th className="px-5 py-4">Amount</th>
-                    <th className="px-5 py-4">Status</th>
+                    <th className="px-5 py-4">Salesman</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-ebony-100">
-                  {recentSales.map((row) => (
-                    <tr key={row.id} className="bg-white hover:bg-ebony-50 transition-colors">
-                      <td className="px-5 py-4 font-semibold text-ebony-900">{row.id}</td>
-                      <td className="px-5 py-4 text-ebony-700">{row.customer}</td>
-                      <td className="px-5 py-4 text-ebony-700 font-medium">{row.amount}</td>
-                      <td className="px-5 py-4">
-                        <span className={`rounded-full px-3 py-1.5 text-xs font-semibold ring-1 border ${getStatusBadgeStyles(row.status)}`}>
-                          {row.status}
-                        </span>
+                  {recentInvoices.map((inv) => (
+                    <tr key={inv.id} className="bg-white hover:bg-ebony-50 transition-colors">
+                      <td className="px-5 py-4 font-semibold text-ebony-900">{inv.saleNo}</td>
+                      <td className="px-5 py-4 text-ebony-700">
+                        <div className="font-semibold text-ebony-900">{inv.customer.name}</div>
+                        <div className="text-xs text-ebony-600">{new Date(inv.transactionDate).toISOString().slice(0, 10)}</div>
+                      </td>
+                      <td className="px-5 py-4 text-ebony-700 font-medium tabular-nums">
+                        {formatLkr(toNumber(inv.sellSubTotal))}
+                      </td>
+                      <td className="px-5 py-4 text-ebony-700">
+                        {inv.salesman ? `${inv.salesman.code} â€” ${inv.salesman.name}` : "â€”"}
                       </td>
                     </tr>
                   ))}
+                  {recentInvoices.length === 0 ? (
+                    <tr>
+                      <td className="px-5 py-8 text-center text-sm text-ebony-600" colSpan={4}>
+                        No invoices yet.
+                      </td>
+                    </tr>
+                  ) : null}
                 </tbody>
               </table>
             </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Today</CardTitle>
-            <CardDescription>Quick operational checklist.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {[
-              "Verify gold price updates",
-              "Reconcile cash counter",
-              "Review low-stock alerts",
-              "Follow up pending invoices"
-            ].map((t) => (
-              <div
-                key={t}
-                className="flex items-center justify-between rounded-lg border border-ebony-100 bg-white hover:bg-ebony-50 px-4 py-3 text-sm transition-all"
-              >
-                <span className="font-medium text-ebony-700">{t}</span>
-                <span className="text-xs font-semibold text-gold-600">Open</span>
-              </div>
-            ))}
           </CardContent>
         </Card>
       </section>

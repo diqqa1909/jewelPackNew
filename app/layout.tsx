@@ -4,7 +4,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "JewelPack",
-  description: "Stock and sales management for jewellery businesses."
+  description: "Stock and invoice management for jewellery businesses."
 };
 
 export default function RootLayout({

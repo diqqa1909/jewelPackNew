@@ -1,14 +1,17 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
-  const customers = await prisma.customer.findMany({ orderBy: { createdAt: "desc" } });
-  return NextResponse.json({ customers });
+  const suppliers = await prisma.supplier.findMany({ orderBy: [{ createdAt: "desc" }] });
+  return NextResponse.json({ suppliers });
 }
 
 export async function POST(req: Request) {
   const body = (await req.json()) as Partial<{
     name: string;
+    contact?: string | null;
     phone?: string | null;
     email?: string | null;
     address?: string | null;
@@ -17,46 +20,47 @@ export async function POST(req: Request) {
   const name = (body.name ?? "").trim();
   if (!name) return NextResponse.json({ error: "Name is required" }, { status: 400 });
 
-  const customer = await prisma.$transaction(async (tx) => {
-    const created = await tx.customer.create({
-      data: {
-        name,
-        phone: (body.phone ?? "").trim() || null,
-        email: (body.email ?? "").trim() || null,
-        address: (body.address ?? "").trim() || null
-      }
-    });
-    const accountNumber = `CUST-${String(created.id).padStart(6, "0")}`;
-    return tx.customer.update({ where: { id: created.id }, data: { accountNumber } });
+  const supplier = await prisma.supplier.create({
+    data: {
+      name,
+      contact: (body.contact ?? "").trim() || null,
+      phone: (body.phone ?? "").trim() || null,
+      email: (body.email ?? "").trim() || null,
+      address: (body.address ?? "").trim() || null
+    }
   });
 
-  return NextResponse.json({ customer });
+  return NextResponse.json({ supplier });
 }
 
 export async function PATCH(req: Request) {
   const body = (await req.json()) as Partial<{
     id: number;
     name: string;
+    contact?: string | null;
     phone?: string | null;
     email?: string | null;
     address?: string | null;
   }>;
+
   const id = Number(body.id);
   if (!Number.isFinite(id)) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
 
   const name = (body.name ?? "").trim();
   if (!name) return NextResponse.json({ error: "Name is required" }, { status: 400 });
 
-  const customer = await prisma.customer.update({
+  const supplier = await prisma.supplier.update({
     where: { id },
     data: {
       name,
+      contact: body.contact === undefined ? undefined : (String(body.contact ?? "").trim() || null),
       phone: body.phone === undefined ? undefined : (String(body.phone ?? "").trim() || null),
       email: body.email === undefined ? undefined : (String(body.email ?? "").trim() || null),
       address: body.address === undefined ? undefined : (String(body.address ?? "").trim() || null)
     }
   });
-  return NextResponse.json({ customer });
+
+  return NextResponse.json({ supplier });
 }
 
 export async function DELETE(req: Request) {
@@ -64,11 +68,7 @@ export async function DELETE(req: Request) {
   const id = Number(url.searchParams.get("id"));
   if (!Number.isFinite(id)) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
 
-  const saleCount = await prisma.salesNTX.count({ where: { customerId: id } });
-  if (saleCount > 0) {
-    return NextResponse.json({ error: "Unable to delete. Invoices exist for this customer." }, { status: 409 });
-  }
-
-  await prisma.customer.delete({ where: { id } });
+  await prisma.supplier.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }
+

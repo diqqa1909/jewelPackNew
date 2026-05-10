@@ -43,6 +43,17 @@ function isNonNegativeNumber(value: string) {
   return n >= 0;
 }
 
+function sanitizeInt(raw: string) {
+  return String(raw ?? "").replace(/[^\d]/g, "");
+}
+
+function sanitizeDecimal(raw: string) {
+  const s = String(raw ?? "").replace(/[^\d.]/g, "");
+  const firstDot = s.indexOf(".");
+  if (firstDot === -1) return s;
+  return s.slice(0, firstDot + 1) + s.slice(firstDot + 1).replace(/\./g, "");
+}
+
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -527,7 +538,7 @@ export function ReceiptForm({
               <input
                 inputMode="numeric"
                 value={form.qty}
-                onChange={(e) => update("qty", e.target.value)}
+                onChange={(e) => update("qty", sanitizeInt(e.target.value))}
                 placeholder="0"
                 className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
               />
@@ -566,7 +577,7 @@ export function ReceiptForm({
               <div className="font-bold text-ebony-700">Gold Weight</div>
               <input
                 value={form.goldWeight}
-                onChange={(e) => update("goldWeight", e.target.value)}
+                onChange={(e) => update("goldWeight", sanitizeDecimal(e.target.value))}
                 placeholder="grams"
                 className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
               />
@@ -588,7 +599,7 @@ export function ReceiptForm({
                 inputMode="decimal"
                 disabled={form.wastageYN !== "Y"}
                 value={form.wastageMg}
-                onChange={(e) => update("wastageMg", e.target.value)}
+                onChange={(e) => update("wastageMg", sanitizeDecimal(e.target.value))}
                 placeholder={form.wastageYN === "Y" ? "0" : "Enable wastage to enter"}
                 className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30 disabled:opacity-60"
               />
@@ -609,7 +620,7 @@ export function ReceiptForm({
               <input
                 inputMode="decimal"
                 value={form.labourCharges}
-                onChange={(e) => update("labourCharges", e.target.value)}
+                onChange={(e) => update("labourCharges", sanitizeDecimal(e.target.value))}
                 placeholder="0.00"
                 className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
               />
@@ -621,7 +632,7 @@ export function ReceiptForm({
               <input
                 inputMode="decimal"
                 value={form.otherCosts}
-                onChange={(e) => update("otherCosts", e.target.value)}
+                onChange={(e) => update("otherCosts", sanitizeDecimal(e.target.value))}
                 placeholder="0.00"
                 className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
               />
@@ -679,7 +690,7 @@ export function ReceiptForm({
             <input
               inputMode="decimal"
               value={systemForm.nslRate}
-              onChange={(e) => setSystemForm((p) => ({ ...p, nslRate: e.target.value }))}
+              onChange={(e) => setSystemForm((p) => ({ ...p, nslRate: sanitizeDecimal(e.target.value) }))}
               placeholder="e.g. 2.5"
               className="w-full rounded-lg border border-ebony-200 bg-white px-4 py-2.5 outline-none transition-all focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
             />
@@ -690,7 +701,7 @@ export function ReceiptForm({
             <input
               inputMode="decimal"
               value={systemForm.goldCostRatePer8g}
-              onChange={(e) => setSystemForm((p) => ({ ...p, goldCostRatePer8g: e.target.value }))}
+              onChange={(e) => setSystemForm((p) => ({ ...p, goldCostRatePer8g: sanitizeDecimal(e.target.value) }))}
               placeholder="e.g. 0.00"
               className="w-full rounded-lg border border-ebony-200 bg-white px-4 py-2.5 outline-none transition-all focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
             />
@@ -701,7 +712,7 @@ export function ReceiptForm({
             <input
               inputMode="decimal"
               value={systemForm.wastageRateMgPer8g}
-              onChange={(e) => setSystemForm((p) => ({ ...p, wastageRateMgPer8g: e.target.value }))}
+              onChange={(e) => setSystemForm((p) => ({ ...p, wastageRateMgPer8g: sanitizeDecimal(e.target.value) }))}
               placeholder="e.g. 0"
               className="w-full rounded-lg border border-ebony-200 bg-white px-4 py-2.5 outline-none transition-all focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
             />

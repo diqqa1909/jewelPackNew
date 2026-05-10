@@ -21,14 +21,14 @@ export default async function SalesPage() {
           href="/sales/new"
           className="rounded-lg bg-gold-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-gold-700 transition-all"
         >
-          New Sale
+          New Invoice
         </Link>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Sales</CardTitle>
-          <CardDescription>Sales receipts (header totals). Click “New Sale” to add items.</CardDescription>
+          <CardTitle>Invoices</CardTitle>
+          <CardDescription>Invoices (header totals). Click &quot;New Invoice&quot; to add items.</CardDescription>
         </CardHeader>
         <CardContent>
           <SalesTable
@@ -40,7 +40,7 @@ export default async function SalesPage() {
               totalItems: s.totalItems,
               totalQty: s.totalQty,
               totalGoldWeight: s.totalGoldWeight.toString(),
-              totalCost: s.totalCost.toString()
+              totalCost: s.sellSubTotal.toString()
             }))}
           />
         </CardContent>

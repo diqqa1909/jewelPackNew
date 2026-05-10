@@ -6,8 +6,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Trash2 } from "lucide-react";
 
 type CustomerRow = { id: number; name: string; phone?: string | null };
-type CategoryRow = { code: string; name: string };
-type SubcategoryRow = { code: string; name: string; categoryCode: string };
+type SalesmanRow = { id: number; code: string; name: string };
+type SubcategoryRow = { code: string; name: string; categoryCode: string; carat?: string | null };
 
 type AvailabilityRow = {
   subcategoryCode: string;
@@ -19,7 +19,6 @@ type AvailabilityRow = {
 
 type Line = {
   id: string;
-  categoryCode: string;
   subcategoryCode: string;
   carat: "" | "18K" | "22K";
   qty: string;
@@ -40,22 +39,33 @@ function toNumber(value: string) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function sanitizeInt(raw: string) {
+  return String(raw ?? "").replace(/[^\d]/g, "");
+}
+
+function sanitizeDecimal(raw: string) {
+  const s = String(raw ?? "").replace(/[^\d.]/g, "");
+  const firstDot = s.indexOf(".");
+  if (firstDot === -1) return s;
+  return s.slice(0, firstDot + 1) + s.slice(firstDot + 1).replace(/\./g, "");
+}
+
 export function SalesForm() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
-  const [categories, setCategories] = useState<CategoryRow[]>([]);
+  const [salesmen, setSalesmen] = useState<SalesmanRow[]>([]);
   const [subcategories, setSubcategories] = useState<SubcategoryRow[]>([]);
   const [availability, setAvailability] = useState<AvailabilityRow[]>([]);
 
   const [transactionDate, setTransactionDate] = useState(todayISO());
+  const [salesmanId, setSalesmanId] = useState<number | "">("");
   const [customerId, setCustomerId] = useState<number | "">("");
   const [remarks, setRemarks] = useState("");
   const [invoiceNo, setInvoiceNo] = useState("");
   const [lines, setLines] = useState<Line[]>([
     {
       id: uid(),
-      categoryCode: "",
       subcategoryCode: "",
       carat: "",
       qty: "",
@@ -66,22 +76,20 @@ export function SalesForm() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
-  const [categoryRefs] = useState(() => new Map<string, HTMLSelectElement | null>());
   const [cellRefs] = useState(
     () => new Map<string, HTMLSelectElement | HTMLInputElement | HTMLButtonElement | null>()
   );
 
   useEffect(() => {
     if (!pendingFocusId) return;
-    const cell = cellRefs.get(`${pendingFocusId}:category`) ?? null;
-    const el = (cell as any) ?? categoryRefs.get(pendingFocusId) ?? null;
+    const el = cellRefs.get(`${pendingFocusId}:subcategory`) ?? null;
     if (el && typeof (el as any).focus === "function") {
       (el as any).focus();
       setPendingFocusId(null);
     }
-  }, [categoryRefs, pendingFocusId, lines.length]);
+  }, [pendingFocusId, lines.length, cellRefs]);
 
-  const navCols = ["category", "subcategory", "carat", "qty", "weight", "sellRate"] as const;
+  const navCols = ["subcategory", "qty", "weight", "sellRate"] as const;
   type NavCol = (typeof navCols)[number];
 
   function setCellRef(rowId: string, col: NavCol, el: any) {
@@ -116,7 +124,7 @@ export function SalesForm() {
     if (nextRowIndex >= lines.length) {
       addLine();
       // focus will happen via pendingFocusId, but we want the first cell
-      // (category) on the new row.
+      // (subcategory) on the new row.
       return;
     }
     if (nextRowIndex < 0) return;
@@ -130,7 +138,7 @@ export function SalesForm() {
       try {
         const [c1, c2, c3, c4, inv] = await Promise.all([
           fetch("/api/customers", { cache: "no-store" }).then((r) => r.json()),
-          fetch("/api/categories", { cache: "no-store" }).then((r) => r.json()),
+          fetch("/api/salesmen", { cache: "no-store" }).then((r) => r.json()),
           fetch("/api/subcategories", { cache: "no-store" }).then((r) => r.json()),
           fetch("/api/stock/availability", { cache: "no-store" }).then((r) => r.json()),
           fetch(`/api/sales?preview=1&transactionDate=${encodeURIComponent(todayISO())}`, {
@@ -139,7 +147,7 @@ export function SalesForm() {
         ]);
         if (!active) return;
         setCustomers(c1.customers ?? []);
-        setCategories(c2.categories ?? []);
+        setSalesmen(c2.salesmen ?? []);
         setSubcategories(c3.subcategories ?? []);
         setAvailability(c4.rows ?? []);
         setInvoiceNo(inv.saleNo ?? "");
@@ -173,15 +181,8 @@ export function SalesForm() {
     };
   }, [transactionDate]);
 
-  const subsByCategory = useMemo(() => {
-    const map = new Map<string, SubcategoryRow[]>();
-    for (const s of subcategories) {
-      const list = map.get(s.categoryCode) ?? [];
-      list.push(s);
-      map.set(s.categoryCode, list);
-    }
-    for (const [k, v] of map.entries()) v.sort((a, b) => a.name.localeCompare(b.name));
-    return map;
+  const subcategoriesSorted = useMemo(() => {
+    return [...subcategories].sort((a, b) => a.name.localeCompare(b.name));
   }, [subcategories]);
 
   const availabilityKeyed = useMemo(() => {
@@ -189,6 +190,12 @@ export function SalesForm() {
     for (const r of availability) map.set(`${r.subcategoryCode}||${r.carat}`, r);
     return map;
   }, [availability]);
+
+  const subcategoryByCode = useMemo(() => {
+    const map = new Map<string, SubcategoryRow>();
+    for (const s of subcategories) map.set(s.code, s);
+    return map;
+  }, [subcategories]);
 
   const totals = useMemo(() => {
     let totalQty = 0;
@@ -203,11 +210,29 @@ export function SalesForm() {
   const qtyErrors = useMemo(() => {
     const map = new Map<string, string>();
     for (const l of lines) {
-      if (!l.subcategoryCode || !l.carat) continue;
+      if (!l.subcategoryCode) continue;
+      if (!l.carat) {
+        map.set(l.id, "Carat not set for this subcategory");
+        continue;
+      }
       const avail = availabilityKeyed.get(`${l.subcategoryCode}||${l.carat}`);
       if (!avail) continue;
       const qty = Math.floor(toNumber(l.qty));
       if (qty > (avail.balanceQty ?? 0)) map.set(l.id, `Quantity exceeded (available ${avail.balanceQty})`);
+    }
+    return map;
+  }, [availabilityKeyed, lines]);
+
+  const weightErrors = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const l of lines) {
+      if (!l.subcategoryCode) continue;
+      if (!l.carat) continue;
+      const avail = availabilityKeyed.get(`${l.subcategoryCode}||${l.carat}`);
+      if (!avail) continue;
+      const entered = Math.max(0, toNumber(l.goldWeight));
+      const available = Math.max(0, toNumber(avail.balanceGoldWeight ?? "0"));
+      if (entered > available) map.set(l.id, `Weight exceeded (available ${available.toFixed(3)}g)`);
     }
     return map;
   }, [availabilityKeyed, lines]);
@@ -224,7 +249,19 @@ export function SalesForm() {
   }, [lines]);
 
   function updateLine(id: string, patch: Partial<Line>) {
-    setLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+    setLines((prev) =>
+      prev.map((l) => {
+        if (l.id !== id) return l;
+        const next = { ...l, ...patch };
+        if (patch.subcategoryCode !== undefined) {
+          const sub = String(patch.subcategoryCode ?? "").trim();
+          const sc = subcategoryByCode.get(sub);
+          const carat = String(sc?.carat ?? "").trim();
+          next.carat = (carat === "18K" || carat === "22K" ? carat : "") as Line["carat"];
+        }
+        return next;
+      })
+    );
     setError("");
   }
 
@@ -234,7 +271,6 @@ export function SalesForm() {
       ...prev,
       {
         id: nextId,
-        categoryCode: "",
         subcategoryCode: "",
         carat: "",
         qty: "",
@@ -251,43 +287,44 @@ export function SalesForm() {
 
   async function submit() {
     setError("");
+    const sid = typeof salesmanId === "number" ? salesmanId : Number(salesmanId);
     const cid = typeof customerId === "number" ? customerId : Number(customerId);
     if (!transactionDate) return setError("Transaction date is required.");
+    if (!Number.isFinite(sid)) return setError("Salesman is required.");
     if (!Number.isFinite(cid)) return setError("Customer is required.");
 
-    const items = lines
-      .filter((l) => l.subcategoryCode.trim() !== "")
-      .map((l) => ({
-        subcategoryCode: l.subcategoryCode.trim(),
-        carat: l.carat,
-        qty: Math.floor(toNumber(l.qty)),
-        goldWeight: String(l.goldWeight ?? "").trim(),
-        sellRatePer8g: String(l.sellRatePer8g ?? "").trim()
-      }));
+    const selectedLines = lines.filter((l) => l.subcategoryCode.trim() !== "");
+    const items = selectedLines.map((l) => ({
+      subcategoryCode: l.subcategoryCode.trim(),
+      qty: Math.floor(toNumber(l.qty)),
+      goldWeight: String(l.goldWeight ?? "").trim(),
+      sellRatePer8g: String(l.sellRatePer8g ?? "").trim()
+    }));
 
     if (items.length === 0) return setError("Add at least one item.");
-    for (const it of items) {
-      if (!it.carat) return setError("Select carat for all items.");
+    for (const [idx, it] of items.entries()) {
+      const line = selectedLines[idx];
+      if (!line?.carat) return setError("Carat cannot be determined for one or more items.");
       if (!Number.isFinite(it.qty) || it.qty <= 0) return setError("Enter valid qty for all items.");
       if (!it.goldWeight || toNumber(it.goldWeight) <= 0) return setError("Enter valid weight for all items.");
       if (!it.sellRatePer8g || toNumber(it.sellRatePer8g) <= 0)
         return setError("Enter valid sell rate for all items.");
     }
     if (qtyErrors.size > 0) return setError("Quantity exceeded. Please reduce qty.");
+    if (weightErrors.size > 0) return setError("Weight exceeded. Please reduce weight.");
 
     setBusy(true);
     try {
       const res = await fetch("/api/sales", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ transactionDate, customerId: cid, remarks, items })
+        body: JSON.stringify({ transactionDate, salesmanId: sid, customerId: cid, remarks, items })
       });
       const json = (await res.json().catch(() => null)) as { error?: string } | null;
       if (!res.ok) throw new Error(json?.error ?? "Save failed");
       setLines([
         {
           id: uid(),
-          categoryCode: "",
           subcategoryCode: "",
           carat: "",
           qty: "",
@@ -296,6 +333,7 @@ export function SalesForm() {
         }
       ]);
       setRemarks("");
+      setSalesmanId("");
       router.push("/sales");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Save failed");
@@ -309,8 +347,8 @@ export function SalesForm() {
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1">
-            <CardTitle>Create Sale</CardTitle>
-            <CardDescription>Create a sales receipt with multiple items.</CardDescription>
+            <CardTitle>Create Invoice</CardTitle>
+            <CardDescription>Create an invoice with multiple items.</CardDescription>
           </div>
           <div className="rounded-lg border border-ebony-200 bg-white px-3 py-2 text-xs font-semibold text-ebony-700">
             Invoice No: {invoiceNo || "—"}
@@ -333,7 +371,23 @@ export function SalesForm() {
             />
           </label>
 
-          <label className="space-y-2 text-sm md:col-span-2">
+          <label className="space-y-2 text-sm">
+            <div className="font-semibold text-ebony-700">Salesman</div>
+            <select
+              value={salesmanId}
+              onChange={(e) => setSalesmanId(e.target.value ? Number(e.target.value) : "")}
+              className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
+            >
+              <option value="">Select salesman...</option>
+              {salesmen.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.code} — {s.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="space-y-2 text-sm">
             <div className="font-semibold text-ebony-700">Customer</div>
             <select
               value={customerId}
@@ -369,7 +423,6 @@ export function SalesForm() {
               <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
                 <thead className="sticky top-0 z-10 bg-ebony-50 text-left text-xs font-semibold uppercase tracking-widest text-ebony-700">
                   <tr>
-                    <th className="border border-ebony-200 px-3 py-2">Category</th>
                     <th className="border border-ebony-200 px-3 py-2">Subcategory</th>
                     <th className="border border-ebony-200 px-3 py-2">Carat</th>
                     <th className="border border-ebony-200 px-3 py-2 text-right">Qty</th>
@@ -381,32 +434,10 @@ export function SalesForm() {
                 </thead>
                 <tbody className="divide-y divide-ebony-100">
                   {lines.map((l) => {
-                    const subs = l.categoryCode ? subsByCategory.get(l.categoryCode) ?? [] : subcategories;
                     const sellRate = Math.max(0, toNumber(l.sellRatePer8g));
                     const sellCost = (Math.max(0, toNumber(l.goldWeight)) / 8) * sellRate;
                     return (
                       <tr key={l.id} className="bg-white hover:bg-cream-50/40 transition-colors">
-                        <td className="border border-ebony-200 p-0">
-                          <select
-                            value={l.categoryCode}
-                            onChange={(e) =>
-                              updateLine(l.id, { categoryCode: e.target.value, subcategoryCode: "" })
-                            }
-                            onKeyDown={(e) => handleTabNav(e, l.id, "category")}
-                            ref={(el) => {
-                              categoryRefs.set(l.id, el);
-                              setCellRef(l.id, "category", el);
-                            }}
-                            className="h-10 w-full rounded-none border-0 bg-white px-2 outline-none focus:bg-cream-50"
-                          >
-                            <option value="">All</option>
-                            {categories.map((c) => (
-                              <option key={c.code} value={c.code}>
-                                {c.code}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
                         <td className="border border-ebony-200 p-0">
                           <select
                             value={l.subcategoryCode}
@@ -416,10 +447,7 @@ export function SalesForm() {
                             className="h-10 w-full rounded-none border-0 bg-white px-2 outline-none focus:bg-cream-50"
                           >
                             <option value="">Select subcategory...</option>
-                            {subs
-                              .slice()
-                              .sort((a, b) => a.name.localeCompare(b.name))
-                              .map((s) => (
+                            {subcategoriesSorted.map((s) => (
                                 <option key={s.code} value={s.code}>
                                   {s.code} — {s.name}
                                 </option>
@@ -430,23 +458,15 @@ export function SalesForm() {
                           )}
                         </td>
                         <td className="border border-ebony-200 p-0">
-                          <select
-                            value={l.carat}
-                            onChange={(e) => updateLine(l.id, { carat: e.target.value as Line["carat"] })}
-                            onKeyDown={(e) => handleTabNav(e, l.id, "carat")}
-                            ref={(el) => setCellRef(l.id, "carat", el)}
-                            className="h-10 w-full rounded-none border-0 bg-white px-2 outline-none focus:bg-cream-50"
-                          >
-                            <option value="">Select...</option>
-                            <option value="18K">18K</option>
-                            <option value="22K">22K</option>
-                          </select>
+                          <div className="h-10 w-full bg-cream-100 px-2 py-2 font-semibold text-ebony-900">
+                            {l.carat || "â€”"}
+                          </div>
                         </td>
                         <td className="border border-ebony-200 p-0 text-right">
                           <input
                             inputMode="numeric"
                             value={l.qty}
-                            onChange={(e) => updateLine(l.id, { qty: e.target.value })}
+                            onChange={(e) => updateLine(l.id, { qty: sanitizeInt(e.target.value) })}
                             onKeyDown={(e) => handleTabNav(e, l.id, "qty")}
                             ref={(el) => setCellRef(l.id, "qty", el)}
                             className={[
@@ -459,17 +479,31 @@ export function SalesForm() {
                           <input
                             inputMode="decimal"
                             value={l.goldWeight}
-                            onChange={(e) => updateLine(l.id, { goldWeight: e.target.value })}
-                            onKeyDown={(e) => handleTabNav(e, l.id, "weight")}
+                            onChange={(e) => updateLine(l.id, { goldWeight: sanitizeDecimal(e.target.value) })}
+                            onKeyDown={(e) => {
+                              if (e.key !== "Tab") return;
+                              if (weightErrors.get(l.id)) {
+                                e.preventDefault();
+                                setError(weightErrors.get(l.id) ?? "Weight exceeded");
+                                return;
+                              }
+                              return handleTabNav(e, l.id, "weight");
+                            }}
                             ref={(el) => setCellRef(l.id, "weight", el)}
-                            className="h-10 w-full rounded-none border-0 bg-white px-2 text-right outline-none focus:bg-cream-50"
+                            className={[
+                              "h-10 w-full rounded-none border-0 bg-white px-2 text-right outline-none focus:bg-cream-50",
+                              weightErrors.get(l.id) ? "text-red-700" : ""
+                            ].join(" ")}
                           />
+                          {weightErrors.get(l.id) ? (
+                            <div className="px-2 pb-1 text-left text-xs font-semibold text-red-600">{weightErrors.get(l.id)}</div>
+                          ) : null}
                         </td>
                         <td className="border border-ebony-200 p-0 text-right">
                           <input
                             inputMode="decimal"
                             value={l.sellRatePer8g}
-                            onChange={(e) => updateLine(l.id, { sellRatePer8g: e.target.value })}
+                            onChange={(e) => updateLine(l.id, { sellRatePer8g: sanitizeDecimal(e.target.value) })}
                             onKeyDown={(e) => {
                               if (e.key === "Tab") return handleTabNav(e, l.id, "sellRate");
                               if (e.key !== "Enter") return;
@@ -503,7 +537,7 @@ export function SalesForm() {
                 </tbody>
                 <tfoot>
                   <tr className="bg-ebony-50">
-                    <td className="border border-ebony-200 px-3 py-2 font-semibold text-ebony-900" colSpan={3}>
+                    <td className="border border-ebony-200 px-3 py-2 font-semibold text-ebony-900" colSpan={2}>
                       Overall Total
                     </td>
                     <td className="border border-ebony-200 px-3 py-2 text-right font-bold text-ebony-900">
@@ -546,7 +580,7 @@ export function SalesForm() {
                 disabled={busy}
                 className="rounded-lg bg-gold-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-gold-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {busy ? "Saving..." : "Save Sale"}
+                {busy ? "Saving..." : "Save Invoice"}
               </button>
             </div>
           </div>

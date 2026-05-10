@@ -1,16 +1,15 @@
 "use client";
 
-import type { Customer } from "@/lib/generated/prisma";
-import { useRouter } from "next/navigation";
+import type { Supplier } from "@/lib/generated/prisma";
 import { useMemo, useState } from "react";
 
-type Props = { initial: Customer[] };
+type Props = { initial: Supplier[] };
 
-export function CustomersTable({ initial }: Props) {
-  const router = useRouter();
-  const [rows, setRows] = useState<Customer[]>(initial);
+export function SuppliersTable({ initial }: Props) {
+  const [rows, setRows] = useState<Supplier[]>(initial);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [name, setName] = useState("");
+  const [contact, setContact] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [address, setAddress] = useState("");
@@ -22,6 +21,7 @@ export function CustomersTable({ initial }: Props) {
   function resetForm() {
     setEditingId(null);
     setName("");
+    setContact("");
     setPhone("");
     setEmail("");
     setAddress("");
@@ -32,17 +32,15 @@ export function CustomersTable({ initial }: Props) {
     setBusy(true);
     setError("");
     try {
-      const res = await fetch("/api/customers", {
+      const res = await fetch("/api/suppliers", {
         method: editingId ? "PATCH" : "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: editingId, name, phone, email, address })
+        body: JSON.stringify({ id: editingId, name, contact, phone, email, address })
       });
-      if (!res.ok) {
-        const msg = (await res.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(msg?.error ?? "Save failed");
-      }
-      const json = (await res.json()) as { customer: Customer };
-      setRows((prev) => [json.customer, ...prev.filter((r) => r.id !== json.customer.id)].sort((a, b) => b.id - a.id));
+      const json = (await res.json().catch(() => null)) as { error?: string; supplier?: Supplier } | null;
+      if (!res.ok) throw new Error(json?.error ?? "Save failed");
+      if (!json?.supplier) throw new Error("Save failed");
+      setRows((prev) => [json.supplier!, ...prev.filter((r) => r.id !== json.supplier!.id)].sort((a, b) => b.id - a.id));
       resetForm();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Save failed");
@@ -52,16 +50,14 @@ export function CustomersTable({ initial }: Props) {
   }
 
   async function remove(id: number) {
-    const ok = confirm("Delete this customer?");
+    const ok = confirm("Delete this supplier?");
     if (!ok) return;
     setBusy(true);
     setError("");
     try {
-      const res = await fetch(`/api/customers?id=${id}`, { method: "DELETE" });
-      if (!res.ok) {
-        const msg = (await res.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(msg?.error ?? "Delete failed");
-      }
+      const res = await fetch(`/api/suppliers?id=${id}`, { method: "DELETE" });
+      const json = (await res.json().catch(() => null)) as { error?: string } | null;
+      if (!res.ok) throw new Error(json?.error ?? "Delete failed");
       setRows((prev) => prev.filter((r) => r.id !== id));
       if (editingId === id) resetForm();
     } catch (e) {
@@ -74,14 +70,22 @@ export function CustomersTable({ initial }: Props) {
   return (
     <div className="space-y-4">
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
       )}
 
       <div className="grid gap-3 rounded-lg border border-ebony-200 bg-white p-4 md:grid-cols-2">
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Customer Name *"
+          placeholder="Supplier Name *"
+          className="w-full rounded-lg border border-ebony-200 bg-white px-4 py-2.5 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+        />
+        <input
+          value={contact}
+          onChange={(e) => setContact(e.target.value)}
+          placeholder="Contact"
           className="w-full rounded-lg border border-ebony-200 bg-white px-4 py-2.5 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
         />
         <input
@@ -100,7 +104,7 @@ export function CustomersTable({ initial }: Props) {
           value={address}
           onChange={(e) => setAddress(e.target.value)}
           placeholder="Address"
-          className="w-full rounded-lg border border-ebony-200 bg-white px-4 py-2.5 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+          className="w-full rounded-lg border border-ebony-200 bg-white px-4 py-2.5 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20 md:col-span-2"
         />
 
         <div className="md:col-span-2 flex items-center justify-end gap-2">
@@ -129,8 +133,8 @@ export function CustomersTable({ initial }: Props) {
         <table className="w-full text-sm">
           <thead className="bg-ebony-50 text-left text-xs font-semibold uppercase tracking-widest text-ebony-700">
             <tr>
-              <th className="px-5 py-4">Account #</th>
               <th className="px-5 py-4">Name</th>
+              <th className="px-5 py-4">Contact</th>
               <th className="px-5 py-4">Phone</th>
               <th className="px-5 py-4">Email</th>
               <th className="px-5 py-4">Address</th>
@@ -139,24 +143,19 @@ export function CustomersTable({ initial }: Props) {
           </thead>
           <tbody className="divide-y divide-ebony-100">
             {rows.map((r) => (
-              <tr
-                key={r.id}
-                className="cursor-pointer bg-white hover:bg-cream-50/60 transition-colors"
-                onClick={() => router.push(`/customers/${r.id}`)}
-                title="View account summary"
-              >
-                <td className="px-5 py-4 font-semibold text-ebony-900 tabular-nums">{r.accountNumber ?? "â€”"}</td>
+              <tr key={r.id} className="bg-white">
                 <td className="px-5 py-4 font-semibold text-ebony-900">{r.name}</td>
+                <td className="px-5 py-4 text-ebony-700">{r.contact ?? "â€”"}</td>
                 <td className="px-5 py-4 text-ebony-700">{r.phone ?? "â€”"}</td>
                 <td className="px-5 py-4 text-ebony-700">{r.email ?? "â€”"}</td>
                 <td className="px-5 py-4 text-ebony-700">{r.address ?? "â€”"}</td>
                 <td className="px-5 py-4 text-right">
                   <button
                     type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
+                    onClick={() => {
                       setEditingId(r.id);
                       setName(r.name);
+                      setContact(r.contact ?? "");
                       setPhone(r.phone ?? "");
                       setEmail(r.email ?? "");
                       setAddress(r.address ?? "");
@@ -168,10 +167,7 @@ export function CustomersTable({ initial }: Props) {
                   </button>
                   <button
                     type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void remove(r.id);
-                    }}
+                    onClick={() => void remove(r.id)}
                     disabled={busy}
                     className="ml-2 rounded-lg border border-red-200 bg-white px-4 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
                   >
@@ -183,7 +179,7 @@ export function CustomersTable({ initial }: Props) {
             {rows.length === 0 && (
               <tr>
                 <td className="px-5 py-8 text-center text-sm text-ebony-600" colSpan={6}>
-                  No customers yet.
+                  No suppliers yet.
                 </td>
               </tr>
             )}

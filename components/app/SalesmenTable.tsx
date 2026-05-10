@@ -1,30 +1,24 @@
 "use client";
 
-import type { Customer } from "@/lib/generated/prisma";
-import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
-type Props = { initial: Customer[] };
+type SalesmanRow = { id: number; code: string; name: string; tags: string[] };
+type SalesmanRowNoTags = { id: number; code: string; name: string };
 
-export function CustomersTable({ initial }: Props) {
-  const router = useRouter();
-  const [rows, setRows] = useState<Customer[]>(initial);
+export function SalesmenTable({ initial }: { initial: SalesmanRowNoTags[] }) {
+  const [rows, setRows] = useState<SalesmanRowNoTags[]>(initial);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [code, setCode] = useState("");
   const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [email, setEmail] = useState("");
-  const [address, setAddress] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  const canSave = useMemo(() => name.trim() !== "" && !busy, [busy, name]);
+  const canSave = useMemo(() => code.trim() !== "" && name.trim() !== "" && !busy, [busy, code, name]);
 
-  function resetForm() {
+  function reset() {
     setEditingId(null);
+    setCode("");
     setName("");
-    setPhone("");
-    setEmail("");
-    setAddress("");
   }
 
   async function save() {
@@ -32,18 +26,21 @@ export function CustomersTable({ initial }: Props) {
     setBusy(true);
     setError("");
     try {
-      const res = await fetch("/api/customers", {
+      const res = await fetch("/api/salesmen", {
         method: editingId ? "PATCH" : "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: editingId, name, phone, email, address })
+        body: JSON.stringify({
+          id: editingId,
+          code,
+          name
+        })
       });
-      if (!res.ok) {
-        const msg = (await res.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(msg?.error ?? "Save failed");
-      }
-      const json = (await res.json()) as { customer: Customer };
-      setRows((prev) => [json.customer, ...prev.filter((r) => r.id !== json.customer.id)].sort((a, b) => b.id - a.id));
-      resetForm();
+      const json = (await res.json().catch(() => null)) as { error?: string; salesman?: SalesmanRowNoTags } | null;
+      if (!res.ok) throw new Error(json?.error ?? "Save failed");
+      const saved = json?.salesman;
+      if (!saved) throw new Error("Save failed");
+      setRows((prev) => [saved, ...prev.filter((r) => r.id !== saved.id)].sort((a, b) => a.name.localeCompare(b.name)));
+      reset();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Save failed");
     } finally {
@@ -52,18 +49,16 @@ export function CustomersTable({ initial }: Props) {
   }
 
   async function remove(id: number) {
-    const ok = confirm("Delete this customer?");
+    const ok = confirm("Delete this salesman?");
     if (!ok) return;
     setBusy(true);
     setError("");
     try {
-      const res = await fetch(`/api/customers?id=${id}`, { method: "DELETE" });
-      if (!res.ok) {
-        const msg = (await res.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(msg?.error ?? "Delete failed");
-      }
+      const res = await fetch(`/api/salesmen?id=${id}`, { method: "DELETE" });
+      const json = (await res.json().catch(() => null)) as { error?: string } | null;
+      if (!res.ok) throw new Error(json?.error ?? "Delete failed");
       setRows((prev) => prev.filter((r) => r.id !== id));
-      if (editingId === id) resetForm();
+      if (editingId === id) reset();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Delete failed");
     } finally {
@@ -74,32 +69,23 @@ export function CustomersTable({ initial }: Props) {
   return (
     <div className="space-y-4">
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
       )}
 
       <div className="grid gap-3 rounded-lg border border-ebony-200 bg-white p-4 md:grid-cols-2">
         <input
+          value={code}
+          onChange={(e) => setCode(e.target.value.toUpperCase())}
+          placeholder="Salesman Code *"
+          style={{ textTransform: "uppercase" }}
+          className="w-full rounded-lg border border-ebony-200 bg-white px-4 py-2.5 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+        />
+        <input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Customer Name *"
-          className="w-full rounded-lg border border-ebony-200 bg-white px-4 py-2.5 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
-        />
-        <input
-          value={phone}
-          onChange={(e) => setPhone(e.target.value)}
-          placeholder="Phone"
-          className="w-full rounded-lg border border-ebony-200 bg-white px-4 py-2.5 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
-        />
-        <input
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="Email"
-          className="w-full rounded-lg border border-ebony-200 bg-white px-4 py-2.5 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
-        />
-        <input
-          value={address}
-          onChange={(e) => setAddress(e.target.value)}
-          placeholder="Address"
+          placeholder="Salesman Name *"
           className="w-full rounded-lg border border-ebony-200 bg-white px-4 py-2.5 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
         />
 
@@ -107,7 +93,7 @@ export function CustomersTable({ initial }: Props) {
           {editingId && (
             <button
               type="button"
-              onClick={resetForm}
+              onClick={reset}
               disabled={busy}
               className="rounded-lg border border-ebony-300 bg-white px-5 py-2.5 text-sm font-semibold text-ebony-700 hover:bg-ebony-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
@@ -129,37 +115,23 @@ export function CustomersTable({ initial }: Props) {
         <table className="w-full text-sm">
           <thead className="bg-ebony-50 text-left text-xs font-semibold uppercase tracking-widest text-ebony-700">
             <tr>
-              <th className="px-5 py-4">Account #</th>
+              <th className="px-5 py-4">Code</th>
               <th className="px-5 py-4">Name</th>
-              <th className="px-5 py-4">Phone</th>
-              <th className="px-5 py-4">Email</th>
-              <th className="px-5 py-4">Address</th>
               <th className="px-5 py-4 text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-ebony-100">
             {rows.map((r) => (
-              <tr
-                key={r.id}
-                className="cursor-pointer bg-white hover:bg-cream-50/60 transition-colors"
-                onClick={() => router.push(`/customers/${r.id}`)}
-                title="View account summary"
-              >
-                <td className="px-5 py-4 font-semibold text-ebony-900 tabular-nums">{r.accountNumber ?? "â€”"}</td>
+              <tr key={r.id} className="bg-white">
+                <td className="px-5 py-4 font-semibold text-ebony-900 tabular-nums">{r.code}</td>
                 <td className="px-5 py-4 font-semibold text-ebony-900">{r.name}</td>
-                <td className="px-5 py-4 text-ebony-700">{r.phone ?? "â€”"}</td>
-                <td className="px-5 py-4 text-ebony-700">{r.email ?? "â€”"}</td>
-                <td className="px-5 py-4 text-ebony-700">{r.address ?? "â€”"}</td>
                 <td className="px-5 py-4 text-right">
                   <button
                     type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
+                    onClick={() => {
                       setEditingId(r.id);
+                      setCode(r.code);
                       setName(r.name);
-                      setPhone(r.phone ?? "");
-                      setEmail(r.email ?? "");
-                      setAddress(r.address ?? "");
                     }}
                     disabled={busy}
                     className="rounded-lg border border-ebony-200 bg-white px-4 py-2 text-xs font-semibold text-ebony-700 hover:bg-ebony-50 disabled:cursor-not-allowed disabled:opacity-60"
@@ -168,10 +140,7 @@ export function CustomersTable({ initial }: Props) {
                   </button>
                   <button
                     type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void remove(r.id);
-                    }}
+                    onClick={() => void remove(r.id)}
                     disabled={busy}
                     className="ml-2 rounded-lg border border-red-200 bg-white px-4 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
                   >
@@ -182,8 +151,8 @@ export function CustomersTable({ initial }: Props) {
             ))}
             {rows.length === 0 && (
               <tr>
-                <td className="px-5 py-8 text-center text-sm text-ebony-600" colSpan={6}>
-                  No customers yet.
+                <td className="px-5 py-8 text-center text-sm text-ebony-600" colSpan={3}>
+                  No salesmen yet.
                 </td>
               </tr>
             )}
@@ -193,4 +162,3 @@ export function CustomersTable({ initial }: Props) {
     </div>
   );
 }
-

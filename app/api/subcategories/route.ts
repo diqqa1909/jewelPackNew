@@ -17,18 +17,25 @@ export async function POST(req: Request) {
     name: string;
     categoryCode: string;
     imageUrl?: string | null;
+    carat?: string | null;
   }>;
   const name = (body.name ?? "").trim();
   const categoryCode = (body.categoryCode ?? "").trim();
   const imageUrl = (body.imageUrl ?? null) ? String(body.imageUrl) : null;
+  const caratRaw = (body.carat ?? null) ? String(body.carat) : "";
+  const carat = caratRaw.trim();
+  const caratValue = carat === "18K" || carat === "22K" ? carat : "";
   if (!name || !categoryCode) {
     return NextResponse.json({ error: "Missing fields" }, { status: 400 });
+  }
+  if (!caratValue) {
+    return NextResponse.json({ error: "Invalid carat. Use 18K or 22K." }, { status: 400 });
   }
   const code = `${categoryCode}-${name}`.toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/(^-|-$)/g, "");
   const subcategory = await prisma.subcategory.upsert({
     where: { code },
-    create: { code, name, categoryCode, imageUrl },
-    update: { name, categoryCode, imageUrl }
+    create: { code, name, categoryCode, imageUrl, carat: caratValue },
+    update: { name, categoryCode, imageUrl, carat: caratValue }
   });
   return NextResponse.json({ subcategory });
 }

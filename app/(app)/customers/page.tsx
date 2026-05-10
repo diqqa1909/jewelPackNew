@@ -11,7 +11,7 @@ export default async function CustomersPage() {
     <Card>
       <CardHeader>
         <CardTitle>Customers</CardTitle>
-        <CardDescription>Manage customers used in Sales receipts.</CardDescription>
+        <CardDescription>Manage customers used in invoices.</CardDescription>
       </CardHeader>
       <CardContent>
         <CustomersTable initial={customers} />
@@ -19,4 +19,3 @@ export default async function CustomersPage() {
     </Card>
   );
 }
-

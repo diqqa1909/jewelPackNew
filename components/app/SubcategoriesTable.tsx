@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 type CategoryRow = { code: string; name: string };
-type SubcategoryRow = { code: string; name: string; categoryCode: string; imageUrl: string };
+type SubcategoryRow = { code: string; name: string; categoryCode: string; imageUrl: string; carat?: string | null };
 
 export function SubcategoriesTable({
   initial,
@@ -15,6 +15,7 @@ export function SubcategoriesTable({
   const [rows, setRows] = useState<SubcategoryRow[]>(initial);
   const [name, setName] = useState("");
   const [categoryCode, setCategoryCode] = useState(categories[0]?.code ?? "");
+  const [carat, setCarat] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string>("");
@@ -26,8 +27,8 @@ export function SubcategoriesTable({
   }, [previewUrl]);
 
   const canSave = useMemo(
-    () => name.trim() !== "" && categoryCode.trim() !== "" && !busy,
-    [busy, categoryCode, name]
+    () => name.trim() !== "" && categoryCode.trim() !== "" && carat.trim() !== "" && !busy,
+    [busy, categoryCode, name, carat]
   );
 
   async function uploadToCloudinary(selected: File): Promise<string> {
@@ -59,7 +60,7 @@ export function SubcategoriesTable({
       const res = await fetch("/api/subcategories", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name, categoryCode, imageUrl: nextImageUrl || null })
+        body: JSON.stringify({ name, categoryCode, carat: carat.trim(), imageUrl: nextImageUrl || null })
       });
       if (!res.ok) {
         const txt = await res.text().catch(() => "");
@@ -74,6 +75,7 @@ export function SubcategoriesTable({
         )
       );
       setName("");
+      setCarat("");
       setFile(null);
       if (previewUrl) URL.revokeObjectURL(previewUrl);
       setPreviewUrl("");
@@ -131,6 +133,12 @@ export function SubcategoriesTable({
           ))}
         </select>
         <input
+          value={carat}
+          onChange={(e) => setCarat(e.target.value)}
+          placeholder="Carat (e.g. 18K or 22K)"
+          className="w-full rounded-lg border border-ebony-200 bg-white px-4 py-2.5 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+        />
+        <input
           type="file"
           accept="image/*"
           onChange={(e) => onPickFile(e.target.files?.[0] ?? null)}
@@ -166,6 +174,7 @@ export function SubcategoriesTable({
               <th className="px-5 py-4">Category</th>
               <th className="px-5 py-4">Code</th>
               <th className="px-5 py-4">Name</th>
+              <th className="px-5 py-4">Carat</th>
               <th className="px-5 py-4">Image</th>
               <th className="px-5 py-4 text-right">Actions</th>
             </tr>
@@ -176,6 +185,7 @@ export function SubcategoriesTable({
                 <td className="px-5 py-4 text-ebony-700">{r.categoryCode}</td>
                 <td className="px-5 py-4 font-semibold text-ebony-900">{r.code}</td>
                 <td className="px-5 py-4 text-ebony-700">{r.name}</td>
+                <td className="px-5 py-4 text-ebony-700">{(r.carat ?? "").trim() || "â€”"}</td>
                 <td className="px-5 py-4">
                   {r.imageUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -194,6 +204,7 @@ export function SubcategoriesTable({
                     onClick={() => {
                       setName(r.name);
                       setCategoryCode(r.categoryCode);
+                      setCarat(((r.carat ?? "").trim() as any) || "");
                       setFile(null);
                       if (previewUrl) URL.revokeObjectURL(previewUrl);
                       setPreviewUrl("");
@@ -216,7 +227,7 @@ export function SubcategoriesTable({
             ))}
             {rows.length === 0 && (
               <tr>
-                <td className="px-5 py-8 text-center text-sm text-ebony-600" colSpan={5}>
+                <td className="px-5 py-8 text-center text-sm text-ebony-600" colSpan={6}>
                   No subcategories yet.
                 </td>
               </tr>

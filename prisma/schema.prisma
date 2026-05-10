@@ -62,6 +62,19 @@ model Goldsmith {
   updatedAt DateTime @updatedAt
 }
 
+model Supplier {
+  id        Int      @id @default(autoincrement())
+  name      String
+  contact   String?
+  phone     String?
+  email     String?
+  address   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([name])
+}
+
 model Category {
   code      String   @id
   name      String
@@ -77,6 +90,7 @@ model Subcategory {
   imageUrl     String?
   categoryCode String
   category     Category @relation(fields: [categoryCode], references: [code], onDelete: Restrict)
+  carat        String?
   stock        StockMaster[]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -95,6 +109,7 @@ model System {
 
 model Customer {
   id        Int      @id @default(autoincrement())
+  accountNumber String? @unique
   name      String
   phone     String?
   email     String?
@@ -105,12 +120,39 @@ model Customer {
   sales     SalesNTX[]
 }
 
+model Transaction {
+  id              Int      @id @default(autoincrement())
+  date            DateTime @db.Date
+  source          String?
+  account         String?
+  memo            String?
+  debit           Decimal  @default(0) @db.Decimal(12, 2)
+  credit          Decimal  @default(0) @db.Decimal(12, 2)
+  accountNumber   String?  @map("account_number")
+  type            String?
+  bankDebit       Decimal? @default(0) @map("bank_debit") @db.Decimal(12, 2)
+  bankCredit      Decimal? @default(0) @map("bank_credit") @db.Decimal(12, 2)
+  realizedDate    DateTime? @map("realized_date") @db.Date
+  referenceNumber String?  @map("reference_number")
+  remarks         String?
+  bankCode        String?  @map("bank_code")
+  recon           Boolean  @default(false)
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([accountNumber])
+  @@index([date])
+  @@map("transactions")
+}
+
 model SalesNTX {
   id            Int      @id @default(autoincrement())
   saleNo        String   @unique
   transactionDate DateTime
   customerId    Int
   customer      Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  salesmanId    Int?
+  salesman      Salesman? @relation(fields: [salesmanId], references: [id], onDelete: Restrict)
 
   totalItems    Int
   totalQty      Int
@@ -126,6 +168,7 @@ model SalesNTX {
   @@map("salesNTX")
   @@index([transactionDate])
   @@index([customerId])
+  @@index([salesmanId])
 }
 
 model Sale {
@@ -137,7 +180,6 @@ model Sale {
   stockMasterId Int
   stockMaster   StockMaster @relation(fields: [stockMasterId], references: [id], onDelete: Restrict)
 
-  categoryCode    String
   subcategoryCode String
   carat           String?
   qty             Int
@@ -152,4 +194,17 @@ model Sale {
   @@index([salesNTXId])
   @@index([stockMasterId])
   @@index([subcategoryCode])
+}
+
+model Salesman {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  invoices  SalesNTX[]
+
+  @@index([name])
+  @@index([code])
 }

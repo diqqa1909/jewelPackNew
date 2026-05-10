@@ -25,15 +25,16 @@ export const navItems: NavItem[] = [
   { href: "/goldsmiths", label: "Goldsmiths", icon: Users },
   { href: "/categories", label: "Categories", icon: Gem },
   { href: "/subcategories", label: "Subcategories", icon: Layers },
-  { href: "/sales", label: "Sales", icon: CreditCard },
-  { href: "/purchases", label: "Purchases", icon: ShoppingBag },
+  { href: "/sales", label: "Invoices", icon: CreditCard },
+  { href: "/salesmen", label: "Salesmen", icon: Users },
+  //{ href: "/purchases", label: "Purchases", icon: ShoppingBag },
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/suppliers", label: "Suppliers", icon: Truck },
   { href: "/reports", label: "Reports", icon: BarChart3 },
-  { href: "/settings", label: "Settings", icon: Settings }
+  //{ href: "/settings", label: "Settings", icon: Settings }
 ];
 
 export const quickActions = [
   { href: "/stock/new", label: "Add Stock", icon: ClipboardList },
-  { href: "/sales/new", label: "New Sale", icon: CreditCard }
+  { href: "/sales/new", label: "New Invoice", icon: CreditCard }
 ];

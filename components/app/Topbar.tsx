@@ -32,7 +32,7 @@ export function Topbar() {
         <div>
           <h1 className="text-lg font-semibold tracking-tight text-ebony-900 md:text-xl">{title}</h1>
           <p className="text-xs text-ebony-600 md:text-sm">
-            Manage your jewelry inventory and sales operations.
+            Manage your jewelry inventory and invoicing operations.
           </p>
         </div>
       </div>

@@ -4,7 +4,6 @@ import { NextResponse } from "next/server";
 
 type SaleLineInput = {
   subcategoryCode: string;
-  carat: "" | "18K" | "22K";
   qty: number;
   goldWeight: string;
   sellRatePer8g: string;
@@ -55,6 +54,7 @@ export async function POST(req: Request) {
     const body = (await req.json()) as Partial<{
       transactionDate: string;
       customerId: number;
+      salesmanId?: number | null;
       remarks?: string;
       items: SaleLineInput[];
     }>;
@@ -71,10 +71,19 @@ export async function POST(req: Request) {
     const customer = await prisma.customer.findUnique({ where: { id: customerId } });
     if (!customer) return NextResponse.json({ error: "Invalid customer" }, { status: 400 });
 
+    const salesmanIdRaw = body.salesmanId ?? null;
+    const salesmanId = salesmanIdRaw == null ? null : Number(salesmanIdRaw);
+    if (salesmanIdRaw != null && !Number.isFinite(salesmanId)) {
+      return NextResponse.json({ error: "Invalid salesman" }, { status: 400 });
+    }
+    if (salesmanId) {
+      const exists = await prisma.salesman.findUnique({ where: { id: salesmanId } });
+      if (!exists) return NextResponse.json({ error: "Invalid salesman" }, { status: 400 });
+    }
+
     // Normalize + validate client rows (aggregate same subcategory+carat)
     const normalized: Array<{
       subcategoryCode: string;
-      carat: string | null;
       qty: number;
       goldWeight: Prisma.Decimal;
       sellRatePer8g: Prisma.Decimal;
@@ -90,17 +99,15 @@ export async function POST(req: Request) {
       const rate = decimal(String(row.sellRatePer8g ?? "0"));
       if (rate.lessThanOrEqualTo(new Prisma.Decimal("0")))
         return NextResponse.json({ error: "Invalid sell rate" }, { status: 400 });
-      const carat = (row.carat ?? "").trim();
-      const caratValue = carat === "18K" || carat === "22K" ? carat : "";
-      normalized.push({ subcategoryCode, carat: caratValue || null, qty, goldWeight: weight, sellRatePer8g: rate });
+      normalized.push({ subcategoryCode, qty, goldWeight: weight, sellRatePer8g: rate });
     }
 
     const aggregated = new Map<
       string,
-      { subcategoryCode: string; carat: string | null; qty: number; goldWeight: Prisma.Decimal; sellRatePer8g: Prisma.Decimal }
+      { subcategoryCode: string; qty: number; goldWeight: Prisma.Decimal; sellRatePer8g: Prisma.Decimal }
     >();
     for (const r of normalized) {
-      const key = `${r.subcategoryCode}||${r.carat ?? ""}||${r.sellRatePer8g.toString()}`;
+      const key = `${r.subcategoryCode}||${r.sellRatePer8g.toString()}`;
       const prev = aggregated.get(key);
       if (!prev) aggregated.set(key, { ...r });
       else
@@ -131,6 +138,7 @@ export async function POST(req: Request) {
         saleNo,
         transactionDate: txDate,
         customerId,
+        salesmanId: salesmanId || null,
         totalItems: 0,
         totalQty: 0,
         totalGoldWeight: new Prisma.Decimal("0"),
@@ -147,17 +155,23 @@ export async function POST(req: Request) {
     let headerSellSubTotal = new Prisma.Decimal("0");
 
     for (const reqLine of requested) {
+      const sub = await tx.subcategory.findUnique({ where: { code: reqLine.subcategoryCode } });
+      const carat = (sub?.carat ?? "").trim();
+      if (carat !== "18K" && carat !== "22K") {
+        throw new Error(`Carat not set for subcategory ${reqLine.subcategoryCode}. Please set it in Subcategories.`);
+      }
+
       // FIFO allocate from StockMaster balances
       const receipts = await tx.stockMaster.findMany({
         where: {
           subcategoryCode: reqLine.subcategoryCode,
-          carat: reqLine.carat ?? undefined,
+          carat,
           balanceQty: { gt: 0 }
         },
         orderBy: [{ transactionDate: "asc" }, { id: "asc" }]
       });
       if (receipts.length === 0) {
-        throw new Error(`No stock available for ${reqLine.subcategoryCode}${reqLine.carat ? ` (${reqLine.carat})` : ""}`);
+        throw new Error(`No stock available for ${reqLine.subcategoryCode}${carat ? ` (${carat})` : ""}`);
       }
 
       let remainingQty = reqLine.qty;
@@ -188,7 +202,6 @@ export async function POST(req: Request) {
           data: {
             salesNTXId: createdHeader.id,
             stockMasterId: r.id,
-            categoryCode: r.categoryCode,
             subcategoryCode: r.subcategoryCode,
             carat: r.carat,
             qty: takeQty,
@@ -229,7 +242,7 @@ export async function POST(req: Request) {
       }
 
       if (remainingQty > 0 || remainingWeight.greaterThan(new Prisma.Decimal("0"))) {
-        throw new Error(`Insufficient stock for ${reqLine.subcategoryCode}${reqLine.carat ? ` (${reqLine.carat})` : ""}`);
+        throw new Error(`Insufficient stock for ${reqLine.subcategoryCode}${carat ? ` (${carat})` : ""}`);
       }
     }
 
@@ -243,6 +256,25 @@ export async function POST(req: Request) {
         sellSubTotal: headerSellSubTotal
       }
     });
+
+    // Post invoice amount to customer account (debit)
+    const acct = (customer.accountNumber ?? "").trim();
+    if (acct) {
+      await tx.transaction.create({
+        data: {
+          date: txDate,
+          source: "INV",
+          account: customer.name,
+          memo: updatedHeader.saleNo,
+          debit: headerSellSubTotal,
+          credit: new Prisma.Decimal("0"),
+          accountNumber: acct,
+          type: "INVOICE",
+          referenceNumber: updatedHeader.saleNo,
+          remarks: (body.remarks ?? "").trim() || null
+        }
+      });
+    }
 
     return { header: updatedHeader };
     });

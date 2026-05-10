@@ -10,7 +10,7 @@ export default async function SaleViewPage({ params }: { params: { id: string } 
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Sale</CardTitle>
+          <CardTitle>Invoice</CardTitle>
           <CardDescription>Invalid id.</CardDescription>
         </CardHeader>
       </Card>
@@ -33,7 +33,7 @@ export default async function SaleViewPage({ params }: { params: { id: string } 
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Sale</CardTitle>
+          <CardTitle>Invoice</CardTitle>
           <CardDescription>Not found.</CardDescription>
         </CardHeader>
       </Card>
@@ -47,7 +47,7 @@ export default async function SaleViewPage({ params }: { params: { id: string } 
           href="/sales"
           className="rounded-lg border border-ebony-300 bg-white px-5 py-2.5 text-sm font-semibold text-ebony-700 hover:bg-ebony-50 transition-all"
         >
-          Back to Sales
+          Back to Invoices
         </Link>
       </div>
 
@@ -75,9 +75,9 @@ export default async function SaleViewPage({ params }: { params: { id: string } 
               </div>
             </div>
             <div className="rounded-xl border border-ebony-100 bg-white px-4 py-3">
-              <div className="text-xs font-semibold uppercase tracking-widest text-ebony-500">Cost</div>
+              <div className="text-xs font-semibold uppercase tracking-widest text-ebony-500">Invoice Amount</div>
               <div className="mt-1 text-xl font-extrabold text-ebony-900 tabular-nums">
-                {Number(sale.totalCost.toString()).toFixed(2)}
+                {Number(sale.sellSubTotal.toString()).toFixed(2)}
               </div>
             </div>
           </div>
@@ -87,20 +87,18 @@ export default async function SaleViewPage({ params }: { params: { id: string } 
               <thead className="bg-ebony-50 text-left text-xs font-semibold uppercase tracking-widest text-ebony-700">
                 <tr>
                   <th className="px-4 py-3">Receipt ID</th>
-                  <th className="px-4 py-3">Category</th>
                   <th className="px-4 py-3">Subcategory</th>
                   <th className="px-4 py-3">Carat</th>
                   <th className="px-4 py-3 text-right">Qty</th>
                   <th className="px-4 py-3 text-right">Weight</th>
                   <th className="px-4 py-3 text-right">Sell Rate/8g</th>
-                  <th className="px-4 py-3 text-right">Sell Cost</th>
+                  <th className="px-4 py-3 text-right">Total Amount</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-ebony-100">
                 {sale.items.map((it) => (
                   <tr key={it.id} className="bg-white">
                     <td className="px-4 py-3 font-semibold text-ebony-900 tabular-nums">{it.stockMasterId}</td>
-                    <td className="px-4 py-3 text-ebony-700">{it.categoryCode}</td>
                     <td className="px-4 py-3 text-ebony-700">{it.subcategoryCode}</td>
                     <td className="px-4 py-3 text-ebony-700">{it.carat ?? "—"}</td>
                     <td className="px-4 py-3 text-right font-semibold text-ebony-900 tabular-nums">{it.qty}</td>
@@ -117,7 +115,7 @@ export default async function SaleViewPage({ params }: { params: { id: string } 
                 ))}
                 {sale.items.length === 0 && (
                   <tr>
-                    <td className="px-4 py-8 text-center text-sm text-ebony-600" colSpan={8}>
+                    <td className="px-4 py-8 text-center text-sm text-ebony-600" colSpan={7}>
                       No items.
                     </td>
                   </tr>
@@ -137,4 +135,3 @@ export default async function SaleViewPage({ params }: { params: { id: string } 
     </div>
   );
 }
-

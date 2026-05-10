@@ -66,8 +66,9 @@ export function GoldsmithsTable({ initial }: Props) {
       <div className="grid gap-3 rounded-lg border border-ebony-200 bg-white p-4 md:grid-cols-[12rem_1fr_auto]">
         <input
           value={code}
-          onChange={(e) => setCode(e.target.value)}
+          onChange={(e) => setCode(e.target.value.toUpperCase())}
           placeholder="GSM Code"
+          style={{ textTransform: "uppercase" }}
           className="w-full rounded-lg border border-ebony-200 bg-white px-4 py-2.5 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
         />
         <input
