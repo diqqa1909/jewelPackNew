@@ -51,6 +51,7 @@ export default async function SearchPage({
           ]
         },
         _sum: { balanceQty: true, balanceGoldWeight: true },
+        orderBy: { subcategoryCode: "asc" },
         take: 10
       })
     ),
@@ -149,4 +150,3 @@ export default async function SearchPage({
     </div>
   );
 }
-
