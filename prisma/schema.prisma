@@ -73,6 +73,8 @@ model Supplier {
   updatedAt DateTime @updatedAt
 
   @@index([name])
+
+  purchases Purchase[]
 }
 
 model Category {
@@ -207,4 +209,45 @@ model Salesman {
 
   @@index([name])
   @@index([code])
+}
+
+model Purchase {
+  id           Int           @id @default(autoincrement())
+  purchaseNo   String        @unique
+  purchaseDate DateTime
+  supplierId   Int
+  supplier     Supplier      @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  purchaseGold String?
+  totalItems   Int
+  totalWeight  Decimal
+  subTotal     Decimal
+  otherCharges Decimal       @default(0)
+  totalAmount  Decimal
+  paidAmount   Decimal       @default(0)
+  balanceDue   Decimal
+  notes        String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  items        PurchaseItem[]
+
+  @@map("purchases")
+  @@index([purchaseDate])
+  @@index([supplierId])
+}
+
+model PurchaseItem {
+  id              Int      @id @default(autoincrement())
+  purchaseId      Int
+  purchase        Purchase @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  description     String
+  karat           String?
+  weight          Decimal
+  ratePerGram     Decimal
+  makingPerPiece  Decimal  @default(0)
+  amount          Decimal
+  createdAt       DateTime @default(now())
+
+  @@map("purchase_items")
+  @@index([purchaseId])
 }

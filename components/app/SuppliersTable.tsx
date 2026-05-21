@@ -1,11 +1,14 @@
 "use client";
 
 import type { Supplier } from "@/lib/generated/prisma";
+import { useToast } from "@/components/ui/ToastProvider";
 import { useMemo, useState } from "react";
+import { buttonClassName } from "@/components/ui/Button";
 
 type Props = { initial: Supplier[] };
 
 export function SuppliersTable({ initial }: Props) {
+  const toast = useToast();
   const [rows, setRows] = useState<Supplier[]>(initial);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [name, setName] = useState("");
@@ -41,9 +44,12 @@ export function SuppliersTable({ initial }: Props) {
       if (!res.ok) throw new Error(json?.error ?? "Save failed");
       if (!json?.supplier) throw new Error("Save failed");
       setRows((prev) => [json.supplier!, ...prev.filter((r) => r.id !== json.supplier!.id)].sort((a, b) => b.id - a.id));
+      toast.success(editingId ? "Supplier updated" : "Supplier added");
       resetForm();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Save failed");
+      const message = e instanceof Error ? e.message : "Save failed";
+      setError(message);
+      toast.error("Unable to save supplier", message);
     } finally {
       setBusy(false);
     }
@@ -60,8 +66,11 @@ export function SuppliersTable({ initial }: Props) {
       if (!res.ok) throw new Error(json?.error ?? "Delete failed");
       setRows((prev) => prev.filter((r) => r.id !== id));
       if (editingId === id) resetForm();
+      toast.success("Supplier deleted");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Delete failed");
+      const message = e instanceof Error ? e.message : "Delete failed";
+      setError(message);
+      toast.error("Unable to delete supplier", message);
     } finally {
       setBusy(false);
     }
@@ -113,7 +122,7 @@ export function SuppliersTable({ initial }: Props) {
               type="button"
               onClick={resetForm}
               disabled={busy}
-              className="rounded-lg border border-ebony-300 bg-white px-5 py-2.5 text-sm font-semibold text-ebony-700 hover:bg-ebony-50 disabled:cursor-not-allowed disabled:opacity-60"
+              className={buttonClassName("secondary", "px-5 py-2.5")}
             >
               Cancel
             </button>
@@ -122,7 +131,7 @@ export function SuppliersTable({ initial }: Props) {
             type="button"
             onClick={() => void save()}
             disabled={!canSave}
-            className="rounded-lg bg-gold-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-gold-700 disabled:cursor-not-allowed disabled:opacity-60"
+            className={buttonClassName("primary", "px-5 py-2.5")}
           >
             {editingId ? "Save" : "Add"}
           </button>
@@ -161,7 +170,7 @@ export function SuppliersTable({ initial }: Props) {
                       setAddress(r.address ?? "");
                     }}
                     disabled={busy}
-                    className="rounded-lg border border-ebony-200 bg-white px-4 py-2 text-xs font-semibold text-ebony-700 hover:bg-ebony-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    className={buttonClassName("secondary", "px-4 py-2 text-xs")}
                   >
                     Edit
                   </button>
@@ -169,7 +178,7 @@ export function SuppliersTable({ initial }: Props) {
                     type="button"
                     onClick={() => void remove(r.id)}
                     disabled={busy}
-                    className="ml-2 rounded-lg border border-red-200 bg-white px-4 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    className={buttonClassName("secondary", "ml-2 px-4 py-2 text-xs text-red-700")}
                   >
                     Delete
                   </button>
@@ -189,4 +198,3 @@ export function SuppliersTable({ initial }: Props) {
     </div>
   );
 }
-

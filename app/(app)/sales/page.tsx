@@ -2,6 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import Link from "next/link";
 import { prismaWithRetry } from "@/lib/prisma";
 import { SalesTable } from "@/components/app/SalesTable";
+import { buttonClassName } from "@/components/ui/Button";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,7 @@ export default async function SalesPage() {
       <div className="flex flex-wrap items-center justify-end gap-3">
         <Link
           href="/sales/new"
-          className="rounded-lg bg-gold-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-gold-700 transition-all"
+          className={buttonClassName("primary", "px-5 py-2.5")}
         >
           New Invoice
         </Link>

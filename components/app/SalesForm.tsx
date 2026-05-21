@@ -1,9 +1,10 @@
 "use client";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
+import { useToast } from "@/components/ui/ToastProvider";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { Trash2 } from "lucide-react";
+import { CalendarDays, Plus, Search, Save, Send, Trash2 } from "lucide-react";
 
 type CustomerRow = { id: number; name: string; phone?: string | null };
 type SalesmanRow = { id: number; code: string; name: string };
@@ -52,6 +53,7 @@ function sanitizeDecimal(raw: string) {
 
 export function SalesForm() {
   const router = useRouter();
+  const toast = useToast();
   const [loading, setLoading] = useState(true);
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [salesmen, setSalesmen] = useState<SalesmanRow[]>([]);
@@ -62,6 +64,11 @@ export function SalesForm() {
   const [salesmanId, setSalesmanId] = useState<number | "">("");
   const [customerId, setCustomerId] = useState<number | "">("");
   const [remarks, setRemarks] = useState("");
+  const [salesType, setSalesType] = useState("Wholesale");
+  const [paymentType, setPaymentType] = useState("Credit");
+  const [discount, setDiscount] = useState("");
+  const [paidAmount, setPaidAmount] = useState("");
+  const [itemSearch, setItemSearch] = useState("");
   const [invoiceNo, setInvoiceNo] = useState("");
   const [lines, setLines] = useState<Line[]>([
     {
@@ -79,6 +86,10 @@ export function SalesForm() {
   const [cellRefs] = useState(
     () => new Map<string, HTMLSelectElement | HTMLInputElement | HTMLButtonElement | null>()
   );
+
+  useEffect(() => {
+    if (error) toast.error("Invoice notification", error);
+  }, [error, toast]);
 
   useEffect(() => {
     if (!pendingFocusId) return;
@@ -182,8 +193,18 @@ export function SalesForm() {
   }, [transactionDate]);
 
   const subcategoriesSorted = useMemo(() => {
-    return [...subcategories].sort((a, b) => a.name.localeCompare(b.name));
-  }, [subcategories]);
+    const term = itemSearch.trim().toLowerCase();
+    return [...subcategories]
+      .filter((s) => {
+        if (!term) return true;
+        return (
+          s.code.toLowerCase().includes(term) ||
+          s.name.toLowerCase().includes(term) ||
+          s.categoryCode.toLowerCase().includes(term)
+        );
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [itemSearch, subcategories]);
 
   const availabilityKeyed = useMemo(() => {
     const map = new Map<string, AvailabilityRow>();
@@ -247,6 +268,21 @@ export function SalesForm() {
     }
     return sum;
   }, [lines]);
+
+  const selectedCustomer = useMemo(() => {
+    const id = typeof customerId === "number" ? customerId : Number(customerId);
+    return customers.find((c) => c.id === id) ?? null;
+  }, [customerId, customers]);
+
+  const totalMaking = useMemo(() => {
+    return lines.reduce((sum, l) => sum + Math.max(0, toNumber(l.goldWeight)) * 100, 0);
+  }, [lines]);
+
+  const totalAmount = sellSubTotal + totalMaking;
+  const discountValue = Math.max(0, toNumber(discount));
+  const grandTotal = Math.max(0, totalAmount - discountValue);
+  const paidValue = Math.max(0, toNumber(paidAmount));
+  const balanceDue = Math.max(0, grandTotal - paidValue);
 
   function updateLine(id: string, patch: Partial<Line>) {
     setLines((prev) =>
@@ -322,6 +358,7 @@ export function SalesForm() {
       });
       const json = (await res.json().catch(() => null)) as { error?: string } | null;
       if (!res.ok) throw new Error(json?.error ?? "Save failed");
+      toast.success("Invoice saved", invoiceNo || undefined);
       setLines([
         {
           id: uid(),
@@ -341,6 +378,371 @@ export function SalesForm() {
       setBusy(false);
     }
   }
+
+  return (
+    <div className="space-y-4">
+      {error ? (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+          {error}
+        </div>
+      ) : null}
+
+      <div className="rounded-lg border border-ebony-100 bg-white p-4 shadow-sm">
+        <div className="relative max-w-2xl">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ebony-500" />
+          <input
+            value={itemSearch}
+            onChange={(e) => setItemSearch(e.target.value)}
+            placeholder="Search item by barcode / design / name..."
+            className="h-10 w-full rounded-md border border-ebony-200 bg-white pl-9 pr-10 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+          />
+          <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ebony-400" />
+        </div>
+
+        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+          <label className="space-y-1.5 text-sm">
+            <div className="text-xs font-bold text-ebony-800">Invoice No</div>
+            <input
+              value={invoiceNo || "INV001"}
+              readOnly
+              className="h-10 w-full rounded-md border border-ebony-200 bg-ebony-50 px-3 text-sm font-semibold text-ebony-900 outline-none"
+            />
+          </label>
+
+          <label className="space-y-1.5 text-sm">
+            <div className="text-xs font-bold text-ebony-800">Date</div>
+            <div className="relative">
+              <input
+                type="date"
+                value={transactionDate}
+                onChange={(e) => setTransactionDate(e.target.value)}
+                className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 pr-9 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+              />
+              <CalendarDays className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ebony-400" />
+            </div>
+          </label>
+
+          <label className="space-y-1.5 text-sm xl:col-span-2">
+            <div className="text-xs font-bold text-ebony-800">Customer *</div>
+            <select
+              value={customerId}
+              onChange={(e) => setCustomerId(e.target.value ? Number(e.target.value) : "")}
+              className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+            >
+              <option value="">Select customer...</option>
+              {customers.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="space-y-1.5 text-sm">
+            <div className="text-xs font-bold text-ebony-800">Mobile</div>
+            <input
+              value={selectedCustomer?.phone ?? ""}
+              readOnly
+              placeholder="0771234567"
+              className="h-10 w-full rounded-md border border-ebony-200 bg-ebony-50 px-3 text-sm font-semibold text-ebony-700 outline-none"
+            />
+          </label>
+
+          <label className="space-y-1.5 text-sm">
+            <div className="text-xs font-bold text-ebony-800">Salesman *</div>
+            <select
+              value={salesmanId}
+              onChange={(e) => setSalesmanId(e.target.value ? Number(e.target.value) : "")}
+              className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+            >
+              <option value="">Select...</option>
+              {salesmen.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.code} - {s.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="space-y-1.5 text-sm">
+            <div className="text-xs font-bold text-ebony-800">Sales Type</div>
+            <select
+              value={salesType}
+              onChange={(e) => setSalesType(e.target.value)}
+              className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+            >
+              <option>Wholesale</option>
+              <option>Retail</option>
+            </select>
+          </label>
+
+          <label className="space-y-1.5 text-sm">
+            <div className="text-xs font-bold text-ebony-800">Payment Type</div>
+            <select
+              value={paymentType}
+              onChange={(e) => setPaymentType(e.target.value)}
+              className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+            >
+              <option>Credit</option>
+              <option>Cash</option>
+              <option>Bank</option>
+            </select>
+          </label>
+
+          <label className="space-y-1.5 text-sm">
+            <div className="text-xs font-bold text-ebony-800">Gold Rate (22K)</div>
+            <input
+              value={lines.find((l) => l.carat === "22K")?.sellRatePer8g ?? ""}
+              readOnly
+              placeholder="0.00"
+              className="h-10 w-full rounded-md border border-ebony-200 bg-ebony-50 px-3 text-right text-sm font-semibold text-ebony-700 outline-none"
+            />
+          </label>
+
+          <label className="space-y-1.5 text-sm">
+            <div className="text-xs font-bold text-ebony-800">Gold Rate (18K)</div>
+            <input
+              value={lines.find((l) => l.carat === "18K")?.sellRatePer8g ?? ""}
+              readOnly
+              placeholder="0.00"
+              className="h-10 w-full rounded-md border border-ebony-200 bg-ebony-50 px-3 text-right text-sm font-semibold text-ebony-700 outline-none"
+            />
+          </label>
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-lg border border-ebony-100 bg-white shadow-sm">
+        {loading ? (
+          <div className="px-4 py-6 text-sm font-semibold text-ebony-500">Loading...</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[980px] text-sm">
+              <thead className="bg-ebony-50 text-left text-[11px] font-bold uppercase tracking-wide text-ebony-600">
+                <tr>
+                  <th className="border border-ebony-100 px-3 py-2 text-center">#</th>
+                  <th className="border border-ebony-100 px-3 py-2">Barcode</th>
+                  <th className="border border-ebony-100 px-3 py-2">Description</th>
+                  <th className="border border-ebony-100 px-3 py-2">Karat</th>
+                  <th className="border border-ebony-100 px-3 py-2 text-right">Gross Wt</th>
+                  <th className="border border-ebony-100 px-3 py-2 text-right">Stone Wt</th>
+                  <th className="border border-ebony-100 px-3 py-2 text-right">Net Wt</th>
+                  <th className="border border-ebony-100 px-3 py-2 text-right">Rate/8g</th>
+                  <th className="border border-ebony-100 px-3 py-2 text-right">Making</th>
+                  <th className="border border-ebony-100 px-3 py-2 text-right">Amount</th>
+                  <th className="border border-ebony-100 px-3 py-2 text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-ebony-100">
+                {lines.map((l, index) => {
+                  const sub = subcategoryByCode.get(l.subcategoryCode);
+                  const sellRate = Math.max(0, toNumber(l.sellRatePer8g));
+                  const netWeight = Math.max(0, toNumber(l.goldWeight));
+                  const making = netWeight * 100;
+                  const amount = (netWeight / 8) * sellRate + making;
+                  return (
+                    <tr key={l.id} className="bg-white">
+                      <td className="border border-ebony-100 px-3 py-2 text-center font-semibold text-ebony-700">
+                        {index + 1}
+                      </td>
+                      <td className="border border-ebony-100 p-0">
+                        <select
+                          value={l.subcategoryCode}
+                          onChange={(e) => updateLine(l.id, { subcategoryCode: e.target.value })}
+                          onKeyDown={(e) => handleTabNav(e, l.id, "subcategory")}
+                          ref={(el) => setCellRef(l.id, "subcategory", el)}
+                          className="h-10 w-full min-w-40 border-0 bg-white px-2 text-sm outline-none focus:bg-cream-50"
+                        >
+                          <option value="">Select item...</option>
+                          {subcategoriesSorted.map((s) => (
+                            <option key={s.code} value={s.code}>
+                              {s.code} - {s.name}
+                            </option>
+                          ))}
+                        </select>
+                        {qtyErrors.get(l.id) ? (
+                          <div className="px-2 pb-1 text-xs font-semibold text-red-600">{qtyErrors.get(l.id)}</div>
+                        ) : null}
+                      </td>
+                      <td className="border border-ebony-100 px-3 py-2 font-medium text-ebony-800">{sub?.name ?? "-"}</td>
+                      <td className="border border-ebony-100 px-3 py-2 font-semibold text-ebony-800">{l.carat || "-"}</td>
+                      <td className="border border-ebony-100 p-0">
+                        <input
+                          inputMode="numeric"
+                          value={l.qty}
+                          onChange={(e) => updateLine(l.id, { qty: sanitizeInt(e.target.value) })}
+                          onKeyDown={(e) => handleTabNav(e, l.id, "qty")}
+                          ref={(el) => setCellRef(l.id, "qty", el)}
+                          className="h-10 w-full border-0 bg-white px-2 text-right outline-none focus:bg-cream-50"
+                        />
+                      </td>
+                      <td className="border border-ebony-100 px-3 py-2 text-right tabular-nums text-ebony-700">0.000</td>
+                      <td className="border border-ebony-100 p-0">
+                        <input
+                          inputMode="decimal"
+                          value={l.goldWeight}
+                          onChange={(e) => updateLine(l.id, { goldWeight: sanitizeDecimal(e.target.value) })}
+                          onKeyDown={(e) => {
+                            if (e.key !== "Tab") return;
+                            if (weightErrors.get(l.id)) {
+                              e.preventDefault();
+                              setError(weightErrors.get(l.id) ?? "Weight exceeded");
+                              return;
+                            }
+                            return handleTabNav(e, l.id, "weight");
+                          }}
+                          ref={(el) => setCellRef(l.id, "weight", el)}
+                          className={[
+                            "h-10 w-full border-0 bg-white px-2 text-right outline-none focus:bg-cream-50",
+                            weightErrors.get(l.id) ? "text-red-700" : ""
+                          ].join(" ")}
+                        />
+                        {weightErrors.get(l.id) ? (
+                          <div className="px-2 pb-1 text-xs font-semibold text-red-600">{weightErrors.get(l.id)}</div>
+                        ) : null}
+                      </td>
+                      <td className="border border-ebony-100 p-0">
+                        <input
+                          inputMode="decimal"
+                          value={l.sellRatePer8g}
+                          onChange={(e) => updateLine(l.id, { sellRatePer8g: sanitizeDecimal(e.target.value) })}
+                          onKeyDown={(e) => {
+                            if (e.key === "Tab") return handleTabNav(e, l.id, "sellRate");
+                            if (e.key !== "Enter") return;
+                            e.preventDefault();
+                            addLine();
+                          }}
+                          ref={(el) => setCellRef(l.id, "sellRate", el)}
+                          className="h-10 w-full border-0 bg-white px-2 text-right outline-none focus:bg-cream-50"
+                        />
+                      </td>
+                      <td className="border border-ebony-100 px-3 py-2 text-right font-semibold tabular-nums text-ebony-800">
+                        {making.toFixed(2)}
+                      </td>
+                      <td className="border border-ebony-100 px-3 py-2 text-right font-bold tabular-nums text-ebony-900">
+                        {amount.toFixed(2)}
+                      </td>
+                      <td className="border border-ebony-100 px-2 py-1 text-center">
+                        <button
+                          type="button"
+                          onClick={() => removeLine(l.id)}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-red-600 hover:bg-red-50"
+                          aria-label="Remove row"
+                          title="Remove row"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <button
+        type="button"
+        onClick={addLine}
+        className="inline-flex items-center gap-2 rounded-md border border-ebony-200 bg-white px-3 py-2 text-sm font-bold text-indigo-700 shadow-sm hover:bg-ebony-50"
+      >
+        <Plus className="h-4 w-4" />
+        Add Item
+      </button>
+
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_310px]">
+        <label className="space-y-2 text-sm lg:self-end">
+          <div className="font-bold text-ebony-800">Notes</div>
+          <textarea
+            value={remarks}
+            onChange={(e) => setRemarks(e.target.value)}
+            className="min-h-24 w-full resize-y rounded-md border border-ebony-200 bg-white px-4 py-3 outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+            placeholder="Thank you for your business!"
+          />
+        </label>
+
+        <div className="rounded-lg border border-ebony-100 bg-white shadow-sm">
+          {[
+            ["Total Net Weight", `${totals.totalWeight.toFixed(3)} g`],
+            ["Total Making", totalMaking.toFixed(2)],
+            ["Total Amount", totalAmount.toFixed(2)]
+          ].map(([label, value]) => (
+            <div key={label} className="flex items-center justify-between border-b border-ebony-100 px-4 py-3 text-sm">
+              <span className="font-semibold text-ebony-700">{label}</span>
+              <span className="font-extrabold tabular-nums text-ebony-900">{value}</span>
+            </div>
+          ))}
+
+          <label className="flex items-center justify-between border-b border-ebony-100 px-4 py-2 text-sm">
+            <span className="font-semibold text-ebony-700">Discount</span>
+            <input
+              inputMode="decimal"
+              value={discount}
+              onChange={(e) => setDiscount(sanitizeDecimal(e.target.value))}
+              placeholder="0.00"
+              className="h-9 w-32 rounded-md border border-ebony-200 px-2 text-right font-bold tabular-nums outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+            />
+          </label>
+          <div className="flex items-center justify-between border-b border-ebony-100 px-4 py-3 text-sm">
+            <span className="font-semibold text-ebony-700">Grand Total</span>
+            <span className="font-extrabold tabular-nums text-ebony-900">{grandTotal.toFixed(2)}</span>
+          </div>
+          <label className="flex items-center justify-between border-b border-ebony-100 px-4 py-2 text-sm">
+            <span className="font-semibold text-ebony-700">Paid Amount</span>
+            <input
+              inputMode="decimal"
+              value={paidAmount}
+              onChange={(e) => setPaidAmount(sanitizeDecimal(e.target.value))}
+              placeholder="0.00"
+              className="h-9 w-32 rounded-md border border-ebony-200 px-2 text-right font-bold tabular-nums outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+            />
+          </label>
+          <div className="flex items-center justify-between px-4 py-4">
+            <span className="text-base font-extrabold text-red-600">Balance Due</span>
+            <span className="text-lg font-extrabold tabular-nums text-red-600">{balanceDue.toFixed(2)}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={() => void submit()}
+          disabled={busy}
+          className="inline-flex items-center gap-2 rounded-md bg-indigo-700 px-6 py-3 text-sm font-bold text-white hover:bg-indigo-800 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <Save className="h-4 w-4" />
+          {busy ? "Saving..." : "Save"}
+        </button>
+        <button
+          type="button"
+          onClick={() => void submit()}
+          disabled={busy}
+          className="inline-flex items-center gap-2 rounded-md bg-indigo-700 px-6 py-3 text-sm font-bold text-white hover:bg-indigo-800 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <Save className="h-4 w-4" />
+          Save & Print
+        </button>
+        <button
+          type="button"
+          onClick={() => void submit()}
+          disabled={busy}
+          className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-6 py-3 text-sm font-bold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <Send className="h-4 w-4" />
+          Save & WhatsApp
+        </button>
+        <button
+          type="button"
+          onClick={() => router.push("/sales")}
+          disabled={busy}
+          className="rounded-md bg-ebony-100 px-6 py-3 text-sm font-bold text-ebony-800 hover:bg-ebony-200 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
 
   return (
     <Card className="max-w-6xl">

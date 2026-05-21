@@ -1,11 +1,16 @@
 "use client";
 
 import type { Goldsmith } from "@/lib/generated/prisma";
+import { useToast } from "@/components/ui/ToastProvider";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import { buttonClassName } from "@/components/ui/Button";
 
 type Props = { initial: Goldsmith[] };
 
 export function GoldsmithsTable({ initial }: Props) {
+  const router = useRouter();
+  const toast = useToast();
   const [rows, setRows] = useState<Goldsmith[]>(initial);
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
@@ -28,6 +33,9 @@ export function GoldsmithsTable({ initial }: Props) {
       setRows((prev) => [...prev.filter((r) => r.code !== data.goldsmith.code), data.goldsmith].sort((a, b) => a.code.localeCompare(b.code)));
       setCode("");
       setName("");
+      toast.success(isEditing ? "Goldsmith updated" : "Goldsmith added");
+    } catch (e) {
+      toast.error("Unable to save goldsmith", e instanceof Error ? e.message : "Please try again.");
     } finally {
       setBusy(false);
     }
@@ -41,6 +49,9 @@ export function GoldsmithsTable({ initial }: Props) {
       const res = await fetch(`/api/goldsmiths?code=${encodeURIComponent(targetCode)}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed");
       setRows((prev) => prev.filter((r) => r.code !== targetCode));
+      toast.success("Goldsmith deleted");
+    } catch (e) {
+      toast.error("Unable to delete goldsmith", e instanceof Error ? e.message : "Please try again.");
     } finally {
       setBusy(false);
     }
@@ -56,6 +67,9 @@ export function GoldsmithsTable({ initial }: Props) {
       });
       if (!res.ok) throw new Error("Failed");
       setRows((prev) => prev.map((r) => (r.code === targetCode ? { ...r, name: nextName } : r)));
+      toast.success("Goldsmith updated");
+    } catch (e) {
+      toast.error("Unable to update goldsmith", e instanceof Error ? e.message : "Please try again.");
     } finally {
       setBusy(false);
     }
@@ -81,7 +95,7 @@ export function GoldsmithsTable({ initial }: Props) {
           type="button"
           onClick={add}
           disabled={!canAdd}
-          className="rounded-lg bg-gold-600 px-5 py-2.5 text-sm font-medium text-white transition-all hover:bg-gold-700 disabled:cursor-not-allowed disabled:opacity-60"
+          className={buttonClassName("primary", "px-5 py-2.5")}
         >
           {isEditing ? "Save" : "Add"}
         </button>
@@ -98,26 +112,35 @@ export function GoldsmithsTable({ initial }: Props) {
           </thead>
           <tbody className="divide-y divide-ebony-100">
             {rows.map((r) => (
-              <tr key={r.code} className="bg-white">
+              <tr
+                key={r.code}
+                className="cursor-pointer bg-white transition-colors hover:bg-cream-50/60"
+                onClick={() => router.push(`/goldsmiths/${encodeURIComponent(r.code)}`)}
+                title="View goldsmith tracking"
+              >
                 <td className="px-5 py-4 font-semibold text-ebony-900">{r.code}</td>
                 <td className="px-5 py-4 text-ebony-700">{r.name}</td>
                 <td className="px-5 py-4 text-right">
                   <button
                     type="button"
-                    onClick={() => {
-                      setCode(r.code);
-                      setName(r.name);
-                    }}
-                    disabled={busy}
-                    className="rounded-lg border border-ebony-200 bg-white px-4 py-2 text-xs font-semibold text-ebony-700 hover:bg-ebony-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                    setCode(r.code);
+                    setName(r.name);
+                  }}
+                  disabled={busy}
+                    className={buttonClassName("secondary", "px-4 py-2 text-xs")}
                   >
                     Edit
                   </button>
                   <button
                     type="button"
-                    onClick={() => void remove(r.code)}
-                    disabled={busy}
-                    className="ml-2 rounded-lg border border-red-200 bg-white px-4 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={(e) => {
+                    e.stopPropagation();
+                    void remove(r.code);
+                  }}
+                  disabled={busy}
+                    className={buttonClassName("secondary", "ml-2 px-4 py-2 text-xs text-red-700")}
                   >
                     Delete
                   </button>

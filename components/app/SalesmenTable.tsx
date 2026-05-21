@@ -1,11 +1,14 @@
 "use client";
 
+import { useToast } from "@/components/ui/ToastProvider";
 import { useMemo, useState } from "react";
+import { buttonClassName } from "@/components/ui/Button";
 
 type SalesmanRow = { id: number; code: string; name: string; tags: string[] };
 type SalesmanRowNoTags = { id: number; code: string; name: string };
 
 export function SalesmenTable({ initial }: { initial: SalesmanRowNoTags[] }) {
+  const toast = useToast();
   const [rows, setRows] = useState<SalesmanRowNoTags[]>(initial);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [code, setCode] = useState("");
@@ -40,9 +43,12 @@ export function SalesmenTable({ initial }: { initial: SalesmanRowNoTags[] }) {
       const saved = json?.salesman;
       if (!saved) throw new Error("Save failed");
       setRows((prev) => [saved, ...prev.filter((r) => r.id !== saved.id)].sort((a, b) => a.name.localeCompare(b.name)));
+      toast.success(editingId ? "Salesman updated" : "Salesman added");
       reset();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Save failed");
+      const message = e instanceof Error ? e.message : "Save failed";
+      setError(message);
+      toast.error("Unable to save salesman", message);
     } finally {
       setBusy(false);
     }
@@ -59,8 +65,11 @@ export function SalesmenTable({ initial }: { initial: SalesmanRowNoTags[] }) {
       if (!res.ok) throw new Error(json?.error ?? "Delete failed");
       setRows((prev) => prev.filter((r) => r.id !== id));
       if (editingId === id) reset();
+      toast.success("Salesman deleted");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Delete failed");
+      const message = e instanceof Error ? e.message : "Delete failed";
+      setError(message);
+      toast.error("Unable to delete salesman", message);
     } finally {
       setBusy(false);
     }
@@ -95,7 +104,7 @@ export function SalesmenTable({ initial }: { initial: SalesmanRowNoTags[] }) {
               type="button"
               onClick={reset}
               disabled={busy}
-              className="rounded-lg border border-ebony-300 bg-white px-5 py-2.5 text-sm font-semibold text-ebony-700 hover:bg-ebony-50 disabled:cursor-not-allowed disabled:opacity-60"
+              className={buttonClassName("secondary", "px-5 py-2.5")}
             >
               Cancel
             </button>
@@ -104,7 +113,7 @@ export function SalesmenTable({ initial }: { initial: SalesmanRowNoTags[] }) {
             type="button"
             onClick={() => void save()}
             disabled={!canSave}
-            className="rounded-lg bg-gold-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-gold-700 disabled:cursor-not-allowed disabled:opacity-60"
+            className={buttonClassName("primary", "px-5 py-2.5")}
           >
             {editingId ? "Save" : "Add"}
           </button>
@@ -134,7 +143,7 @@ export function SalesmenTable({ initial }: { initial: SalesmanRowNoTags[] }) {
                       setName(r.name);
                     }}
                     disabled={busy}
-                    className="rounded-lg border border-ebony-200 bg-white px-4 py-2 text-xs font-semibold text-ebony-700 hover:bg-ebony-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    className={buttonClassName("secondary", "px-4 py-2 text-xs")}
                   >
                     Edit
                   </button>
@@ -142,7 +151,7 @@ export function SalesmenTable({ initial }: { initial: SalesmanRowNoTags[] }) {
                     type="button"
                     onClick={() => void remove(r.id)}
                     disabled={busy}
-                    className="ml-2 rounded-lg border border-red-200 bg-white px-4 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    className={buttonClassName("secondary", "ml-2 px-4 py-2 text-xs text-red-700")}
                   >
                     Delete
                   </button>

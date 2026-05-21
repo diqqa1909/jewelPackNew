@@ -35,7 +35,8 @@ const cached = globalThis.__prisma;
 const needsRefresh =
   process.env.NODE_ENV !== "production" &&
   cached &&
-  typeof (cached as unknown as { subcategory?: unknown }).subcategory === "undefined";
+  (typeof (cached as unknown as { subcategory?: unknown }).subcategory === "undefined" ||
+    typeof (cached as unknown as { purchase?: unknown }).purchase === "undefined");
 
 export const prisma = needsRefresh ? createClient() : cached ?? createClient();
 

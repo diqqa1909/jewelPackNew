@@ -20,7 +20,7 @@ export function CardHeader({
   className,
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("px-6 pt-6 border-b border-ebony-100", className)} {...props} />;
+  return <div className={cn("px-6 pt-3 pb-3 border-b border-ebony-100", className)} {...props} />;
 }
 
 export function CardTitle({
