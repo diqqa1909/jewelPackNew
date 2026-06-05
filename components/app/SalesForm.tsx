@@ -21,7 +21,7 @@ type AvailabilityRow = {
 type Line = {
   id: string;
   subcategoryCode: string;
-  carat: "" | "18K" | "22K";
+  carat: "" | "18K" | "22K" | "24K";
   qty: string;
   goldWeight: string;
   sellRatePer8g: string;
@@ -212,6 +212,17 @@ export function SalesForm() {
     return map;
   }, [availability]);
 
+  const availabilityBySubcategory = useMemo(() => {
+    const map = new Map<string, { balanceQty: number; balanceGoldWeight: number }>();
+    for (const row of availability) {
+      const current = map.get(row.subcategoryCode) ?? { balanceQty: 0, balanceGoldWeight: 0 };
+      current.balanceQty += Number(row.balanceQty ?? 0);
+      current.balanceGoldWeight += Number(row.balanceGoldWeight ?? 0);
+      map.set(row.subcategoryCode, current);
+    }
+    return map;
+  }, [availability]);
+
   const subcategoryByCode = useMemo(() => {
     const map = new Map<string, SubcategoryRow>();
     for (const s of subcategories) map.set(s.code, s);
@@ -237,12 +248,13 @@ export function SalesForm() {
         continue;
       }
       const avail = availabilityKeyed.get(`${l.subcategoryCode}||${l.carat}`);
-      if (!avail) continue;
+      const subAvail = availabilityBySubcategory.get(l.subcategoryCode);
       const qty = Math.floor(toNumber(l.qty));
-      if (qty > (avail.balanceQty ?? 0)) map.set(l.id, `Quantity exceeded (available ${avail.balanceQty})`);
+      const availableQty = avail?.balanceQty ?? subAvail?.balanceQty ?? 0;
+      if (qty > availableQty) map.set(l.id, `Quantity exceeded (available ${availableQty})`);
     }
     return map;
-  }, [availabilityKeyed, lines]);
+  }, [availabilityBySubcategory, availabilityKeyed, lines]);
 
   const weightErrors = useMemo(() => {
     const map = new Map<string, string>();
@@ -250,13 +262,13 @@ export function SalesForm() {
       if (!l.subcategoryCode) continue;
       if (!l.carat) continue;
       const avail = availabilityKeyed.get(`${l.subcategoryCode}||${l.carat}`);
-      if (!avail) continue;
+      const subAvail = availabilityBySubcategory.get(l.subcategoryCode);
       const entered = Math.max(0, toNumber(l.goldWeight));
-      const available = Math.max(0, toNumber(avail.balanceGoldWeight ?? "0"));
+      const available = Math.max(0, toNumber(avail?.balanceGoldWeight ?? String(subAvail?.balanceGoldWeight ?? 0)));
       if (entered > available) map.set(l.id, `Weight exceeded (available ${available.toFixed(3)}g)`);
     }
     return map;
-  }, [availabilityKeyed, lines]);
+  }, [availabilityBySubcategory, availabilityKeyed, lines]);
 
   const sellSubTotal = useMemo(() => {
     let sum = 0;
@@ -293,7 +305,7 @@ export function SalesForm() {
           const sub = String(patch.subcategoryCode ?? "").trim();
           const sc = subcategoryByCode.get(sub);
           const carat = String(sc?.carat ?? "").trim();
-          next.carat = (carat === "18K" || carat === "22K" ? carat : "") as Line["carat"];
+          next.carat = (carat === "18K" || carat === "22K" || carat === "24K" ? carat : "") as Line["carat"];
         }
         return next;
       })
@@ -490,6 +502,16 @@ export function SalesForm() {
           </label>
 
           <label className="space-y-1.5 text-sm">
+            <div className="text-xs font-bold text-ebony-800">Gold Rate (24K)</div>
+            <input
+              value={lines.find((l) => l.carat === "24K")?.sellRatePer8g ?? ""}
+              readOnly
+              placeholder="0.00"
+              className="h-10 w-full rounded-md border border-ebony-200 bg-ebony-50 px-3 text-right text-sm font-semibold text-ebony-700 outline-none"
+            />
+          </label>
+
+          <label className="space-y-1.5 text-sm">
             <div className="text-xs font-bold text-ebony-800">Gold Rate (22K)</div>
             <input
               value={lines.find((l) => l.carat === "22K")?.sellRatePer8g ?? ""}
@@ -535,10 +557,17 @@ export function SalesForm() {
               <tbody className="divide-y divide-ebony-100">
                 {lines.map((l, index) => {
                   const sub = subcategoryByCode.get(l.subcategoryCode);
+                  const avail = l.subcategoryCode && l.carat ? availabilityKeyed.get(`${l.subcategoryCode}||${l.carat}`) : undefined;
+                  const subAvail = l.subcategoryCode ? availabilityBySubcategory.get(l.subcategoryCode) : undefined;
                   const sellRate = Math.max(0, toNumber(l.sellRatePer8g));
                   const netWeight = Math.max(0, toNumber(l.goldWeight));
                   const making = netWeight * 100;
                   const amount = (netWeight / 8) * sellRate + making;
+                  const availableQty = Math.max(0, Number(avail?.balanceQty ?? subAvail?.balanceQty ?? 0));
+                  const availableWeight = Math.max(
+                    0,
+                    toNumber(avail?.balanceGoldWeight ?? String(subAvail?.balanceGoldWeight ?? 0))
+                  );
                   return (
                     <tr key={l.id} className="bg-white">
                       <td className="border border-ebony-100 px-3 py-2 text-center font-semibold text-ebony-700">
@@ -558,11 +587,16 @@ export function SalesForm() {
                               {s.code} - {s.name}
                             </option>
                           ))}
-                        </select>
-                        {qtyErrors.get(l.id) ? (
-                          <div className="px-2 pb-1 text-xs font-semibold text-red-600">{qtyErrors.get(l.id)}</div>
-                        ) : null}
-                      </td>
+                          </select>
+                          {qtyErrors.get(l.id) ? (
+                            <div className="px-2 pb-1 text-xs font-semibold text-red-600">{qtyErrors.get(l.id)}</div>
+                          ) : null}
+                          {l.subcategoryCode ? (
+                            <div className="px-2 pb-1 text-[11px] font-semibold text-ebony-500">
+                              Available: {availableQty} qty, {availableWeight.toFixed(3)} g
+                            </div>
+                          ) : null}
+                        </td>
                       <td className="border border-ebony-100 px-3 py-2 font-medium text-ebony-800">{sub?.name ?? "-"}</td>
                       <td className="border border-ebony-100 px-3 py-2 font-semibold text-ebony-800">{l.carat || "-"}</td>
                       <td className="border border-ebony-100 p-0">

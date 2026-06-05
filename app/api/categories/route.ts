@@ -38,8 +38,8 @@ export async function DELETE(req: Request) {
   const code = (url.searchParams.get("code") ?? "").trim();
   if (!code) return NextResponse.json({ error: "Missing code" }, { status: 400 });
 
-  const stockCount = await prisma.stockMaster.count({ where: { categoryCode: code } });
-  if (stockCount > 0) {
+  const purchaseCount = await prisma.purchase.count({ where: { categoryCode: code } });
+  if (purchaseCount > 0) {
     return NextResponse.json(
       { error: `Unable to delete. Stock exists for category ${code}.` },
       { status: 409 }

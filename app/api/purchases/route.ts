@@ -2,12 +2,21 @@ import { Prisma } from "@/lib/generated/prisma";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 
-type PurchaseLineInput = {
-  description: string;
-  karat?: string | null;
-  weight: string;
-  ratePerGram: string;
-  makingPerPiece?: string | null;
+type PurchasePayload = {
+  transactionDate: string;
+  location?: string;
+  gsmCode: string;
+  categoryCode: string;
+  subcategoryCode: string;
+  qty: string;
+  description?: string;
+  carat?: string;
+  wastageYN: "Y" | "N";
+  goldWeight: string;
+  wastageMg?: string;
+  labourCharges: string;
+  otherCosts: string;
+  remarks?: string;
 };
 
 function decimal(value: string | null | undefined) {
@@ -26,7 +35,7 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const preview = url.searchParams.get("preview") === "1";
   if (preview) {
-    const dateRaw = (url.searchParams.get("purchaseDate") ?? "").trim();
+    const dateRaw = (url.searchParams.get("transactionDate") ?? "").trim();
     const date = dateRaw ? new Date(dateRaw) : new Date();
     if (Number.isNaN(date.getTime())) {
       return NextResponse.json({ error: "Invalid date" }, { status: 400 });
@@ -53,57 +62,41 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const body = (await req.json()) as Partial<{
-      purchaseDate: string;
-      supplierId: number;
-      purchaseNo: string;
-      purchaseGold?: string | null;
-      notes?: string | null;
-      otherCharges?: string | null;
-      paidAmount?: string | null;
-      items: PurchaseLineInput[];
-    }>;
+    const body = (await req.json()) as Partial<PurchasePayload & { supplierId?: number }>;
 
-    if (!body.purchaseDate) return NextResponse.json({ error: "Missing date" }, { status: 400 });
-    const supplierId = Number(body.supplierId);
-    if (!Number.isFinite(supplierId)) return NextResponse.json({ error: "Missing supplier" }, { status: 400 });
+    if (!body.transactionDate) return NextResponse.json({ error: "Missing date" }, { status: 400 });
+    if (!body.gsmCode) return NextResponse.json({ error: "Missing goldsmith" }, { status: 400 });
+    if (!body.categoryCode) return NextResponse.json({ error: "Missing category" }, { status: 400 });
+    if (!body.subcategoryCode) return NextResponse.json({ error: "Missing subcategory" }, { status: 400 });
+    if (!body.carat) return NextResponse.json({ error: "Missing carat" }, { status: 400 });
 
-    const purchaseDate = new Date(body.purchaseDate);
+    const qty = Number(body.qty);
+    if (!Number.isFinite(qty) || qty < 0) {
+      return NextResponse.json({ error: "Invalid qty" }, { status: 400 });
+    }
+
+    const purchaseDate = new Date(body.transactionDate);
     if (Number.isNaN(purchaseDate.getTime())) {
       return NextResponse.json({ error: "Invalid date" }, { status: 400 });
     }
 
-    const supplier = await prisma.supplier.findUnique({ where: { id: supplierId } });
-    if (!supplier) return NextResponse.json({ error: "Invalid supplier" }, { status: 400 });
+    const system = await prisma.system.findUnique({ where: { id: 1 } });
+    const goldRatePer8g = system?.goldCostRatePer8g ?? new Prisma.Decimal("0");
+    const wastageRatePerMg = system?.wastageRateMgPer8g ?? new Prisma.Decimal("0");
 
-    const items = Array.isArray(body.items) ? body.items : [];
-    if (items.length === 0) return NextResponse.json({ error: "Add at least one row" }, { status: 400 });
+    const goldsmith = await prisma.goldsmith.findUnique({ where: { code: body.gsmCode } });
+    const category = await prisma.category.findUnique({ where: { code: body.categoryCode } });
+    const subcategory = await prisma.subcategory.findUnique({ where: { code: body.subcategoryCode } });
+    if (!category) return NextResponse.json({ error: "Invalid category" }, { status: 400 });
+    if (!subcategory) return NextResponse.json({ error: "Invalid subcategory" }, { status: 400 });
 
-    const normalized = items.map((item) => {
-      const description = (item.description ?? "").trim();
-      const karat = (item.karat ?? "").trim();
-      const weight = decimal(item.weight);
-      const ratePerGram = decimal(item.ratePerGram);
-      const makingPerPiece = decimal(item.makingPerPiece ?? "0");
-      if (!description) throw new Error("Missing description");
-      if (weight.lessThanOrEqualTo(new Prisma.Decimal("0"))) throw new Error("Invalid weight");
-      if (ratePerGram.lessThanOrEqualTo(new Prisma.Decimal("0"))) throw new Error("Invalid rate");
-      return {
-        description,
-        karat: karat || null,
-        weight,
-        ratePerGram,
-        makingPerPiece,
-        amount: weight.mul(ratePerGram).plus(makingPerPiece)
-      };
-    });
-
-    const totalWeight = normalized.reduce((sum, item) => sum.plus(item.weight), new Prisma.Decimal("0"));
-    const subTotal = normalized.reduce((sum, item) => sum.plus(item.amount), new Prisma.Decimal("0"));
-    const otherCharges = decimal(body.otherCharges ?? "0");
-    const paidAmount = decimal(body.paidAmount ?? "0");
-    const totalAmount = subTotal.plus(otherCharges);
-    const balanceDue = totalAmount.minus(paidAmount);
+    const goldWeight = decimal(body.goldWeight ?? "0");
+    const wastageMg = decimal(body.wastageMg ?? "0");
+    const goldCost = goldWeight.div(new Prisma.Decimal("8")).mul(goldRatePer8g);
+    const wastageCost = body.wastageYN === "Y" ? wastageMg.mul(wastageRatePerMg) : new Prisma.Decimal("0");
+    const labourCharges = decimal(body.labourCharges ?? "0");
+    const otherCosts = decimal(body.otherCosts ?? "0");
+    const totalCost = goldCost.plus(wastageCost).plus(labourCharges).plus(otherCosts);
 
     const result = await prisma.$transaction(async (tx) => {
       const prefix = nextPurchaseNo(purchaseDate);
@@ -113,32 +106,41 @@ export async function POST(req: Request) {
       });
       const lastSeq = last?.purchaseNo ? Number(last.purchaseNo.slice(prefix.length)) : 0;
       const nextSeq = Number.isFinite(lastSeq) ? lastSeq + 1 : 1;
-      const purchaseNo = body.purchaseNo?.trim() || `${prefix}${String(nextSeq).padStart(4, "0")}`;
+      const purchaseNo = `${prefix}${String(nextSeq).padStart(4, "0")}`;
 
       const header = await tx.purchase.create({
         data: {
           purchaseNo,
           purchaseDate,
-          supplierId,
-          purchaseGold: (body.purchaseGold ?? "").trim() || null,
-          totalItems: normalized.length,
-          totalWeight,
-          subTotal,
-          otherCharges,
-          totalAmount,
-          paidAmount,
-          balanceDue,
-          notes: (body.notes ?? "").trim() || null,
-          items: {
-            create: normalized.map((item) => ({
-              description: item.description,
-              karat: item.karat,
-              weight: item.weight,
-              ratePerGram: item.ratePerGram,
-              makingPerPiece: item.makingPerPiece,
-              amount: item.amount
-            }))
-          }
+          location: (body.location ?? "").trim() || null,
+          gsmCode: body.gsmCode,
+          gsmName: goldsmith?.name ?? "",
+          categoryCode: body.categoryCode,
+          articleName: category.name,
+          subcategoryCode: body.subcategoryCode,
+          subcategoryName: subcategory.name,
+          qty,
+          description: (body.description ?? "").trim() || null,
+          carat: (body.carat ?? "").trim() || null,
+          wastageYN: body.wastageYN === "Y",
+          goldWeight,
+          goldCost,
+          wastageMg,
+          wastage: wastageCost,
+          labourCharges,
+          otherCosts,
+          totalCost,
+          remarks: (body.remarks ?? "").trim() || null,
+          supplierId: body.supplierId == null ? null : Number(body.supplierId),
+          purchaseGold: (body.carat ?? "").trim() || null,
+          totalItems: qty,
+          totalWeight: goldWeight,
+          subTotal: totalCost,
+          otherCharges: new Prisma.Decimal("0"),
+          totalAmount: totalCost,
+          paidAmount: new Prisma.Decimal("0"),
+          balanceDue: totalCost,
+          notes: (body.remarks ?? "").trim() || null
         },
         include: { supplier: true, items: true }
       });

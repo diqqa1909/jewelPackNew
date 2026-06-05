@@ -34,16 +34,16 @@ export async function GET(req: Request) {
   if (customerId) whereHeader.customerId = customerId;
   if (salesmanId) whereHeader.salesmanId = salesmanId;
 
-  // Fetch invoice lines with stockMaster (contains category/subcategory) and header dims.
+  // Fetch invoice lines with purchase/category dims and header dims.
   const lines = await prisma.sale.findMany({
     where: {
       ...(Object.keys(whereHeader).length ? { salesNTX: whereHeader } : {}),
       ...(subcategoryCode ? { subcategoryCode } : {}),
-      ...(categoryCode ? { stockMaster: { categoryCode } } : {})
+      ...(categoryCode ? { purchase: { categoryCode } } : {})
     },
     include: {
       salesNTX: { include: { customer: true, salesman: true } },
-      stockMaster: true
+      purchase: true
     },
     take: 5000,
     orderBy: [{ id: "desc" }]
@@ -59,7 +59,7 @@ export async function GET(req: Request) {
         return `SUB:${l.subcategoryCode}`;
       case "category":
       default:
-        return `CAT:${l.stockMaster.categoryCode}`;
+        return `CAT:${l.purchase?.categoryCode ?? ""}`;
     }
   };
 
@@ -73,7 +73,7 @@ export async function GET(req: Request) {
         return l.subcategoryCode;
       case "category":
       default:
-        return l.stockMaster.categoryCode;
+        return l.purchase?.categoryCode ?? "";
     }
   };
 

@@ -1,21 +1,18 @@
 import { prisma } from "@/lib/prisma";
+import { getInventoryBalanceRows } from "@/lib/inventory-balance";
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const rows = await prisma.stockMaster.groupBy({
-    by: ["subcategoryCode", "carat"],
-    _sum: { balanceQty: true, balanceGoldWeight: true, balanceCost: true }
-  });
-
+  const rows = await getInventoryBalanceRows(prisma);
   return NextResponse.json({
     rows: rows.map((r) => ({
       subcategoryCode: r.subcategoryCode,
       carat: r.carat ?? "",
-      balanceQty: r._sum.balanceQty ?? 0,
-      balanceGoldWeight: r._sum.balanceGoldWeight?.toString() ?? "0",
-      balanceCost: r._sum.balanceCost?.toString() ?? "0"
+      balanceQty: Math.max(0, r.balanceQty),
+      balanceGoldWeight: Math.max(0, Number(r.balanceGoldWeight)).toString(),
+      balanceCost: "0"
     }))
   });
 }

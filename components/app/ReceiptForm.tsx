@@ -17,7 +17,7 @@ type ReceiptFormState = {
   subcategoryCode: string;
   qty: string;
   description: string;
-  carat: "" | "18K" | "22K";
+  carat: "" | "18K" | "22K" | "24K";
   wastageYN: "Y" | "N";
   goldWeight: string;
   wastageMg: string;
@@ -81,10 +81,24 @@ function emptyForm(): ReceiptFormState {
 
 export function ReceiptForm({
   mode,
-  receiptId
+  receiptId,
+  submitPath = "/api/stock/receipts",
+  redirectPath = "/stock",
+  title,
+  description,
+  submitLabel,
+  layout = "default",
+  formId
 }: {
   mode: "create" | "edit";
   receiptId?: number;
+  submitPath?: string;
+  redirectPath?: string;
+  title?: string;
+  description?: string;
+  submitLabel?: string;
+  layout?: "default" | "table";
+  formId?: string;
 }) {
   const router = useRouter();
   const [form, setForm] = useState<ReceiptFormState>(emptyForm());
@@ -283,7 +297,7 @@ export function ReceiptForm({
         goldCost: goldCostCalculated.toFixed(2),
         wastage: wastageCostCalculated.toFixed(2)
       };
-      const res = await fetch("/api/stock/receipts", {
+      const res = await fetch(submitPath, {
         method: mode === "edit" ? "PATCH" : "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(
@@ -295,7 +309,7 @@ export function ReceiptForm({
       if (!res.ok) throw new Error("Save failed");
       setSaveState("saved");
       setForm(emptyForm());
-      router.push("/stock");
+      router.push(redirectPath);
     } catch {
       setSaveState("error");
       setErrors((prev) => ({ ...prev, form: "Save failed. Please try again." }));
@@ -383,15 +397,18 @@ export function ReceiptForm({
     }
   }
 
-  const title = mode === "edit" ? "Edit Receipt" : "Add New Receipt";
+  const pageTitle = title ?? (mode === "edit" ? "Edit Receipt" : "Add New Receipt");
+  const pageDescription = description ?? "Capture inbound stock receipt details.";
+  const saveButtonText = submitLabel ?? (mode === "edit" ? "Save Receipt" : "Save Receipt");
+  const useTableLayout = layout === "table";
 
   return (
     <Card className="max-w-5xl">
       <CardHeader className="space-y-1">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1">
-            <CardTitle>{title}</CardTitle>
-            <CardDescription>Capture inbound stock receipt details.</CardDescription>
+            <CardTitle>{pageTitle}</CardTitle>
+            <CardDescription>{pageDescription}</CardDescription>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -427,247 +444,508 @@ export function ReceiptForm({
         {loading ? (
           <div className="text-sm font-semibold text-slate-500">Loading...</div>
         ) : (
-          <form onSubmit={onSubmit} className="grid gap-6 md:grid-cols-2">
+          <form
+            id={formId}
+            onSubmit={onSubmit}
+            className={useTableLayout ? "space-y-6" : "grid gap-6 md:grid-cols-2"}
+          >
             {errors.form && (
-              <div className="md:col-span-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              <div className={useTableLayout ? "rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" : "md:col-span-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"}>
                 {errors.form}
               </div>
             )}
 
-            <label className="space-y-2 text-sm">
-              <div className="font-bold text-ebony-700">Transaction Date</div>
-              <input
-                type="date"
-                value={form.transactionDate}
-                onChange={(e) => update("transactionDate", e.target.value)}
-                className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
-              />
-              {errors.transactionDate && <div className="text-xs text-red-600">{errors.transactionDate}</div>}
-            </label>
+            {useTableLayout ? (
+              <div className="overflow-hidden rounded-lg border border-ebony-100 bg-white shadow-sm">
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[980px] text-sm">
+                    <tbody className="divide-y divide-ebony-100">
+                      <TableFieldRow
+                        leftLabel="Transaction Date"
+                        leftInput={
+                          <>
+                            <input
+                              type="date"
+                              value={form.transactionDate}
+                              onChange={(e) => update("transactionDate", e.target.value)}
+                              className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+                            />
+                            {errors.transactionDate && <div className="mt-1 text-xs text-red-600">{errors.transactionDate}</div>}
+                          </>
+                        }
+                        rightLabel="Location"
+                        rightInput={
+                          <>
+                            <input
+                              value={form.location}
+                              onChange={(e) => update("location", e.target.value)}
+                              placeholder="Main Branch / Vault / Counter 1"
+                              className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+                            />
+                            {errors.location && <div className="mt-1 text-xs text-red-600">{errors.location}</div>}
+                          </>
+                        }
+                      />
 
-            <label className="space-y-2 text-sm">
-              <div className="flex items-center justify-between">
-                <div className="font-bold text-ebony-700">Location</div>
-                <div className="text-xs font-semibold text-ebony-400">Optional</div>
+                      <TableFieldRow
+                        leftLabel="GSM Code"
+                        leftInput={
+                          <>
+                            <select
+                              value={form.gsmCode}
+                              onChange={(e) => setGsmCode(e.target.value)}
+                              className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+                            >
+                              <option value="">Select goldsmith...</option>
+                              {goldsmiths.map((g) => (
+                                <option key={g.code} value={g.code}>
+                                  {g.code}
+                                </option>
+                              ))}
+                            </select>
+                            {errors.gsmCode && <div className="mt-1 text-xs text-red-600">{errors.gsmCode}</div>}
+                          </>
+                        }
+                        rightLabel="GSM Name"
+                        rightInput={
+                          <input
+                            readOnly
+                            value={form.gsmName}
+                            className="h-10 w-full cursor-not-allowed rounded-md border border-ebony-200 bg-ebony-50 px-3 text-sm text-ebony-800 outline-none"
+                          />
+                        }
+                      />
+
+                      <TableFieldRow
+                        leftLabel="Category Code"
+                        leftInput={
+                          <>
+                            <select
+                              value={form.categoryCode}
+                              onChange={(e) => setCategoryCode(e.target.value)}
+                              className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+                            >
+                              <option value="">Select category...</option>
+                              {categories.map((c) => (
+                                <option key={c.code} value={c.code}>
+                                  {c.code}
+                                </option>
+                              ))}
+                            </select>
+                            {errors.categoryCode && <div className="mt-1 text-xs text-red-600">{errors.categoryCode}</div>}
+                          </>
+                        }
+                        rightLabel="Article Name"
+                        rightInput={
+                          <input
+                            readOnly
+                            value={form.articleName}
+                            className="h-10 w-full cursor-not-allowed rounded-md border border-ebony-200 bg-ebony-50 px-3 text-sm text-ebony-800 outline-none"
+                          />
+                        }
+                      />
+
+                      <TableFieldRow
+                        leftLabel="Subcategory"
+                        leftInput={
+                          <>
+                            <select
+                              value={form.subcategoryCode}
+                              onChange={(e) => update("subcategoryCode", e.target.value)}
+                              disabled={!form.categoryCode}
+                              className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20 disabled:opacity-60"
+                            >
+                              <option value="">
+                                {form.categoryCode ? "Select subcategory..." : "Select category first"}
+                              </option>
+                              {filteredSubcategories.map((s) => (
+                                <option key={s.code} value={s.code}>
+                                  {s.code}
+                                </option>
+                              ))}
+                            </select>
+                            {errors.subcategoryCode && <div className="mt-1 text-xs text-red-600">{errors.subcategoryCode}</div>}
+                          </>
+                        }
+                        rightLabel="Qty"
+                        rightInput={
+                          <>
+                            <input
+                              inputMode="numeric"
+                              value={form.qty}
+                              onChange={(e) => update("qty", sanitizeInt(e.target.value))}
+                              placeholder="0"
+                              className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+                            />
+                            {errors.qty && <div className="mt-1 text-xs text-red-600">{errors.qty}</div>}
+                          </>
+                        }
+                      />
+
+                      <TableFieldRow
+                        leftLabel="Carat"
+                        leftInput={
+                          <>
+                            <select
+                              value={form.carat}
+                              onChange={(e) => update("carat", e.target.value as ReceiptFormState["carat"])}
+                              className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+                            >
+                              <option value=""></option>
+                              <option value="18K">18K</option>
+                              <option value="22K">22K</option>
+                              <option value="24K">24K</option>
+                            </select>
+                            {errors.carat && <div className="mt-1 text-xs text-red-600">{errors.carat}</div>}
+                          </>
+                        }
+                        rightLabel="Wastage (Y/N)"
+                        rightInput={
+                          <select
+                            value={form.wastageYN}
+                            onChange={(e) => update("wastageYN", e.target.value as "Y" | "N")}
+                            className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+                          >
+                            <option value="N">N</option>
+                            <option value="Y">Y</option>
+                          </select>
+                        }
+                      />
+
+                      <TableFieldRow
+                        leftLabel="Gold Weight"
+                        leftInput={
+                          <>
+                            <input
+                              value={form.goldWeight}
+                              onChange={(e) => update("goldWeight", sanitizeDecimal(e.target.value))}
+                              placeholder="grams"
+                              className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+                            />
+                            {errors.goldWeight && <div className="mt-1 text-xs text-red-600">{errors.goldWeight}</div>}
+                          </>
+                        }
+                        rightLabel="Gold Cost"
+                        rightInput={
+                          <input
+                            readOnly
+                            value={goldCostCalculated.toFixed(2)}
+                            className="h-10 w-full cursor-not-allowed rounded-md border border-ebony-200 bg-ebony-50 px-3 text-sm font-semibold text-ebony-800 outline-none"
+                          />
+                        }
+                      />
+
+                      <TableFieldRow
+                        leftLabel="Wastage (mg)"
+                        leftInput={
+                          <>
+                            <input
+                              inputMode="decimal"
+                              disabled={form.wastageYN !== "Y"}
+                              value={form.wastageMg}
+                              onChange={(e) => update("wastageMg", sanitizeDecimal(e.target.value))}
+                              placeholder={form.wastageYN === "Y" ? "0" : "Enable wastage to enter"}
+                              className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20 disabled:opacity-60"
+                            />
+                            {errors.wastageMg && <div className="mt-1 text-xs text-red-600">{errors.wastageMg}</div>}
+                          </>
+                        }
+                        rightLabel="Wastage Cost"
+                        rightInput={
+                          <input
+                            readOnly
+                            value={wastageCostCalculated.toFixed(2)}
+                            className="h-10 w-full cursor-not-allowed rounded-md border border-ebony-200 bg-ebony-50 px-3 text-sm font-semibold text-ebony-800 outline-none"
+                          />
+                        }
+                      />
+
+                      <TableFieldRow
+                        leftLabel="Labour Charges"
+                        leftInput={
+                          <>
+                            <input
+                              inputMode="decimal"
+                              value={form.labourCharges}
+                              onChange={(e) => update("labourCharges", sanitizeDecimal(e.target.value))}
+                              placeholder="0.00"
+                              className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+                            />
+                            {errors.labourCharges && <div className="mt-1 text-xs text-red-600">{errors.labourCharges}</div>}
+                          </>
+                        }
+                        rightLabel="Other Costs"
+                        rightInput={
+                          <input
+                            inputMode="decimal"
+                            value={form.otherCosts}
+                            onChange={(e) => update("otherCosts", sanitizeDecimal(e.target.value))}
+                            placeholder="0.00"
+                            className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+                          />
+                        }
+                      />
+
+                      <tr>
+                        <td className="px-4 py-3 align-top">
+                          <div className="text-[11px] font-bold uppercase tracking-widest text-ebony-600">Total Cost</div>
+                          <input
+                            readOnly
+                            value={totalCost.toFixed(2)}
+                            className="mt-2 h-10 w-full cursor-not-allowed rounded-md border border-gold-200 bg-gradient-gold px-3 text-sm font-bold text-gold-700 outline-none"
+                          />
+                        </td>
+                        <td className="px-4 py-3 align-top" colSpan={3}>
+                          <div className="text-[11px] font-bold uppercase tracking-widest text-ebony-600">Remarks</div>
+                          <textarea
+                            value={form.remarks}
+                            onChange={(e) => update("remarks", e.target.value)}
+                            placeholder="Any special remarks..."
+                            className="mt-2 min-h-24 w-full resize-y rounded-md border border-ebony-200 bg-white px-3 py-2 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+                          />
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
-              <input
-                value={form.location}
-                onChange={(e) => update("location", e.target.value)}
-                placeholder="Main Branch / Vault / Counter 1"
-                className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
-              />
-              {errors.location && <div className="text-xs text-red-600">{errors.location}</div>}
-            </label>
+            ) : (
+              <>
+                <label className="space-y-2 text-sm">
+                  <div className="font-bold text-ebony-700">Transaction Date</div>
+                  <input
+                    type="date"
+                    value={form.transactionDate}
+                    onChange={(e) => update("transactionDate", e.target.value)}
+                    className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
+                  />
+                  {errors.transactionDate && <div className="text-xs text-red-600">{errors.transactionDate}</div>}
+                </label>
 
-            <label className="space-y-2 text-sm">
-              <div className="font-bold text-ebony-700">GSM Code</div>
-              <select
-                value={form.gsmCode}
-                onChange={(e) => setGsmCode(e.target.value)}
-                className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 text-sm outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
-              >
-                <option value="">Select goldsmith...</option>
-                {goldsmiths.map((g) => (
-                  <option key={g.code} value={g.code}>
-                    {g.code}
-                  </option>
-                ))}
-              </select>
-              {errors.gsmCode && <div className="text-xs text-red-600">{errors.gsmCode}</div>}
-            </label>
+                <label className="space-y-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <div className="font-bold text-ebony-700">Location</div>
+                    <div className="text-xs font-semibold text-ebony-400">Optional</div>
+                  </div>
+                  <input
+                    value={form.location}
+                    onChange={(e) => update("location", e.target.value)}
+                    placeholder="Main Branch / Vault / Counter 1"
+                    className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
+                  />
+                  {errors.location && <div className="text-xs text-red-600">{errors.location}</div>}
+                </label>
 
-            <label className="space-y-2 text-sm">
-              <div className="font-bold text-ebony-700">GSM Name</div>
-              <input
-                readOnly
-                value={form.gsmName}
-                className="w-full cursor-not-allowed rounded-lg border-2 border-gold-300 bg-cream-50 px-4 py-2.5 text-ebony-800 outline-none"
-              />
-            </label>
+                <label className="space-y-2 text-sm">
+                  <div className="font-bold text-ebony-700">GSM Code</div>
+                  <select
+                    value={form.gsmCode}
+                    onChange={(e) => setGsmCode(e.target.value)}
+                    className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 text-sm outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
+                  >
+                    <option value="">Select goldsmith...</option>
+                    {goldsmiths.map((g) => (
+                      <option key={g.code} value={g.code}>
+                        {g.code}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.gsmCode && <div className="text-xs text-red-600">{errors.gsmCode}</div>}
+                </label>
 
-            <label className="space-y-2 text-sm">
-              <div className="font-bold text-ebony-700">Category Code</div>
-              <select
-                value={form.categoryCode}
-                onChange={(e) => setCategoryCode(e.target.value)}
-                className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 text-sm outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
-              >
-                <option value="">Select category...</option>
-                {categories.map((c) => (
-                  <option key={c.code} value={c.code}>
-                    {c.code}
-                  </option>
-                ))}
-              </select>
-              {errors.categoryCode && <div className="text-xs text-red-600">{errors.categoryCode}</div>}
-            </label>
+                <label className="space-y-2 text-sm">
+                  <div className="font-bold text-ebony-700">GSM Name</div>
+                  <input
+                    readOnly
+                    value={form.gsmName}
+                    className="w-full cursor-not-allowed rounded-lg border-2 border-gold-300 bg-cream-50 px-4 py-2.5 text-ebony-800 outline-none"
+                  />
+                </label>
 
-            <label className="space-y-2 text-sm">
-              <div className="font-bold text-ebony-700">Article Name</div>
-              <input
-                readOnly
-                value={form.articleName}
-                className="w-full cursor-not-allowed rounded-lg border-2 border-gold-300 bg-cream-50 px-4 py-2.5 text-ebony-800 outline-none"
-              />
-            </label>
+                <label className="space-y-2 text-sm">
+                  <div className="font-bold text-ebony-700">Category Code</div>
+                  <select
+                    value={form.categoryCode}
+                    onChange={(e) => setCategoryCode(e.target.value)}
+                    className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 text-sm outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
+                  >
+                    <option value="">Select category...</option>
+                    {categories.map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.code}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.categoryCode && <div className="text-xs text-red-600">{errors.categoryCode}</div>}
+                </label>
 
-            <label className="space-y-2 text-sm md:col-span-2">
-              <div className="font-bold text-ebony-700">Subcategory</div>
-              <select
-                value={form.subcategoryCode}
-                onChange={(e) => update("subcategoryCode", e.target.value)}
-                disabled={!form.categoryCode}
-                className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 text-sm outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30 disabled:opacity-60"
-              >
-                <option value="">
-                  {form.categoryCode ? "Select subcategory..." : "Select category first"}
-                </option>
-                {filteredSubcategories.map((s) => (
-                  <option key={s.code} value={s.code}>
-                    {s.code}
-                  </option>
-                ))}
-              </select>
-              {errors.subcategoryCode && (
-                <div className="text-xs text-red-600">{errors.subcategoryCode}</div>
-              )}
-            </label>
+                <label className="space-y-2 text-sm">
+                  <div className="font-bold text-ebony-700">Article Name</div>
+                  <input
+                    readOnly
+                    value={form.articleName}
+                    className="w-full cursor-not-allowed rounded-lg border-2 border-gold-300 bg-cream-50 px-4 py-2.5 text-ebony-800 outline-none"
+                  />
+                </label>
 
-            <label className="space-y-2 text-sm">
-              <div className="font-bold text-ebony-700">Qty</div>
-              <input
-                inputMode="numeric"
-                value={form.qty}
-                onChange={(e) => update("qty", sanitizeInt(e.target.value))}
-                placeholder="0"
-                className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
-              />
-              {errors.qty && <div className="text-xs text-red-600">{errors.qty}</div>}
-            </label>
+                <label className="space-y-2 text-sm md:col-span-2">
+                  <div className="font-bold text-ebony-700">Subcategory</div>
+                  <select
+                    value={form.subcategoryCode}
+                    onChange={(e) => update("subcategoryCode", e.target.value)}
+                    disabled={!form.categoryCode}
+                    className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 text-sm outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30 disabled:opacity-60"
+                  >
+                    <option value="">
+                      {form.categoryCode ? "Select subcategory..." : "Select category first"}
+                    </option>
+                    {filteredSubcategories.map((s) => (
+                      <option key={s.code} value={s.code}>
+                        {s.code}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.subcategoryCode && (
+                    <div className="text-xs text-red-600">{errors.subcategoryCode}</div>
+                  )}
+                </label>
 
-            <label className="space-y-2 text-sm">
-              <div className="font-bold text-ebony-700">Carat</div>
-              <select
-                value={form.carat}
-                onChange={(e) => update("carat", e.target.value as ReceiptFormState["carat"])}
-                className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
-              >
-                <option value=""></option>
-                <option value="18K">18K</option>
-                <option value="22K">22K</option>
-              </select>
-              {errors.carat && <div className="text-xs text-red-600">{errors.carat}</div>}
-            </label>
+                <label className="space-y-2 text-sm">
+                  <div className="font-bold text-ebony-700">Qty</div>
+                  <input
+                    inputMode="numeric"
+                    value={form.qty}
+                    onChange={(e) => update("qty", sanitizeInt(e.target.value))}
+                    placeholder="0"
+                    className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
+                  />
+                  {errors.qty && <div className="text-xs text-red-600">{errors.qty}</div>}
+                </label>
 
-            {/* Subcategory replaces description per workflow */}
+                <label className="space-y-2 text-sm">
+                  <div className="font-bold text-ebony-700">Carat</div>
+                  <select
+                    value={form.carat}
+                    onChange={(e) => update("carat", e.target.value as ReceiptFormState["carat"])}
+                    className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
+                  >
+                    <option value=""></option>
+                    <option value="18K">18K</option>
+                    <option value="22K">22K</option>
+                    <option value="24K">24K</option>
+                  </select>
+                  {errors.carat && <div className="text-xs text-red-600">{errors.carat}</div>}
+                </label>
 
-            <label className="space-y-2 text-sm">
-              <div className="font-bold text-ebony-700">Wastage (Y/N)</div>
-              <select
-                value={form.wastageYN}
-                onChange={(e) => update("wastageYN", e.target.value as "Y" | "N")}
-                className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
-              >
-                <option value="N">N</option>
-                <option value="Y">Y</option>
-              </select>
-            </label>
+                <label className="space-y-2 text-sm">
+                  <div className="font-bold text-ebony-700">Wastage (Y/N)</div>
+                  <select
+                    value={form.wastageYN}
+                    onChange={(e) => update("wastageYN", e.target.value as "Y" | "N")}
+                    className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
+                  >
+                    <option value="N">N</option>
+                    <option value="Y">Y</option>
+                  </select>
+                </label>
 
-            <label className="space-y-2 text-sm">
-              <div className="font-bold text-ebony-700">Gold Weight</div>
-              <input
-                value={form.goldWeight}
-                onChange={(e) => update("goldWeight", sanitizeDecimal(e.target.value))}
-                placeholder="grams"
-                className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
-              />
-              {errors.goldWeight && <div className="text-xs text-red-600">{errors.goldWeight}</div>}
-            </label>
+                <label className="space-y-2 text-sm">
+                  <div className="font-bold text-ebony-700">Gold Weight</div>
+                  <input
+                    value={form.goldWeight}
+                    onChange={(e) => update("goldWeight", sanitizeDecimal(e.target.value))}
+                    placeholder="grams"
+                    className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
+                  />
+                  {errors.goldWeight && <div className="text-xs text-red-600">{errors.goldWeight}</div>}
+                </label>
 
-            <label className="space-y-2 text-sm">
-              <div className="font-bold text-ebony-700">Gold Cost</div>
-              <input
-                readOnly
-                value={goldCostCalculated.toFixed(2)}
-                className="w-full cursor-not-allowed rounded-lg border-2 border-gold-300 bg-cream-50 px-4 py-2.5 text-ebony-800 outline-none"
-              />
-            </label>
+                <label className="space-y-2 text-sm">
+                  <div className="font-bold text-ebony-700">Gold Cost</div>
+                  <input
+                    readOnly
+                    value={goldCostCalculated.toFixed(2)}
+                    className="w-full cursor-not-allowed rounded-lg border-2 border-gold-300 bg-cream-50 px-4 py-2.5 text-ebony-800 outline-none"
+                  />
+                </label>
 
-            <label className="space-y-2 text-sm">
-              <div className="font-bold text-ebony-700">Wastage (mg)</div>
-              <input
-                inputMode="decimal"
-                disabled={form.wastageYN !== "Y"}
-                value={form.wastageMg}
-                onChange={(e) => update("wastageMg", sanitizeDecimal(e.target.value))}
-                placeholder={form.wastageYN === "Y" ? "0" : "Enable wastage to enter"}
-                className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30 disabled:opacity-60"
-              />
-              {errors.wastageMg && <div className="text-xs text-red-600">{errors.wastageMg}</div>}
-            </label>
+                <label className="space-y-2 text-sm">
+                  <div className="font-bold text-ebony-700">Wastage (mg)</div>
+                  <input
+                    inputMode="decimal"
+                    disabled={form.wastageYN !== "Y"}
+                    value={form.wastageMg}
+                    onChange={(e) => update("wastageMg", sanitizeDecimal(e.target.value))}
+                    placeholder={form.wastageYN === "Y" ? "0" : "Enable wastage to enter"}
+                    className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30 disabled:opacity-60"
+                  />
+                  {errors.wastageMg && <div className="text-xs text-red-600">{errors.wastageMg}</div>}
+                </label>
 
-            <label className="space-y-2 text-sm">
-              <div className="font-bold text-ebony-700">Wastage Cost</div>
-              <input
-                readOnly
-                value={wastageCostCalculated.toFixed(2)}
-                className="w-full cursor-not-allowed rounded-lg border-2 border-gold-300 bg-cream-50 px-4 py-2.5 text-ebony-800 outline-none"
-              />
-            </label>
+                <label className="space-y-2 text-sm">
+                  <div className="font-bold text-ebony-700">Wastage Cost</div>
+                  <input
+                    readOnly
+                    value={wastageCostCalculated.toFixed(2)}
+                    className="w-full cursor-not-allowed rounded-lg border-2 border-gold-300 bg-cream-50 px-4 py-2.5 text-ebony-800 outline-none"
+                  />
+                </label>
 
-            <label className="space-y-2 text-sm">
-              <div className="font-bold text-ebony-700">Labour Charges</div>
-              <input
-                inputMode="decimal"
-                value={form.labourCharges}
-                onChange={(e) => update("labourCharges", sanitizeDecimal(e.target.value))}
-                placeholder="0.00"
-                className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
-              />
-              {errors.labourCharges && <div className="text-xs text-red-600">{errors.labourCharges}</div>}
-            </label>
+                <label className="space-y-2 text-sm">
+                  <div className="font-bold text-ebony-700">Labour Charges</div>
+                  <input
+                    inputMode="decimal"
+                    value={form.labourCharges}
+                    onChange={(e) => update("labourCharges", sanitizeDecimal(e.target.value))}
+                    placeholder="0.00"
+                    className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
+                  />
+                  {errors.labourCharges && <div className="text-xs text-red-600">{errors.labourCharges}</div>}
+                </label>
 
-            <label className="space-y-2 text-sm">
-              <div className="font-bold text-ebony-700">Other Costs</div>
-              <input
-                inputMode="decimal"
-                value={form.otherCosts}
-                onChange={(e) => update("otherCosts", sanitizeDecimal(e.target.value))}
-                placeholder="0.00"
-                className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
-              />
-            </label>
+                <label className="space-y-2 text-sm">
+                  <div className="font-bold text-ebony-700">Other Costs</div>
+                  <input
+                    inputMode="decimal"
+                    value={form.otherCosts}
+                    onChange={(e) => update("otherCosts", sanitizeDecimal(e.target.value))}
+                    placeholder="0.00"
+                    className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
+                  />
+                </label>
 
-            <label className="space-y-2 text-sm">
-              <div className="font-bold text-ebony-700">Total Cost</div>
-              <input
-                readOnly
-                value={totalCost.toFixed(2)}
-                className="w-full cursor-not-allowed rounded-lg border-2 border-gold-400 bg-gradient-gold px-4 py-2.5 font-bold text-gold-700 outline-none"
-              />
-            </label>
+                <label className="space-y-2 text-sm">
+                  <div className="font-bold text-ebony-700">Total Cost</div>
+                  <input
+                    readOnly
+                    value={totalCost.toFixed(2)}
+                    className="w-full cursor-not-allowed rounded-lg border-2 border-gold-400 bg-gradient-gold px-4 py-2.5 font-bold text-gold-700 outline-none"
+                  />
+                </label>
 
-            <label className="space-y-2 text-sm md:col-span-2">
-              <div className="font-bold text-ebony-700">Remarks</div>
-              <textarea
-                value={form.remarks}
-                onChange={(e) => update("remarks", e.target.value)}
-                placeholder="Any special remarks..."
-                className="min-h-28 w-full resize-y rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
-              />
-            </label>
+                <label className="space-y-2 text-sm md:col-span-2">
+                  <div className="font-bold text-ebony-700">Remarks</div>
+                  <textarea
+                    value={form.remarks}
+                    onChange={(e) => update("remarks", e.target.value)}
+                    placeholder="Any special remarks..."
+                    className="min-h-28 w-full resize-y rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
+                  />
+                </label>
 
-            <div className="md:col-span-2 flex items-center justify-end gap-3 pt-4">
-              {saveState === "saved" && <span className="text-sm font-bold text-jewel-700">Saved</span>}
-              {saveState === "error" && <span className="text-sm font-bold text-red-600">Save failed</span>}
-              <button
-                type="submit"
-                disabled={saveState === "saving"}
-                className="rounded-lg bg-gradient-to-r from-gold-500 to-gold-600 px-6 py-2.5 text-sm font-bold text-ebony-900 shadow-md hover:shadow-lg transition-all disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {saveState === "saving" ? "Saving..." : "Save Receipt"}
-              </button>
-            </div>
+                <div className="md:col-span-2 flex items-center justify-end gap-3 pt-4">
+                  {saveState === "saved" && <span className="text-sm font-bold text-jewel-700">Saved</span>}
+                  {saveState === "error" && <span className="text-sm font-bold text-red-600">Save failed</span>}
+                  <button
+                    type="submit"
+                    disabled={saveState === "saving"}
+                    className="rounded-lg bg-gradient-to-r from-gold-500 to-gold-600 px-6 py-2.5 text-sm font-bold text-ebony-900 shadow-md transition-all hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {saveState === "saving" ? "Saving..." : saveButtonText}
+                  </button>
+                </div>
+              </>
+            )}
           </form>
         )}
       </CardContent>
@@ -821,5 +1099,30 @@ export function ReceiptForm({
         </form>
       </Modal>
     </Card>
+  );
+}
+
+function TableFieldRow({
+  leftLabel,
+  leftInput,
+  rightLabel,
+  rightInput
+}: {
+  leftLabel: string;
+  leftInput: React.ReactNode;
+  rightLabel: string;
+  rightInput: React.ReactNode;
+}) {
+  return (
+    <tr>
+      <td className="w-1/2 px-4 py-3 align-top" colSpan={2}>
+        <div className="text-[11px] font-bold uppercase tracking-widest text-ebony-600">{leftLabel}</div>
+        <div className="mt-2">{leftInput}</div>
+      </td>
+      <td className="w-1/2 px-4 py-3 align-top" colSpan={2}>
+        <div className="text-[11px] font-bold uppercase tracking-widest text-ebony-600">{rightLabel}</div>
+        <div className="mt-2">{rightInput}</div>
+      </td>
+    </tr>
   );
 }

@@ -46,7 +46,7 @@ export default async function SaleViewPage({ params }: { params: { id: string } 
         salesman: true,
         items: {
           orderBy: [{ id: "asc" }],
-          include: { stockMaster: true }
+          include: { purchase: true, stockMaster: true }
         }
       }
     })
@@ -153,8 +153,8 @@ export default async function SaleViewPage({ params }: { params: { id: string } 
                   return (
                     <tr key={item.id}>
                       <td className="border border-ebony-700 px-3 py-2 text-center font-semibold">{index + 1}</td>
-                      <td className="border border-ebony-700 px-3 py-2">
-                        {item.stockMaster.subcategoryName || item.subcategoryCode}
+                    <td className="border border-ebony-700 px-3 py-2">
+                        {item.purchase?.subcategoryName || item.stockMaster?.subcategoryName || item.subcategoryCode}
                       </td>
                       <td className="border border-ebony-700 px-3 py-2 text-center">{item.carat || "-"}</td>
                       <td className="border border-ebony-700 px-3 py-2 text-right tabular-nums">{weight(itemWeight)}</td>

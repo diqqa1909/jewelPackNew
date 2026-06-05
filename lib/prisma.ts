@@ -29,18 +29,13 @@ function createClient() {
   });
 }
 
-// In dev, hot-reloading can keep an older PrismaClient instance in `globalThis`.
-// If the schema changes (new models), that old instance may not expose the new delegates.
+// In development, recreate the Prisma client on every reload so schema changes
+// (for example, relation fields added to Sale) are picked up immediately.
 const cached = globalThis.__prisma;
-const needsRefresh =
-  process.env.NODE_ENV !== "production" &&
-  cached &&
-  (typeof (cached as unknown as { subcategory?: unknown }).subcategory === "undefined" ||
-    typeof (cached as unknown as { purchase?: unknown }).purchase === "undefined");
-
-export const prisma = needsRefresh ? createClient() : cached ?? createClient();
+export const prisma = process.env.NODE_ENV === "production" ? cached ?? createClient() : createClient();
 
 if (process.env.NODE_ENV !== "production") globalThis.__prisma = prisma;
+else if (!cached) globalThis.__prisma = prisma;
 
 export async function prismaWithRetry<T>(
   fn: (client: PrismaClient) => Promise<T>,

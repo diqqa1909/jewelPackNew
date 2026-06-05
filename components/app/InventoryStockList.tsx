@@ -1,36 +1,30 @@
 "use client";
 
-import Link from "next/link";
-import { useToast } from "@/components/ui/ToastProvider";
-import { useMemo, useState } from "react";
 import { buttonClassName } from "@/components/ui/Button";
-import {
-  BarChart3,
-  Boxes,
-  ChevronLeft,
-  ChevronRight,
-  ClipboardList,
-  Edit,
-  Factory,
-  Plus,
-  Search,
-  Shuffle,
-  Trash2
-} from "lucide-react";
+import { useMemo, useState } from "react";
+import Link from "next/link";
+import { BarChart3, ChevronDown, ChevronRight, Plus, Search } from "lucide-react";
 
 type StockRow = {
-  id: number;
-  barcode: string;
-  designNo: string;
   categoryCode: string;
   categoryName: string;
+  purchasedQty: number;
+  soldQty: number;
+  availableQty: number;
+};
+
+type SubcategoryRow = {
+  categoryCode: string;
+  categoryName: string;
+  subcategoryCode: string;
   subcategoryName: string;
-  karat: string;
-  grossWeight: string;
-  netWeight: string;
-  making: string;
-  balanceQty: number;
-  updatedAt: string;
+  carat: string;
+  purchasedQty: number;
+  soldQty: number;
+  availableQty: number;
+  purchasedGoldWeight: number;
+  soldGoldWeight: number;
+  availableGoldWeight: number;
 };
 
 type Category = {
@@ -38,84 +32,63 @@ type Category = {
   name: string;
 };
 
-function toNumber(value: string | number) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function formatWeight(value: string | number) {
-  return toNumber(value).toLocaleString("en-US", {
-    minimumFractionDigits: 3,
-    maximumFractionDigits: 3
-  });
-}
-
-function formatMoney(value: string | number) {
-  return toNumber(value).toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  });
-}
-
-export function InventoryStockList({ rows, categories }: { rows: StockRow[]; categories: Category[] }) {
-  const toast = useToast();
-  const [items, setItems] = useState(rows);
+export function InventoryStockList({
+  rows,
+  subcategoryRows,
+  categories
+}: {
+  rows: StockRow[];
+  subcategoryRows: SubcategoryRow[];
+  categories: Category[];
+}) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("All");
-  const [karat, setKarat] = useState("All");
-  const [status, setStatus] = useState("All");
-  const [busyId, setBusyId] = useState<number | null>(null);
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
 
-  async function remove(id: number) {
-    const ok = confirm("Delete this stock receipt?");
-    if (!ok) return;
-    setBusyId(id);
-    try {
-      const res = await fetch(`/api/stock/receipts?id=${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Delete failed");
-      setItems((prev) => prev.filter((row) => row.id !== id));
-      toast.success("Stock item deleted");
-    } catch (e) {
-      toast.error("Unable to delete stock item", e instanceof Error ? e.message : "Please try again.");
-    } finally {
-      setBusyId(null);
+  const toggleCategory = (code: string) => {
+    const newExpanded = new Set(expandedCategories);
+    if (newExpanded.has(code)) {
+      newExpanded.delete(code);
+    } else {
+      newExpanded.add(code);
     }
-  }
+    setExpandedCategories(newExpanded);
+  };
 
-  const karats = useMemo(() => {
-    return Array.from(new Set(items.map((r) => r.karat).filter(Boolean))).sort();
-  }, [items]);
+  const totalPurchased = useMemo(() => rows.reduce((sum, row) => sum + row.purchasedQty, 0), [rows]);
+  const totalSold = useMemo(() => rows.reduce((sum, row) => sum + row.soldQty, 0), [rows]);
+  const totalAvailable = useMemo(() => rows.reduce((sum, row) => sum + row.availableQty, 0), [rows]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return items.filter((row) => {
-      const rowStatus = row.balanceQty > 0 ? "Available" : "Sold";
+    return rows.filter((row) => {
       const matchesSearch =
         !q ||
-        row.barcode.toLowerCase().includes(q) ||
-        row.designNo.toLowerCase().includes(q) ||
-        row.categoryName.toLowerCase().includes(q) ||
-        row.subcategoryName.toLowerCase().includes(q);
+        row.categoryCode.toLowerCase().includes(q) ||
+        row.categoryName.toLowerCase().includes(q);
       const matchesCategory = category === "All" || row.categoryCode === category;
-      const matchesKarat = karat === "All" || row.karat === karat;
-      const matchesStatus = status === "All" || rowStatus === status;
-      return matchesSearch && matchesCategory && matchesKarat && matchesStatus;
+      return matchesSearch && matchesCategory;
     });
-  }, [category, items, karat, query, status]);
+  }, [category, query, rows]);
 
-  const visibleRows = filtered.slice(0, 8);
-  const totalPages = Math.max(1, Math.ceil(filtered.length / 8));
+  const visibleRows = filtered.slice(0, 50);
 
   return (
     <div className="space-y-4">
+      <section className="grid gap-3 sm:grid-cols-3">
+        <Stat label="Purchased Qty" value={totalPurchased} tone="blue" />
+        <Stat label="Sold Qty" value={totalSold} tone="amber" />
+        <Stat label="Available Qty" value={totalAvailable} tone="emerald" />
+      </section>
+
       <section className="rounded-lg border border-ebony-100 bg-white p-4 shadow-sm">
-        <div className="grid gap-3 xl:grid-cols-[minmax(280px,1fr)_150px_120px_120px_auto]">
+        <div className="grid gap-3 xl:grid-cols-[minmax(280px,1fr)_220px_auto]">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ebony-400" />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search by barcode, design no, name..."
+              placeholder="Search by category code or name..."
               className="h-10 w-full rounded-md border border-ebony-200 bg-white pl-9 pr-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
             />
           </div>
@@ -136,40 +109,10 @@ export function InventoryStockList({ rows, categories }: { rows: StockRow[]; cat
             </select>
           </label>
 
-          <label className="space-y-1">
-            <span className="text-[11px] font-bold text-ebony-700">Karat</span>
-            <select
-              value={karat}
-              onChange={(e) => setKarat(e.target.value)}
-              className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
-            >
-              <option>All</option>
-              {karats.map((k) => (
-                <option key={k}>{k}</option>
-              ))}
-            </select>
-          </label>
-
-          <label className="space-y-1">
-            <span className="text-[11px] font-bold text-ebony-700">Status</span>
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-              className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
-            >
-              <option>All</option>
-              <option>Available</option>
-              <option>Sold</option>
-            </select>
-          </label>
-
           <div className="flex items-end">
-            <Link
-              href="/stock/receipts/new"
-              className={buttonClassName("primary", "h-10 w-full px-5 xl:w-auto")}
-            >
+            <Link href="/purchases/new" className={buttonClassName("primary", "h-10 w-full px-5 xl:w-auto")}>
               <Plus className="h-4 w-4" />
-              Add New Item
+              Add New Purchase
             </Link>
           </div>
         </div>
@@ -177,72 +120,110 @@ export function InventoryStockList({ rows, categories }: { rows: StockRow[]; cat
 
       <section className="overflow-hidden rounded-lg border border-ebony-100 bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[980px] text-sm">
+          <table className="w-full min-w-[860px] text-sm">
             <thead className="bg-ebony-50 text-left text-[11px] font-bold uppercase tracking-wide text-ebony-600">
               <tr>
-                <th className="px-4 py-3">Barcode</th>
-                <th className="px-4 py-3">Design No</th>
+                <th className="px-4 py-3 w-12"></th>
+                <th className="px-4 py-3">Category Code</th>
                 <th className="px-4 py-3">Category</th>
-                <th className="px-4 py-3">Karat</th>
-                <th className="px-4 py-3 text-right">Gross Wt (g)</th>
-                <th className="px-4 py-3 text-right">Net Wt (g)</th>
-                <th className="px-4 py-3 text-right">Making</th>
+                <th className="px-4 py-3 text-right">Purchased Qty</th>
+                <th className="px-4 py-3 text-right">Sold Qty</th>
+                <th className="px-4 py-3 text-right">Available Qty</th>
                 <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 text-center">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-ebony-100">
               {visibleRows.map((row) => {
-                const available = row.balanceQty > 0;
+                const available = row.availableQty > 0;
+                const isExpanded = expandedCategories.has(row.categoryCode);
+                const categorySubcategories = subcategoryRows.filter(
+                  (sub) => sub.categoryCode === row.categoryCode
+                );
+
                 return (
-                  <tr key={row.id} className="bg-white hover:bg-ebony-50/70">
-                    <td className="px-4 py-3 font-semibold tabular-nums text-ebony-900">{row.barcode}</td>
-                    <td className="px-4 py-3 text-ebony-700">{row.designNo}</td>
-                    <td className="px-4 py-3 text-ebony-700">{row.categoryName}</td>
-                    <td className="px-4 py-3 font-semibold text-ebony-800">{row.karat || "-"}</td>
-                    <td className="px-4 py-3 text-right tabular-nums text-ebony-700">{formatWeight(row.grossWeight)}</td>
-                    <td className="px-4 py-3 text-right tabular-nums text-ebony-700">{formatWeight(row.netWeight)}</td>
-                    <td className="px-4 py-3 text-right tabular-nums text-ebony-700">{formatMoney(row.making)}</td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={
-                          available
-                            ? "rounded-md bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-700"
-                            : "rounded-md bg-ebony-100 px-2 py-1 text-xs font-bold text-ebony-600"
-                        }
-                      >
-                        {available ? "Available" : "Sold"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <div className="inline-flex items-center gap-1">
-                        <Link
-                          href={`/stock/receipts/${row.id}`}
-                          className={buttonClassName("secondary", "h-8 w-8 px-0 py-0 text-ebony-600")}
-                          aria-label="Edit item"
-                          title="Edit item"
+                  <tbody key={row.categoryCode}>
+                    <tr className="bg-white hover:bg-ebony-50/70">
+                      <td className="px-4 py-3">
+                        {categorySubcategories.length > 0 && (
+                          <button
+                            onClick={() => toggleCategory(row.categoryCode)}
+                            className="inline-flex items-center justify-center w-6 h-6 rounded hover:bg-ebony-100"
+                          >
+                            {isExpanded ? (
+                              <ChevronDown className="h-4 w-4 text-ebony-600" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4 text-ebony-600" />
+                            )}
+                          </button>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 font-semibold tabular-nums text-ebony-900">{row.categoryCode}</td>
+                      <td className="px-4 py-3 text-ebony-700">{row.categoryName}</td>
+                      <td className="px-4 py-3 text-right font-semibold tabular-nums text-ebony-800">{row.purchasedQty}</td>
+                      <td className="px-4 py-3 text-right font-semibold tabular-nums text-ebony-800">{row.soldQty}</td>
+                      <td className="px-4 py-3 text-right font-semibold tabular-nums text-ebony-900">{row.availableQty}</td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={
+                            available
+                              ? "rounded-md bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-700"
+                              : "rounded-md bg-ebony-100 px-2 py-1 text-xs font-bold text-ebony-600"
+                          }
                         >
-                          <Edit className="h-4 w-4" />
-                        </Link>
-                        <button
-                          type="button"
-                          onClick={() => void remove(row.id)}
-                          disabled={busyId === row.id}
-                          className={buttonClassName("secondary", "h-8 w-8 px-0 py-0 text-red-600 disabled:opacity-50")}
-                          aria-label="Delete item"
-                          title="Delete item"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+                          {available ? "Available" : "Sold Out"}
+                        </span>
+                      </td>
+                    </tr>
+
+                    {isExpanded &&
+                      categorySubcategories.map((subRow) => {
+                        const subAvailable = subRow.availableQty > 0 || subRow.availableGoldWeight > 0;
+                        return (
+                          <tr
+                            key={`${subRow.subcategoryCode}||${subRow.carat}`}
+                            className="bg-ebony-50/50 hover:bg-ebony-50"
+                          >
+                            <td colSpan={2} className="px-4 py-3">
+                              <div className="ml-6 flex items-center gap-2">
+                                <div className="text-xs text-ebony-500">→</div>
+                                <div>
+                                  <div className="font-semibold text-ebony-900">{subRow.subcategoryCode}</div>
+                                  <div className="text-xs text-ebony-600">{subRow.subcategoryName}</div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 font-semibold text-ebony-700 text-sm">
+                              {subRow.carat || "-"}
+                            </td>
+                            <td className="px-4 py-3 text-right font-semibold tabular-nums text-ebony-800">{subRow.purchasedQty}</td>
+                            <td className="px-4 py-3 text-right font-semibold tabular-nums text-ebony-800">{subRow.soldQty}</td>
+                            <td className="px-4 py-3 text-right font-semibold tabular-nums text-ebony-900">{subRow.availableQty}</td>
+                            <td className="px-4 py-3">
+                              <div className="flex flex-col gap-1">
+                                <span
+                                  className={
+                                    subAvailable
+                                      ? "rounded-md bg-emerald-50 px-2 py-1 text-[11px] font-bold text-emerald-700"
+                                      : "rounded-md bg-ebony-100 px-2 py-1 text-[11px] font-bold text-ebony-600"
+                                  }
+                                >
+                                  {subAvailable ? "Available" : "Sold Out"}
+                                </span>
+                                <span className="text-[10px] text-ebony-600">
+                                  Wt: {subRow.availableGoldWeight.toFixed(3)}g
+                                </span>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
                 );
               })}
               {visibleRows.length === 0 ? (
                 <tr>
-                  <td className="px-5 py-10 text-center text-sm text-ebony-600" colSpan={9}>
-                    No stock items found.
+                  <td className="px-5 py-10 text-center text-sm text-ebony-600" colSpan={7}>
+                    No category inventory found.
                   </td>
                 </tr>
               ) : null}
@@ -253,36 +234,30 @@ export function InventoryStockList({ rows, categories }: { rows: StockRow[]; cat
 
       <section className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-xs font-semibold text-ebony-600">
-          Showing 1 to {visibleRows.length} of {filtered.length} items
-        </div>
-        <div className="flex items-center gap-1">
-          <button className={buttonClassName("secondary", "h-8 w-8 px-0 py-0 text-ebony-500")}>
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          {[1, 2, 3, 4, 5].slice(0, Math.min(5, totalPages)).map((page) => (
-            <button
-              key={page}
-              className={
-                page === 1
-                  ? buttonClassName("primary", "h-8 w-8 px-0 py-0 text-xs")
-                  : buttonClassName("secondary", "h-8 w-8 px-0 py-0 text-xs")
-              }
-            >
-              {page}
-            </button>
-          ))}
-          <button className={buttonClassName("secondary", "h-8 w-8 px-0 py-0 text-ebony-500")}>
-            <ChevronRight className="h-4 w-4" />
-          </button>
+          Showing {visibleRows.length} of {filtered.length} categories
         </div>
       </section>
 
-      <section className="grid gap-3 md:grid-cols-4">
-        <QuickTile href="/stock/receipts/new" icon={ClipboardList} label="Stock Adjustment" tone="cyan" />
-        <QuickTile href="/stock/receipts/new" icon={Shuffle} label="Stock Transfer" tone="green" />
-        <QuickTile href="/stock/system-data" icon={Factory} label="Melting / Scrap" tone="violet" />
-        <QuickTile href="/reports" icon={BarChart3} label="Stock Report" tone="blue" />
+      <section className="grid gap-3 md:grid-cols-3">
+        <QuickTile href="/purchases/new" icon={Plus} label="New Purchase" tone="blue" />
+        <QuickTile href="/sales/new" icon={BarChart3} label="Sales" tone="green" />
+        <QuickTile href="/reports" icon={BarChart3} label="Reports" tone="violet" />
       </section>
+    </div>
+  );
+}
+
+function Stat({ label, value, tone }: { label: string; value: number; tone: "blue" | "amber" | "emerald" }) {
+  const toneClasses = {
+    blue: "border-sky-100 bg-sky-50 text-sky-700",
+    amber: "border-amber-100 bg-amber-50 text-amber-700",
+    emerald: "border-emerald-100 bg-emerald-50 text-emerald-700"
+  };
+
+  return (
+    <div className={`rounded-lg border px-4 py-3 shadow-sm ${toneClasses[tone]}`}>
+      <div className="text-xs font-bold uppercase tracking-widest">{label}</div>
+      <div className="mt-1 text-xl font-extrabold tabular-nums text-ebony-900">{value}</div>
     </div>
   );
 }
@@ -294,15 +269,14 @@ function QuickTile({
   tone
 }: {
   href: string;
-  icon: typeof Boxes;
+  icon: typeof Plus;
   label: string;
-  tone: "cyan" | "green" | "violet" | "blue";
+  tone: "blue" | "green" | "violet";
 }) {
   const toneClasses = {
-    cyan: "bg-cyan-50 text-cyan-700",
+    blue: "bg-sky-50 text-sky-700",
     green: "bg-emerald-50 text-emerald-700",
-    violet: "bg-violet-50 text-violet-700",
-    blue: "bg-sky-50 text-sky-700"
+    violet: "bg-violet-50 text-violet-700"
   };
 
   return (

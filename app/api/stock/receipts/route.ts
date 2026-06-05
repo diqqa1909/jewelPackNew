@@ -74,9 +74,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid subcategory." }, { status: 400 });
   }
 
-  const created = await prisma.stockMaster.create({
+  const created = await prisma.purchase.create({
     data: {
-      transactionDate: new Date(body.transactionDate),
+      purchaseNo: `STK-${Date.now()}`,
+      purchaseDate: new Date(body.transactionDate),
       location: (body.location ?? "").trim() || null,
       gsmCode: body.gsmCode,
       gsmName: gsm?.name ?? "",
@@ -95,12 +96,14 @@ export async function POST(req: Request) {
       labourCharges,
       otherCosts,
       totalCost,
-      soldQty: 0,
-      balanceQty: qty,
-      soldGoldWeight: new Prisma.Decimal("0"),
-      balanceGoldWeight: goldWeight,
-      soldCost: new Prisma.Decimal("0"),
-      balanceCost: totalCost,
+      purchaseGold: (body.carat ?? "").trim() || null,
+      totalItems: qty,
+      totalWeight: goldWeight,
+      subTotal: totalCost,
+      otherCharges: new Prisma.Decimal("0"),
+      totalAmount: totalCost,
+      paidAmount: new Prisma.Decimal("0"),
+      balanceDue: totalCost,
       remarks: (body.remarks ?? "").trim() || null
     }
   });
@@ -114,10 +117,19 @@ export async function GET(req: Request) {
   if (idRaw) {
     const id = Number(idRaw);
     if (!Number.isFinite(id)) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
-    const row = await prisma.stockMaster.findUnique({ where: { id } });
-    return NextResponse.json({ row });
+    const row = await prisma.purchase.findUnique({ where: { id } });
+    return NextResponse.json(
+      row
+        ? {
+            row: {
+              ...row,
+              transactionDate: row.purchaseDate
+            }
+          }
+        : { row: null }
+    );
   }
-  const rows = await prisma.stockMaster.findMany({
+  const rows = await prisma.purchase.findMany({
     orderBy: { createdAt: "desc" },
     take: 200
   });
@@ -128,7 +140,7 @@ export async function DELETE(req: Request) {
   const url = new URL(req.url);
   const id = Number(url.searchParams.get("id"));
   if (!Number.isFinite(id)) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
-  await prisma.stockMaster.delete({ where: { id } });
+  await prisma.purchase.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }
 
@@ -183,13 +195,13 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: "Invalid subcategory." }, { status: 400 });
   }
 
-  const existing = await prisma.stockMaster.findUnique({ where: { id: Number(body.id) } });
+  const existing = await prisma.purchase.findUnique({ where: { id: Number(body.id) } });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const updated = await prisma.stockMaster.update({
+  const updated = await prisma.purchase.update({
     where: { id: Number(body.id) },
     data: {
-      transactionDate: body.transactionDate ? new Date(body.transactionDate) : undefined,
+      purchaseDate: body.transactionDate ? new Date(body.transactionDate) : undefined,
       location:
         body.location === undefined ? undefined : (String(body.location ?? "").trim() || null),
       gsmCode: body.gsmCode,
@@ -209,19 +221,23 @@ export async function PATCH(req: Request) {
       labourCharges,
       otherCosts,
       totalCost,
-      balanceQty:
-        body.qty == null ? undefined : Math.max(0, Number(body.qty) - (existing.soldQty ?? 0)),
-      balanceGoldWeight:
-        body.goldWeight == null
-          ? undefined
-          : clampDecimalNonNegative(goldWeight.minus(existing.soldGoldWeight)),
-      balanceCost:
-        body.goldWeight == null && body.labourCharges == null && body.otherCosts == null && body.wastageMg == null
-          ? undefined
-          : clampDecimalNonNegative(totalCost.minus(existing.soldCost)),
+      purchaseGold: body.carat ? body.carat : undefined,
+      totalItems: body.qty == null ? undefined : body.qty,
+      totalWeight: body.goldWeight == null ? undefined : goldWeight,
+      subTotal: totalCost,
+      otherCharges: new Prisma.Decimal("0"),
+      totalAmount: totalCost,
+      paidAmount: existing.paidAmount ?? new Prisma.Decimal("0"),
+      balanceDue: totalCost,
       remarks: body.remarks ?? undefined
     }
   });
 
-  return NextResponse.json({ ok: true, row: updated });
+  return NextResponse.json({
+    ok: true,
+    row: {
+      ...updated,
+      transactionDate: updated.purchaseDate
+    }
+  });
 }

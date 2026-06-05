@@ -178,9 +178,11 @@ model Sale {
   salesNTXId    Int
   salesNTX      SalesNTX @relation(fields: [salesNTXId], references: [id], onDelete: Restrict)
 
-  // The receipt row this sale line consumed from (FIFO allocation)
-  stockMasterId Int
-  stockMaster   StockMaster @relation(fields: [stockMasterId], references: [id], onDelete: Restrict)
+  // The purchase row this sale line consumed from (FIFO allocation)
+  purchaseId    Int?
+  purchase      Purchase? @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  stockMasterId Int?
+  stockMaster   StockMaster? @relation(fields: [stockMasterId], references: [id], onDelete: Restrict)
 
   subcategoryCode String
   carat           String?
@@ -212,24 +214,44 @@ model Salesman {
 }
 
 model Purchase {
-  id           Int           @id @default(autoincrement())
-  purchaseNo   String        @unique
-  purchaseDate DateTime
-  supplierId   Int
-  supplier     Supplier      @relation(fields: [supplierId], references: [id], onDelete: Restrict)
-  purchaseGold String?
-  totalItems   Int
-  totalWeight  Decimal
-  subTotal     Decimal
-  otherCharges Decimal       @default(0)
-  totalAmount  Decimal
-  paidAmount   Decimal       @default(0)
-  balanceDue   Decimal
-  notes        String?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  id              Int       @id @default(autoincrement())
+  purchaseNo      String    @unique
+  purchaseDate    DateTime
+  location        String?
+  gsmCode         String?
+  gsmName         String?
+  categoryCode    String?
+  articleName     String?
+  subcategoryCode String?
+  subcategoryName String?
+  qty             Int       @default(0)
+  description     String?
+  carat           String?
+  wastageYN       Boolean   @default(false)
+  goldWeight      Decimal   @default(0)
+  goldCost        Decimal   @default(0)
+  wastageMg       Decimal   @default(0)
+  wastage         Decimal   @default(0)
+  labourCharges   Decimal   @default(0)
+  otherCosts      Decimal   @default(0)
+  totalCost       Decimal   @default(0)
+  remarks         String?
+  supplierId      Int?
+  supplier        Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  purchaseGold    String?
+  totalItems      Int       @default(0)
+  totalWeight     Decimal   @default(0)
+  subTotal        Decimal   @default(0)
+  otherCharges    Decimal   @default(0)
+  totalAmount     Decimal   @default(0)
+  paidAmount      Decimal   @default(0)
+  balanceDue      Decimal   @default(0)
+  notes           String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  items        PurchaseItem[]
+  items PurchaseItem[]
+  sales Sale[]
 
   @@map("purchases")
   @@index([purchaseDate])

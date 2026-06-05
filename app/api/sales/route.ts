@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/lib/generated/prisma";
+import { getInventoryBalanceRows, normalizeCarat } from "@/lib/inventory-balance";
 import { NextResponse } from "next/server";
 
 type SaleLineInput = {
@@ -120,6 +121,11 @@ export async function POST(req: Request) {
     const requested = Array.from(aggregated.values());
 
     const result = await prisma.$transaction(async (tx) => {
+    const availableRows = await getInventoryBalanceRows(tx as any);
+    const availableMap = new Map(
+      availableRows.map((row) => [`${row.subcategoryCode}||${normalizeCarat(row.carat)}`, row] as const)
+    );
+
     // Generate sale number (date-based)
     const yyyy = txDate.getFullYear();
     const mm = String(txDate.getMonth() + 1).padStart(2, "0");
@@ -156,78 +162,109 @@ export async function POST(req: Request) {
 
     for (const reqLine of requested) {
       const sub = await tx.subcategory.findUnique({ where: { code: reqLine.subcategoryCode } });
-      const carat = (sub?.carat ?? "").trim();
-      if (carat !== "18K" && carat !== "22K") {
-        throw new Error(`Carat not set for subcategory ${reqLine.subcategoryCode}. Please set it in Subcategories.`);
+      const subCarat = normalizeCarat(sub?.carat);
+      const subRows = availableRows.filter((row) => row.subcategoryCode === reqLine.subcategoryCode);
+      const carat =
+        subCarat ||
+        (subRows.length === 1 ? normalizeCarat(subRows[0].carat) : "");
+
+      if (!carat) {
+        throw new Error(
+          `Carat not set for subcategory ${reqLine.subcategoryCode}. Please set it in Subcategories.`
+        );
       }
 
-      // FIFO allocate from StockMaster balances
-      const receipts = await tx.stockMaster.findMany({
+      const available = availableMap.get(`${reqLine.subcategoryCode}||${carat}`);
+      const fallbackQty = subRows.reduce((sum, row) => sum + row.balanceQty, 0);
+      const fallbackWeight = subRows.reduce((sum, row) => sum + Number(row.balanceGoldWeight ?? 0), 0);
+      const effectiveQty = available?.balanceQty ?? fallbackQty;
+      const effectiveWeight = available?.balanceGoldWeight ?? String(fallbackWeight);
+
+      if (effectiveQty <= 0 || Number(effectiveWeight) <= 0) {
+        throw new Error(`No stock available for ${reqLine.subcategoryCode}${carat ? ` (${carat})` : ""}`);
+      }
+      if (reqLine.qty > effectiveQty) {
+        throw new Error(`Insufficient stock for ${reqLine.subcategoryCode}${carat ? ` (${carat})` : ""}`);
+      }
+      if (reqLine.goldWeight.greaterThan(new Prisma.Decimal(String(effectiveWeight)))) {
+        throw new Error(`Insufficient stock for ${reqLine.subcategoryCode}${carat ? ` (${carat})` : ""}`);
+      }
+
+      // FIFO allocate from purchase rows. Qty and weight are allowed to move
+      // independently because a sale can be for any partial weight/qty.
+      const receipts = await tx.purchase.findMany({
         where: {
           subcategoryCode: reqLine.subcategoryCode,
           carat,
-          balanceQty: { gt: 0 }
         },
-        orderBy: [{ transactionDate: "asc" }, { id: "asc" }]
+        orderBy: [{ purchaseDate: "asc" }, { id: "asc" }]
       });
       if (receipts.length === 0) {
         throw new Error(`No stock available for ${reqLine.subcategoryCode}${carat ? ` (${carat})` : ""}`);
+      }
+
+      const receiptIds = receipts.map((r) => r.id);
+      const existingSales = receiptIds.length
+        ? await tx.sale.findMany({
+            where: { purchaseId: { in: receiptIds } },
+            select: { purchaseId: true, qty: true, goldWeight: true }
+          })
+        : [];
+      const soldByPurchase = new Map<number, { qty: number; weight: Prisma.Decimal }>();
+      for (const sale of existingSales) {
+        if (sale.purchaseId == null) continue;
+        const current = soldByPurchase.get(sale.purchaseId) ?? {
+          qty: 0,
+          weight: new Prisma.Decimal("0")
+        };
+        current.qty += sale.qty ?? 0;
+        current.weight = current.weight.plus(sale.goldWeight ?? new Prisma.Decimal("0"));
+        soldByPurchase.set(sale.purchaseId, current);
       }
 
       let remainingQty = reqLine.qty;
       let remainingWeight = reqLine.goldWeight;
 
       for (const r of receipts) {
-        if (remainingQty <= 0) break;
-        if (remainingWeight.lessThanOrEqualTo(new Prisma.Decimal("0"))) break;
+        if (remainingQty <= 0 && remainingWeight.lessThanOrEqualTo(new Prisma.Decimal("0"))) break;
 
-        const takeQty = Math.min(remainingQty, r.balanceQty);
+        const alreadySold = soldByPurchase.get(r.id) ?? { qty: 0, weight: new Prisma.Decimal("0") };
+        const availableQtyFromReceipt = Math.max(0, Number(r.qty ?? 0) - alreadySold.qty);
+        const receiptWeight = r.goldWeight ?? new Prisma.Decimal("0");
+        const availableWeightFromReceipt = clampDecimalNonNegative(receiptWeight.minus(alreadySold.weight));
+        if (availableQtyFromReceipt <= 0 && availableWeightFromReceipt.lessThanOrEqualTo(new Prisma.Decimal("0"))) {
+          continue;
+        }
 
-        // Allocate weight proportionally by qty from this receipt.
-        const receiptBalanceQty = new Prisma.Decimal(String(r.balanceQty));
-        const qtyRatio = receiptBalanceQty.equals(new Prisma.Decimal("0"))
+        const takeQty = remainingQty > 0 ? Math.min(remainingQty, availableQtyFromReceipt) : 0;
+        const effectiveWeight = remainingWeight.lessThanOrEqualTo(new Prisma.Decimal("0"))
           ? new Prisma.Decimal("0")
-          : new Prisma.Decimal(String(takeQty)).div(receiptBalanceQty);
-        const takeWeight = clampDecimalNonNegative(r.balanceGoldWeight.mul(qtyRatio));
+          : availableWeightFromReceipt.greaterThan(remainingWeight)
+            ? remainingWeight
+            : availableWeightFromReceipt;
 
-        const effectiveWeight = takeWeight.greaterThan(remainingWeight) ? remainingWeight : takeWeight;
+        if (takeQty <= 0 && effectiveWeight.lessThanOrEqualTo(new Prisma.Decimal("0"))) {
+          continue;
+        }
 
-        const perGramCost = r.balanceGoldWeight.equals(new Prisma.Decimal("0"))
+        const perGramCost = receiptWeight.equals(new Prisma.Decimal("0"))
           ? new Prisma.Decimal("0")
-          : r.balanceCost.div(r.balanceGoldWeight);
+          : (r.totalCost ?? new Prisma.Decimal("0")).div(receiptWeight);
         const takeCost = effectiveWeight.mul(perGramCost);
         const lineSellCost = effectiveWeight.div(new Prisma.Decimal("8")).mul(reqLine.sellRatePer8g);
 
         await tx.sale.create({
           data: {
             salesNTXId: createdHeader.id,
-            stockMasterId: r.id,
-            subcategoryCode: r.subcategoryCode,
-            carat: r.carat,
+            purchaseId: r.id,
+            stockMasterId: null,
+            subcategoryCode: r.subcategoryCode ?? reqLine.subcategoryCode,
+            carat,
             qty: takeQty,
             goldWeight: effectiveWeight,
             cost: takeCost,
             sellRatePer8g: reqLine.sellRatePer8g,
             sellCost: lineSellCost
-          }
-        });
-
-        const nextSoldQty = (r.soldQty ?? 0) + takeQty;
-        const nextBalanceQty = Math.max(0, r.balanceQty - takeQty);
-        const nextSoldWeight = r.soldGoldWeight.plus(effectiveWeight);
-        const nextBalanceWeight = clampDecimalNonNegative(r.balanceGoldWeight.minus(effectiveWeight));
-        const nextSoldCost = r.soldCost.plus(takeCost);
-        const nextBalanceCost = clampDecimalNonNegative(r.balanceCost.minus(takeCost));
-
-        await tx.stockMaster.update({
-          where: { id: r.id },
-          data: {
-            soldQty: nextSoldQty,
-            balanceQty: nextBalanceQty,
-            soldGoldWeight: nextSoldWeight,
-            balanceGoldWeight: nextBalanceWeight,
-            soldCost: nextSoldCost,
-            balanceCost: nextBalanceCost
           }
         });
 

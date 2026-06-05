@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { Plus } from "lucide-react";
-import { prismaWithRetry } from "@/lib/prisma";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
 import { buttonClassName } from "@/components/ui/Button";
+import { prismaWithRetry } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
@@ -27,46 +27,28 @@ function formatDate(value: Date) {
 }
 
 export default async function PurchasesPage() {
-  const [purchases, suppliers] = await Promise.all([
-    prismaWithRetry((p) =>
-      p.purchase.findMany({
-        orderBy: [{ createdAt: "desc" }],
-        take: 200,
-        include: { supplier: true, items: { take: 3, orderBy: { id: "asc" } } }
-      })
-    ),
-    prismaWithRetry((p) => p.supplier.findMany({ orderBy: { name: "asc" } }))
-  ]);
-
-  const supplierTotals = new Map<number, { purchaseCount: number; totalAmount: number; totalWeight: number }>();
-  for (const purchase of purchases) {
-    const current = supplierTotals.get(purchase.supplierId) ?? {
-      purchaseCount: 0,
-      totalAmount: 0,
-      totalWeight: 0
-    };
-    current.purchaseCount += 1;
-    current.totalAmount += Number(purchase.totalAmount.toString());
-    current.totalWeight += Number(purchase.totalWeight.toString());
-    supplierTotals.set(purchase.supplierId, current);
-  }
+  const purchases = await prismaWithRetry((p) =>
+    p.purchase.findMany({
+      orderBy: [{ createdAt: "desc" }],
+      take: 200
+    })
+  );
 
   const totalPurchases = purchases.length;
-  const totalAmount = purchases.reduce((sum, purchase) => sum + Number(purchase.totalAmount.toString()), 0);
-  const totalOutstanding = purchases.reduce((sum, purchase) => sum + Number(purchase.balanceDue.toString()), 0);
+  const totalQty = purchases.reduce((sum, purchase) => sum + Number(purchase.qty ?? 0), 0);
+  const totalWeight = purchases.reduce((sum, purchase) => sum + Number(purchase.goldWeight?.toString?.() ?? 0), 0);
+  const totalCost = purchases.reduce((sum, purchase) => sum + Number(purchase.totalCost?.toString?.() ?? 0), 0);
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Stat label="Purchase Entries" value={String(totalPurchases)} />
-          <Stat label="Total Amount" value={money(totalAmount)} />
-          <Stat label="Outstanding" value={money(totalOutstanding)} tone="red" />
+        <div className="grid gap-3 sm:grid-cols-4">
+          <Stat label="Entries" value={String(totalPurchases)} />
+          <Stat label="Qty" value={String(totalQty)} />
+          <Stat label="Weight" value={`${weight(totalWeight)} g`} />
+          <Stat label="Total Cost" value={money(totalCost)} tone="red" />
         </div>
-        <Link
-          href="/purchases/new"
-          className={buttonClassName("primary", "px-5 py-2.5")}
-        >
+        <Link href="/purchases/new" className={buttonClassName("primary", "px-5 py-2.5")}>
           <Plus className="h-4 w-4" />
           Add New Purchase
         </Link>
@@ -75,22 +57,23 @@ export default async function PurchasesPage() {
       <Card>
         <CardHeader>
           <CardTitle>Purchase Register</CardTitle>
-          <CardDescription>Saved purchase entries with supplier and balance summaries.</CardDescription>
+          <CardDescription>Receipt-style purchase entries saved through the purchase form.</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="overflow-hidden rounded-lg border border-ebony-100 bg-white">
-            <table className="w-full min-w-[1080px] text-sm">
+            <table className="w-full min-w-[1200px] text-sm">
               <thead className="bg-ebony-50 text-left text-xs font-bold uppercase tracking-widest text-ebony-700">
                 <tr>
-                  <th className="px-5 py-4">Purchase No</th>
+                  <th className="px-5 py-4">No</th>
                   <th className="px-5 py-4">Date</th>
-                  <th className="px-5 py-4">Supplier</th>
-                  <th className="px-5 py-4">Gold</th>
-                  <th className="px-5 py-4 text-right">Items</th>
-                  <th className="px-5 py-4 text-right">Weight</th>
-                  <th className="px-5 py-4 text-right">Amount</th>
-                  <th className="px-5 py-4 text-right">Paid</th>
-                  <th className="px-5 py-4 text-right">Balance</th>
+                  <th className="px-5 py-4">GSM</th>
+                  <th className="px-5 py-4">Category</th>
+                  <th className="px-5 py-4">Subcategory</th>
+                  <th className="px-5 py-4 text-right">Qty</th>
+                  <th className="px-5 py-4">Carat</th>
+                  <th className="px-5 py-4 text-right">Gold Wt</th>
+                  <th className="px-5 py-4 text-right">Cost</th>
+                  <th className="px-5 py-4">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-ebony-100">
@@ -103,81 +86,32 @@ export default async function PurchasesPage() {
                     </td>
                     <td className="px-5 py-4 tabular-nums text-ebony-700">{formatDate(purchase.purchaseDate)}</td>
                     <td className="px-5 py-4">
-                      <div className="font-semibold text-ebony-900">{purchase.supplier.name}</div>
-                      <div className="text-xs text-ebony-600">{purchase.supplier.phone ?? "-"}</div>
+                      <div className="font-semibold text-ebony-900">{purchase.gsmCode ?? "-"}</div>
+                      <div className="text-xs text-ebony-600">{purchase.gsmName ?? "-"}</div>
                     </td>
-                    <td className="px-5 py-4 text-ebony-700">{purchase.purchaseGold ?? "-"}</td>
-                    <td className="px-5 py-4 text-right font-semibold tabular-nums text-ebony-800">{purchase.totalItems}</td>
-                    <td className="px-5 py-4 text-right tabular-nums text-ebony-700">{weight(purchase.totalWeight)} g</td>
-                    <td className="px-5 py-4 text-right font-semibold tabular-nums text-ebony-900">{money(purchase.totalAmount)}</td>
-                    <td className="px-5 py-4 text-right font-semibold tabular-nums text-ebony-800">{money(purchase.paidAmount)}</td>
-                    <td className="px-5 py-4 text-right font-semibold tabular-nums text-red-600">{money(purchase.balanceDue)}</td>
+                    <td className="px-5 py-4 text-ebony-700">
+                      <div className="font-semibold text-ebony-900">{purchase.categoryCode ?? "-"}</div>
+                      <div className="text-xs text-ebony-600">{purchase.articleName ?? "-"}</div>
+                    </td>
+                    <td className="px-5 py-4 text-ebony-700">
+                      <div className="font-semibold text-ebony-900">{purchase.subcategoryCode ?? "-"}</div>
+                      <div className="text-xs text-ebony-600">{purchase.subcategoryName ?? "-"}</div>
+                    </td>
+                    <td className="px-5 py-4 text-right font-semibold tabular-nums text-ebony-800">{purchase.qty}</td>
+                    <td className="px-5 py-4 text-ebony-700">{purchase.carat ?? "-"}</td>
+                    <td className="px-5 py-4 text-right tabular-nums text-ebony-700">{weight(purchase.goldWeight)} g</td>
+                    <td className="px-5 py-4 text-right font-semibold tabular-nums text-ebony-900">{money(purchase.totalCost)}</td>
+                    <td className="px-5 py-4">
+                      <Link href={`/purchases/${purchase.id}`} className={buttonClassName("secondary", "px-4 py-2 text-xs")}>
+                        View
+                      </Link>
+                    </td>
                   </tr>
                 ))}
                 {purchases.length === 0 ? (
                   <tr>
-                    <td className="px-5 py-8 text-center text-sm text-ebony-600" colSpan={9}>
+                    <td className="px-5 py-8 text-center text-sm text-ebony-600" colSpan={10}>
                       No purchases yet. Start by creating the first entry.
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Suppliers</CardTitle>
-          <CardDescription>Supplier history and totals from saved purchase records.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-hidden rounded-lg border border-ebony-100 bg-white">
-            <table className="w-full min-w-[860px] text-sm">
-              <thead className="bg-ebony-50 text-left text-xs font-bold uppercase tracking-widest text-ebony-700">
-                <tr>
-                  <th className="px-5 py-4">Supplier</th>
-                  <th className="px-5 py-4">Contact</th>
-                  <th className="px-5 py-4">Phone</th>
-                  <th className="px-5 py-4 text-right">Purchases</th>
-                  <th className="px-5 py-4 text-right">Weight</th>
-                  <th className="px-5 py-4 text-right">Amount</th>
-                  <th className="px-5 py-4 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-ebony-100">
-                {suppliers.map((supplier) => {
-                  const summary = supplierTotals.get(supplier.id) ?? { purchaseCount: 0, totalAmount: 0, totalWeight: 0 };
-                  return (
-                    <tr key={supplier.id} className="bg-white">
-                      <td className="px-5 py-4">
-                        <div className="font-semibold text-ebony-900">{supplier.name}</div>
-                      </td>
-                      <td className="px-5 py-4 text-ebony-700">{supplier.contact ?? "-"}</td>
-                      <td className="px-5 py-4 text-ebony-700">{supplier.phone ?? "-"}</td>
-                      <td className="px-5 py-4 text-right font-semibold tabular-nums text-ebony-800">
-                        {summary.purchaseCount}
-                      </td>
-                      <td className="px-5 py-4 text-right tabular-nums text-ebony-700">{weight(summary.totalWeight)} g</td>
-                      <td className="px-5 py-4 text-right font-semibold tabular-nums text-ebony-900">
-                        {money(summary.totalAmount)}
-                      </td>
-                      <td className="px-5 py-4 text-right">
-                        <Link
-                          href={`/purchases/new?supplierId=${supplier.id}`}
-                          className={buttonClassName("secondary", "px-4 py-2 text-xs")}
-                        >
-                          New Purchase
-                        </Link>
-                      </td>
-                    </tr>
-                  );
-                })}
-                {suppliers.length === 0 ? (
-                  <tr>
-                    <td className="px-5 py-8 text-center text-sm text-ebony-600" colSpan={7}>
-                      No suppliers found. Add one from the suppliers screen first.
                     </td>
                   </tr>
                 ) : null}
@@ -194,7 +128,7 @@ function Stat({ label, value, tone = "default" }: { label: string; value: string
   return (
     <div
       className={[
-        "min-w-44 rounded-lg border bg-white px-4 py-3 shadow-sm",
+        "min-w-40 rounded-lg border bg-white px-4 py-3 shadow-sm",
         tone === "red" ? "border-red-200" : "border-ebony-100"
       ].join(" ")}
     >
