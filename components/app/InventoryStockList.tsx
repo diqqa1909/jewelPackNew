@@ -1,7 +1,7 @@
 "use client";
 
 import { buttonClassName } from "@/components/ui/Button";
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import Link from "next/link";
 import { BarChart3, ChevronDown, ChevronRight, Plus, Search } from "lucide-react";
 
@@ -141,7 +141,7 @@ export function InventoryStockList({
                 );
 
                 return (
-                  <tbody key={row.categoryCode}>
+                  <Fragment key={row.categoryCode}>
                     <tr className="bg-white hover:bg-ebony-50/70">
                       <td className="px-4 py-3">
                         {categorySubcategories.length > 0 && (
@@ -217,7 +217,7 @@ export function InventoryStockList({
                           </tr>
                         );
                       })}
-                  </tbody>
+                  </Fragment>
                 );
               })}
               {visibleRows.length === 0 ? (
