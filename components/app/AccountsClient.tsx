@@ -1,7 +1,10 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { Decimal } from "@prisma/client/runtime/library";
+
+type DecimalValue = {
+  toString(): string;
+};
 
 interface Customer {
   id: number;
@@ -20,12 +23,12 @@ interface Transaction {
   source: string | null;
   account: string | null;
   memo: string | null;
-  debit: Decimal;
-  credit: Decimal;
+  debit: DecimalValue;
+  credit: DecimalValue;
   accountNumber: string | null;
   type: string | null;
-  bankDebit: Decimal | null;
-  bankCredit: Decimal | null;
+  bankDebit: DecimalValue | null;
+  bankCredit: DecimalValue | null;
   realizedDate: Date | null;
   referenceNumber: string | null;
   remarks: string | null;
