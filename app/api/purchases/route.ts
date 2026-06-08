@@ -25,10 +25,10 @@ function decimal(value: string | null | undefined) {
 }
 
 function nextPurchaseNo(date: Date) {
-  const yyyy = date.getFullYear();
+  const yy = String(date.getFullYear()).slice(-2);
   const mm = String(date.getMonth() + 1).padStart(2, "0");
   const dd = String(date.getDate()).padStart(2, "0");
-  return `PUR-${yyyy}${mm}${dd}-`;
+  return `PUR-${yy}${mm}${dd}-`;
 }
 
 export async function GET(req: Request) {

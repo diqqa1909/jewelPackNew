@@ -28,10 +28,10 @@ export async function GET(req: Request) {
     if (Number.isNaN(txDate.getTime())) {
       return NextResponse.json({ error: "Invalid date" }, { status: 400 });
     }
-    const yyyy = txDate.getFullYear();
+    const yy = String(txDate.getFullYear()).slice(-2);
     const mm = String(txDate.getMonth() + 1).padStart(2, "0");
     const dd = String(txDate.getDate()).padStart(2, "0");
-    const prefix = `SAL-${yyyy}${mm}${dd}-`;
+    const prefix = `SAL-${yy}${mm}${dd}-`;
     const last = await prisma.salesNTX.findFirst({
       where: { saleNo: { startsWith: prefix } },
       orderBy: { saleNo: "desc" }
@@ -127,10 +127,10 @@ export async function POST(req: Request) {
     );
 
     // Generate sale number (date-based)
-    const yyyy = txDate.getFullYear();
+    const yy = String(txDate.getFullYear()).slice(-2);
     const mm = String(txDate.getMonth() + 1).padStart(2, "0");
     const dd = String(txDate.getDate()).padStart(2, "0");
-    const prefix = `SAL-${yyyy}${mm}${dd}-`;
+    const prefix = `SAL-${yy}${mm}${dd}-`;
     const last = await tx.salesNTX.findFirst({
       where: { saleNo: { startsWith: prefix } },
       orderBy: { saleNo: "desc" }
