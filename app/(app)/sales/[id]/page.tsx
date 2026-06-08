@@ -142,7 +142,6 @@ export default async function SaleViewPage({ params }: { params: { id: string } 
                   <th className="border border-ebony-700 px-3 py-2 text-center">Karat</th>
                   <th className="border border-ebony-700 px-3 py-2 text-right">Net Wt (g)</th>
                   <th className="border border-ebony-700 px-3 py-2 text-right">Rate (/Per g)</th>
-                  <th className="border border-ebony-700 px-3 py-2 text-right">Making</th>
                   <th className="border border-ebony-700 px-3 py-2 text-right">Amount (LKR)</th>
                 </tr>
               </thead>
@@ -159,7 +158,6 @@ export default async function SaleViewPage({ params }: { params: { id: string } 
                       <td className="border border-ebony-700 px-3 py-2 text-center">{item.carat || "-"}</td>
                       <td className="border border-ebony-700 px-3 py-2 text-right tabular-nums">{weight(itemWeight)}</td>
                       <td className="border border-ebony-700 px-3 py-2 text-right tabular-nums">{money(ratePerGram)}</td>
-                      <td className="border border-ebony-700 px-3 py-2 text-right tabular-nums">{money(0)}</td>
                       <td className="border border-ebony-700 px-3 py-2 text-right font-semibold tabular-nums">
                         {money(item.sellCost)}
                       </td>
@@ -168,7 +166,7 @@ export default async function SaleViewPage({ params }: { params: { id: string } 
                 })}
                 {sale.items.length === 0 ? (
                   <tr>
-                    <td className="border border-ebony-700 px-3 py-6 text-center text-ebony-600" colSpan={7}>
+                    <td className="border border-ebony-700 px-3 py-6 text-center text-ebony-600" colSpan={6}>
                       No items.
                     </td>
                   </tr>

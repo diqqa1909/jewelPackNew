@@ -10,7 +10,6 @@ type PurchasePayload = {
   subcategoryCode: string;
   qty: string;
   description?: string;
-  carat?: string;
   wastageYN: "Y" | "N";
   goldWeight: string;
   wastageMg?: string;
@@ -18,6 +17,16 @@ type PurchasePayload = {
   otherCosts: string;
   remarks?: string;
 };
+
+const CARAT_VALUES = new Set(["18", "19", "20", "21", "22", "24"]);
+
+function normalizeCarat(value: string | null | undefined) {
+  return (value ?? "").trim().toUpperCase().replace(/\s+/g, "").replace(/K(T)?$/, "");
+}
+
+function formatCarat(value: string) {
+  return `${normalizeCarat(value)}K`;
+}
 
 function decimal(value: string | null | undefined) {
   const trimmed = (value ?? "").trim();
@@ -68,7 +77,6 @@ export async function POST(req: Request) {
     if (!body.gsmCode) return NextResponse.json({ error: "Missing goldsmith" }, { status: 400 });
     if (!body.categoryCode) return NextResponse.json({ error: "Missing category" }, { status: 400 });
     if (!body.subcategoryCode) return NextResponse.json({ error: "Missing subcategory" }, { status: 400 });
-    if (!body.carat) return NextResponse.json({ error: "Missing carat" }, { status: 400 });
 
     const qty = Number(body.qty);
     if (!Number.isFinite(qty) || qty < 0) {
@@ -89,6 +97,14 @@ export async function POST(req: Request) {
     const subcategory = await prisma.subcategory.findUnique({ where: { code: body.subcategoryCode } });
     if (!category) return NextResponse.json({ error: "Invalid category" }, { status: 400 });
     if (!subcategory) return NextResponse.json({ error: "Invalid subcategory" }, { status: 400 });
+    const carat = normalizeCarat(subcategory.carat);
+    if (!CARAT_VALUES.has(carat)) {
+      return NextResponse.json(
+        { error: `Carat is not set for subcategory ${subcategory.code}.` },
+        { status: 400 }
+      );
+    }
+    const caratLabel = formatCarat(carat);
 
     const goldWeight = decimal(body.goldWeight ?? "0");
     const wastageMg = decimal(body.wastageMg ?? "0");
@@ -121,7 +137,7 @@ export async function POST(req: Request) {
           subcategoryName: subcategory.name,
           qty,
           description: (body.description ?? "").trim() || null,
-          carat: (body.carat ?? "").trim() || null,
+          carat: caratLabel,
           wastageYN: body.wastageYN === "Y",
           goldWeight,
           goldCost,
@@ -132,7 +148,7 @@ export async function POST(req: Request) {
           totalCost,
           remarks: (body.remarks ?? "").trim() || null,
           supplierId: body.supplierId == null ? null : Number(body.supplierId),
-          purchaseGold: (body.carat ?? "").trim() || null,
+          purchaseGold: caratLabel,
           totalItems: qty,
           totalWeight: goldWeight,
           subTotal: totalCost,

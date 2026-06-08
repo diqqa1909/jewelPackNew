@@ -1,6 +1,23 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 
+const CARAT_VALUES = new Set(["18", "19", "20", "21", "22", "24"]);
+
+function normalizeCarat(value: string | null | undefined) {
+  return (value ?? "").trim().toUpperCase().replace(/\s+/g, "").replace(/K(T)?$/, "");
+}
+
+function formatCarat(value: string) {
+  return `${normalizeCarat(value)}K`;
+}
+
+function buildSubcategoryCode(categoryCode: string, name: string, carat: string) {
+  return `${categoryCode}-${name}-${formatCarat(carat)}`
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
+
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const categoryCode = (url.searchParams.get("categoryCode") ?? "").trim();
@@ -22,20 +39,19 @@ export async function POST(req: Request) {
   const name = (body.name ?? "").trim();
   const categoryCode = (body.categoryCode ?? "").trim();
   const imageUrl = (body.imageUrl ?? null) ? String(body.imageUrl) : null;
-  const caratRaw = (body.carat ?? null) ? String(body.carat) : "";
-  const carat = caratRaw.trim();
-  const caratValue = carat === "18K" || carat === "22K" || carat === "24K" ? carat : "";
+  const caratValue = normalizeCarat(body.carat ?? null);
   if (!name || !categoryCode) {
     return NextResponse.json({ error: "Missing fields" }, { status: 400 });
   }
-  if (!caratValue) {
-    return NextResponse.json({ error: "Invalid carat. Use 18K, 22K, or 24K." }, { status: 400 });
+  if (!CARAT_VALUES.has(caratValue)) {
+    return NextResponse.json({ error: "Invalid carat. Use 18K, 19K, 20K, 21K, 22K, or 24K." }, { status: 400 });
   }
-  const code = `${categoryCode}-${name}`.toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+  const caratLabel = formatCarat(caratValue);
+  const code = buildSubcategoryCode(categoryCode, name, caratValue);
   const subcategory = await prisma.subcategory.upsert({
     where: { code },
-    create: { code, name, categoryCode, imageUrl, carat: caratValue },
-    update: { name, categoryCode, imageUrl, carat: caratValue }
+    create: { code, name, categoryCode, imageUrl, carat: caratLabel },
+    update: { name, categoryCode, imageUrl, carat: caratLabel }
   });
   return NextResponse.json({ subcategory });
 }
@@ -52,14 +68,12 @@ export async function PATCH(req: Request) {
   const name = (body.name ?? "").trim();
   const categoryCode = (body.categoryCode ?? "").trim();
   const imageUrl = body.imageUrl === undefined ? undefined : (body.imageUrl ? String(body.imageUrl) : null);
-  const caratRaw = (body.carat ?? null) ? String(body.carat) : "";
-  const carat = caratRaw.trim();
-  const caratValue = carat === "18K" || carat === "22K" || carat === "24K" ? carat : "";
+  const caratValue = normalizeCarat(body.carat ?? null);
 
   if (!code) return NextResponse.json({ error: "Missing code" }, { status: 400 });
   if (!name || !categoryCode) return NextResponse.json({ error: "Missing fields" }, { status: 400 });
-  if (!caratValue) {
-    return NextResponse.json({ error: "Invalid carat. Use 18K, 22K, or 24K." }, { status: 400 });
+  if (!CARAT_VALUES.has(caratValue)) {
+    return NextResponse.json({ error: "Invalid carat. Use 18K, 19K, 20K, 21K, 22K, or 24K." }, { status: 400 });
   }
 
   const existing = await prisma.subcategory.findUnique({ where: { code } });
@@ -71,7 +85,7 @@ export async function PATCH(req: Request) {
       name,
       categoryCode,
       ...(imageUrl === undefined ? {} : { imageUrl }),
-      carat: caratValue
+      carat: formatCarat(caratValue)
     }
   });
   return NextResponse.json({ subcategory });

@@ -21,11 +21,15 @@ type AvailabilityRow = {
 type Line = {
   id: string;
   subcategoryCode: string;
-  carat: "" | "18K" | "22K" | "24K";
+  carat: string;
   qty: string;
   goldWeight: string;
   sellRatePer8g: string;
 };
+
+function normalizeCarat(value: string | null | undefined) {
+  return (value ?? "").trim().toUpperCase().replace(/\s+/g, "").replace(/K(T)?$/, "");
+}
 
 function uid() {
   return Math.random().toString(16).slice(2) + Date.now().toString(16);
@@ -208,7 +212,7 @@ export function SalesForm() {
 
   const availabilityKeyed = useMemo(() => {
     const map = new Map<string, AvailabilityRow>();
-    for (const r of availability) map.set(`${r.subcategoryCode}||${r.carat}`, r);
+    for (const r of availability) map.set(`${r.subcategoryCode}||${normalizeCarat(r.carat)}`, r);
     return map;
   }, [availability]);
 
@@ -304,8 +308,7 @@ export function SalesForm() {
         if (patch.subcategoryCode !== undefined) {
           const sub = String(patch.subcategoryCode ?? "").trim();
           const sc = subcategoryByCode.get(sub);
-          const carat = String(sc?.carat ?? "").trim();
-          next.carat = (carat === "18K" || carat === "22K" || carat === "24K" ? carat : "") as Line["carat"];
+          next.carat = normalizeCarat(sc?.carat);
         }
         return next;
       })
@@ -504,7 +507,7 @@ export function SalesForm() {
           <label className="space-y-1.5 text-sm">
             <div className="text-xs font-bold text-ebony-800">Gold Rate (24K)</div>
             <input
-              value={lines.find((l) => l.carat === "24K")?.sellRatePer8g ?? ""}
+              value={lines.find((l) => normalizeCarat(l.carat) === "24")?.sellRatePer8g ?? ""}
               readOnly
               placeholder="0.00"
               className="h-10 w-full rounded-md border border-ebony-200 bg-ebony-50 px-3 text-right text-sm font-semibold text-ebony-700 outline-none"
@@ -514,7 +517,7 @@ export function SalesForm() {
           <label className="space-y-1.5 text-sm">
             <div className="text-xs font-bold text-ebony-800">Gold Rate (22K)</div>
             <input
-              value={lines.find((l) => l.carat === "22K")?.sellRatePer8g ?? ""}
+              value={lines.find((l) => normalizeCarat(l.carat) === "22")?.sellRatePer8g ?? ""}
               readOnly
               placeholder="0.00"
               className="h-10 w-full rounded-md border border-ebony-200 bg-ebony-50 px-3 text-right text-sm font-semibold text-ebony-700 outline-none"
@@ -524,7 +527,7 @@ export function SalesForm() {
           <label className="space-y-1.5 text-sm">
             <div className="text-xs font-bold text-ebony-800">Gold Rate (18K)</div>
             <input
-              value={lines.find((l) => l.carat === "18K")?.sellRatePer8g ?? ""}
+              value={lines.find((l) => normalizeCarat(l.carat) === "18")?.sellRatePer8g ?? ""}
               readOnly
               placeholder="0.00"
               className="h-10 w-full rounded-md border border-ebony-200 bg-ebony-50 px-3 text-right text-sm font-semibold text-ebony-700 outline-none"
@@ -545,11 +548,10 @@ export function SalesForm() {
                   <th className="border border-ebony-100 px-3 py-2">Barcode</th>
                   <th className="border border-ebony-100 px-3 py-2">Description</th>
                   <th className="border border-ebony-100 px-3 py-2">Karat</th>
-                  <th className="border border-ebony-100 px-3 py-2 text-right">Gross Wt</th>
+                  <th className="border border-ebony-100 px-3 py-2 text-right">Qty</th>
                   <th className="border border-ebony-100 px-3 py-2 text-right">Stone Wt</th>
                   <th className="border border-ebony-100 px-3 py-2 text-right">Net Wt</th>
                   <th className="border border-ebony-100 px-3 py-2 text-right">Rate/8g</th>
-                  <th className="border border-ebony-100 px-3 py-2 text-right">Making</th>
                   <th className="border border-ebony-100 px-3 py-2 text-right">Amount</th>
                   <th className="border border-ebony-100 px-3 py-2 text-center">Action</th>
                 </tr>
@@ -648,9 +650,6 @@ export function SalesForm() {
                           ref={(el) => setCellRef(l.id, "sellRate", el)}
                           className="h-10 w-full border-0 bg-white px-2 text-right outline-none focus:bg-cream-50"
                         />
-                      </td>
-                      <td className="border border-ebony-100 px-3 py-2 text-right font-semibold tabular-nums text-ebony-800">
-                        {making.toFixed(2)}
                       </td>
                       <td className="border border-ebony-100 px-3 py-2 text-right font-bold tabular-nums text-ebony-900">
                         {amount.toFixed(2)}

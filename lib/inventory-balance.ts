@@ -10,7 +10,7 @@ export type InventoryBalanceRow = {
 export function normalizeCarat(value: string | null | undefined) {
   const raw = (value ?? "").trim().toUpperCase().replace(/\s+/g, "");
   if (!raw) return "";
-  return raw.endsWith("KT") ? raw.slice(0, -1) : raw;
+  return raw.replace(/K(T)?$/, "");
 }
 
 export async function getInventoryBalanceRows(prisma: PrismaClient): Promise<InventoryBalanceRow[]> {

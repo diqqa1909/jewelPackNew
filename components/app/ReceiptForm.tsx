@@ -17,7 +17,7 @@ type ReceiptFormState = {
   subcategoryCode: string;
   qty: string;
   description: string;
-  carat: "" | "18K" | "22K" | "24K";
+  carat: string;
   wastageYN: "Y" | "N";
   goldWeight: string;
   wastageMg: string;
@@ -27,6 +27,12 @@ type ReceiptFormState = {
 };
 
 type Errors = Partial<Record<keyof ReceiptFormState, string>> & { form?: string };
+const CARAT_VALUES = ["18K", "19K", "20K", "21K", "22K", "24K"];
+
+function normalizeCarat(value: string | null | undefined) {
+  const raw = (value ?? "").trim().toUpperCase().replace(/\s+/g, "").replace(/K(T)?$/, "");
+  return raw ? `${raw}K` : "";
+}
 
 function toNumber(value: string) {
   const n = Number(value);
@@ -108,7 +114,7 @@ export function ReceiptForm({
   const [goldsmiths, setGoldsmiths] = useState<Array<{ code: string; name: string }>>([]);
   const [categories, setCategories] = useState<Array<{ code: string; name: string }>>([]);
   const [subcategories, setSubcategories] = useState<
-    Array<{ code: string; name: string; categoryCode: string }>
+    Array<{ code: string; name: string; categoryCode: string; carat?: string | null }>
   >([]);
   const [system, setSystem] = useState<{ goldCostRatePer8g: number; wastageRateMgPer8g: number } | null>(
     null
@@ -122,7 +128,7 @@ export function ReceiptForm({
     wastageRateMgPer8g: ""
   });
   const [systemSaveState, setSystemSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  const [subcatForm, setSubcatForm] = useState({ categoryCode: "", name: "" });
+  const [subcatForm, setSubcatForm] = useState({ categoryCode: "", name: "", carat: "" });
   const [subcatSaveState, setSubcatSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [subcatError, setSubcatError] = useState("");
   const [subcatFile, setSubcatFile] = useState<File | null>(null);
@@ -157,9 +163,21 @@ export function ReceiptForm({
       ...prev,
       categoryCode: code,
       articleName: match?.name ?? "",
-      subcategoryCode: ""
+      subcategoryCode: "",
+      carat: ""
     }));
     setErrors((prev) => ({ ...prev, categoryCode: undefined, articleName: undefined, form: undefined }));
+  }
+
+  function setSubcategoryCode(nextCode: string) {
+    const code = nextCode.trim();
+    const match = subcategories.find((s) => s.code === code);
+    setForm((prev) => ({
+      ...prev,
+      subcategoryCode: code,
+      carat: normalizeCarat(match?.carat)
+    }));
+    setErrors((prev) => ({ ...prev, subcategoryCode: undefined, carat: undefined, form: undefined }));
   }
 
   useEffect(() => {
@@ -229,7 +247,7 @@ export function ReceiptForm({
           subcategoryCode: row.subcategoryCode,
           qty: String(row.qty),
           description: row.description ?? "",
-          carat: (row.carat as ReceiptFormState["carat"]) ?? "",
+          carat: normalizeCarat(row.carat),
           wastageYN: row.wastageYN ? "Y" : "N",
           goldWeight: row.goldWeight.toString(),
           wastageMg: row.wastageMg.toString(),
@@ -274,7 +292,7 @@ export function ReceiptForm({
     if (!form.gsmCode.trim()) next.gsmCode = "Required";
     if (!form.categoryCode.trim()) next.categoryCode = "Required";
     if (!form.subcategoryCode.trim()) next.subcategoryCode = "Required";
-    if (!form.carat) next.carat = "Required";
+    if (!form.carat) next.subcategoryCode = "Set carat in this subcategory before saving";
     if (!isPositiveNumber(form.qty)) next.qty = "Enter a valid qty";
     if (!isPositiveNumber(form.goldWeight)) next.goldWeight = "Enter a valid gold weight";
     if (!isNonNegativeNumber(form.labourCharges) || form.labourCharges.trim() === "")
@@ -360,8 +378,9 @@ export function ReceiptForm({
     setSubcatError("");
     const categoryCode = (subcatForm.categoryCode ?? "").trim();
     const name = (subcatForm.name ?? "").trim();
-    if (!categoryCode || !name) {
-      setSubcatError("Category and subcategory name are required.");
+    const carat = normalizeCarat(subcatForm.carat);
+    if (!categoryCode || !name || !carat) {
+      setSubcatError("Category, subcategory name, and carat are required.");
       return;
     }
     setSubcatSaveState("saving");
@@ -382,12 +401,12 @@ export function ReceiptForm({
       const res = await fetch("/api/subcategories", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ categoryCode, name, imageUrl })
+        body: JSON.stringify({ categoryCode, name, carat, imageUrl })
       });
       const json = (await res.json()) as { subcategory?: { code: string } };
       if (!res.ok || !json?.subcategory?.code) throw new Error("Create failed");
       await refreshSubcategories();
-      update("subcategoryCode", json.subcategory.code);
+      setForm((prev) => ({ ...prev, subcategoryCode: json.subcategory!.code, carat }));
       setSubcatSaveState("saved");
       setTimeout(() => setSubcatSaveState("idle"), 1500);
       setSubcategoryModalOpen(false);
@@ -427,7 +446,7 @@ export function ReceiptForm({
               onClick={() => {
                 setSubcatError("");
                 setSubcatSaveState("idle");
-                setSubcatForm({ categoryCode: form.categoryCode || "", name: "" });
+                setSubcatForm({ categoryCode: form.categoryCode || "", name: "", carat: "" });
                 setSubcatFile(null);
                 if (subcatPreviewUrl) URL.revokeObjectURL(subcatPreviewUrl);
                 setSubcatPreviewUrl("");
@@ -551,7 +570,7 @@ export function ReceiptForm({
                           <>
                             <select
                               value={form.subcategoryCode}
-                              onChange={(e) => update("subcategoryCode", e.target.value)}
+                              onChange={(e) => setSubcategoryCode(e.target.value)}
                               disabled={!form.categoryCode}
                               className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20 disabled:opacity-60"
                             >
@@ -582,35 +601,19 @@ export function ReceiptForm({
                         }
                       />
 
-                      <TableFieldRow
-                        leftLabel="Carat"
-                        leftInput={
-                          <>
-                            <select
-                              value={form.carat}
-                              onChange={(e) => update("carat", e.target.value as ReceiptFormState["carat"])}
-                              className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
-                            >
-                              <option value=""></option>
-                              <option value="18K">18K</option>
-                              <option value="22K">22K</option>
-                              <option value="24K">24K</option>
-                            </select>
-                            {errors.carat && <div className="mt-1 text-xs text-red-600">{errors.carat}</div>}
-                          </>
-                        }
-                        rightLabel="Wastage (Y/N)"
-                        rightInput={
+                      <tr>
+                        <td className="px-4 py-3 align-top" colSpan={4}>
+                          <div className="text-[11px] font-bold uppercase tracking-widest text-ebony-600">Wastage (Y/N)</div>
                           <select
                             value={form.wastageYN}
                             onChange={(e) => update("wastageYN", e.target.value as "Y" | "N")}
-                            className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+                            className="mt-2 h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
                           >
                             <option value="N">N</option>
                             <option value="Y">Y</option>
                           </select>
-                        }
-                      />
+                        </td>
+                      </tr>
 
                       <TableFieldRow
                         leftLabel="Gold Weight"
@@ -792,7 +795,7 @@ export function ReceiptForm({
                   <div className="font-bold text-ebony-700">Subcategory</div>
                   <select
                     value={form.subcategoryCode}
-                    onChange={(e) => update("subcategoryCode", e.target.value)}
+                    onChange={(e) => setSubcategoryCode(e.target.value)}
                     disabled={!form.categoryCode}
                     className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 text-sm outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30 disabled:opacity-60"
                   >
@@ -820,21 +823,6 @@ export function ReceiptForm({
                     className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
                   />
                   {errors.qty && <div className="text-xs text-red-600">{errors.qty}</div>}
-                </label>
-
-                <label className="space-y-2 text-sm">
-                  <div className="font-bold text-ebony-700">Carat</div>
-                  <select
-                    value={form.carat}
-                    onChange={(e) => update("carat", e.target.value as ReceiptFormState["carat"])}
-                    className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
-                  >
-                    <option value=""></option>
-                    <option value="18K">18K</option>
-                    <option value="22K">22K</option>
-                    <option value="24K">24K</option>
-                  </select>
-                  {errors.carat && <div className="text-xs text-red-600">{errors.carat}</div>}
                 </label>
 
                 <label className="space-y-2 text-sm">
@@ -1044,6 +1032,22 @@ export function ReceiptForm({
               placeholder="e.g. Bangles, Rings, Chains"
               className="w-full rounded-lg border border-ebony-200 bg-white px-4 py-2.5 outline-none transition-all focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
             />
+          </label>
+
+          <label className="space-y-2 text-sm">
+            <div className="font-semibold text-ebony-700">Carat</div>
+            <select
+              value={subcatForm.carat}
+              onChange={(e) => setSubcatForm((p) => ({ ...p, carat: e.target.value }))}
+              className="w-full rounded-lg border border-ebony-200 bg-white px-4 py-2.5 outline-none transition-all focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+            >
+              <option value="">Select carat...</option>
+              {CARAT_VALUES.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
           </label>
 
           <div className="grid gap-3 sm:grid-cols-2">

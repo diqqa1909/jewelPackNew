@@ -10,7 +10,6 @@ type ReceiptPayload = {
   subcategoryCode: string;
   qty: string;
   description?: string;
-  carat?: string;
   wastageYN: "Y" | "N";
   goldWeight: string;
   wastageMg?: string;
@@ -18,6 +17,16 @@ type ReceiptPayload = {
   otherCosts: string;
   remarks?: string;
 };
+
+const CARAT_VALUES = new Set(["18", "19", "20", "21", "22", "24"]);
+
+function normalizeCarat(value: string | null | undefined) {
+  return (value ?? "").trim().toUpperCase().replace(/\s+/g, "").replace(/K(T)?$/, "");
+}
+
+function formatCarat(value: string) {
+  return `${normalizeCarat(value)}K`;
+}
 
 function decimal(value: string) {
   const trimmed = (value ?? "").trim();
@@ -39,9 +48,6 @@ export async function POST(req: Request) {
   }
   if (!body.subcategoryCode) {
     return NextResponse.json({ error: "Missing subcategory." }, { status: 400 });
-  }
-  if (!body.carat) {
-    return NextResponse.json({ error: "Missing carat." }, { status: 400 });
   }
 
   const qty = Number(body.qty);
@@ -73,6 +79,14 @@ export async function POST(req: Request) {
   if (!subcategory) {
     return NextResponse.json({ error: "Invalid subcategory." }, { status: 400 });
   }
+  const carat = normalizeCarat(subcategory.carat);
+  if (!CARAT_VALUES.has(carat)) {
+    return NextResponse.json(
+      { error: `Carat is not set for subcategory ${subcategory.code}.` },
+      { status: 400 }
+    );
+  }
+  const caratLabel = formatCarat(carat);
 
   const created = await prisma.purchase.create({
     data: {
@@ -87,7 +101,7 @@ export async function POST(req: Request) {
       subcategoryName: subcategory.name,
       qty,
       description: (body.description ?? "").trim() || null,
-      carat: (body.carat ?? "").trim() || null,
+      carat: caratLabel,
       wastageYN: body.wastageYN === "Y",
       goldWeight,
       goldCost,
@@ -96,7 +110,7 @@ export async function POST(req: Request) {
       labourCharges,
       otherCosts,
       totalCost,
-      purchaseGold: (body.carat ?? "").trim() || null,
+      purchaseGold: caratLabel,
       totalItems: qty,
       totalWeight: goldWeight,
       subTotal: totalCost,
@@ -154,7 +168,6 @@ export async function PATCH(req: Request) {
     subcategoryCode: string;
     qty: number;
     description?: string | null;
-    carat?: string | null;
     wastageYN: boolean;
     goldWeight: string;
     wastageMg: string;
@@ -194,6 +207,14 @@ export async function PATCH(req: Request) {
   if (!subcategory) {
     return NextResponse.json({ error: "Invalid subcategory." }, { status: 400 });
   }
+  const carat = normalizeCarat(subcategory.carat);
+  if (!CARAT_VALUES.has(carat)) {
+    return NextResponse.json(
+      { error: `Carat is not set for subcategory ${subcategory.code}.` },
+      { status: 400 }
+    );
+  }
+  const caratLabel = formatCarat(carat);
 
   const existing = await prisma.purchase.findUnique({ where: { id: Number(body.id) } });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -212,7 +233,7 @@ export async function PATCH(req: Request) {
       subcategoryName: subcategory.name,
       qty: body.qty,
       description: body.description ?? undefined,
-      carat: body.carat ?? undefined,
+      carat: caratLabel,
       wastageYN: body.wastageYN,
       goldWeight,
       goldCost,
@@ -221,7 +242,7 @@ export async function PATCH(req: Request) {
       labourCharges,
       otherCosts,
       totalCost,
-      purchaseGold: body.carat ? body.carat : undefined,
+      purchaseGold: caratLabel,
       totalItems: body.qty == null ? undefined : body.qty,
       totalWeight: body.goldWeight == null ? undefined : goldWeight,
       subTotal: totalCost,

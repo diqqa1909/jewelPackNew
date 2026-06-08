@@ -6,6 +6,12 @@ import { buttonClassName } from "@/components/ui/Button";
 
 type CategoryRow = { code: string; name: string };
 type SubcategoryRow = { code: string; name: string; categoryCode: string; imageUrl: string; carat?: string | null };
+const CARAT_VALUES = ["18K", "19K", "20K", "21K", "22K", "24K"];
+
+function normalizeCarat(value: string | null | undefined) {
+  const raw = (value ?? "").trim().toUpperCase().replace(/\s+/g, "").replace(/K(T)?$/, "");
+  return raw ? `${raw}K` : "";
+}
 
 export function SubcategoriesTable({
   initial,
@@ -166,9 +172,11 @@ export function SubcategoriesTable({
           className="w-full rounded-lg border border-ebony-200 bg-white px-4 py-2.5 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
         >
           <option value="">Select carat...</option>
-          <option value="18K">18K</option>
-          <option value="22K">22K</option>
-          <option value="24K">24K</option>
+          {CARAT_VALUES.map((value) => (
+            <option key={value} value={value}>
+              {value}
+            </option>
+          ))}
         </select>
         <input
           type="file"
@@ -229,7 +237,7 @@ export function SubcategoriesTable({
                 <td className="px-5 py-4 text-ebony-700">{r.categoryCode}</td>
                 <td className="px-5 py-4 font-semibold text-ebony-900">{r.code}</td>
                 <td className="px-5 py-4 text-ebony-700">{r.name}</td>
-                <td className="px-5 py-4 text-ebony-700">{(r.carat ?? "").trim() || "â€”"}</td>
+                <td className="px-5 py-4 text-ebony-700">{normalizeCarat(r.carat) || "-"}</td>
                 <td className="px-5 py-4">
                   {r.imageUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -249,7 +257,7 @@ export function SubcategoriesTable({
                       setEditingCode(r.code);
                       setName(r.name);
                       setCategoryCode(r.categoryCode);
-                      setCarat(((r.carat ?? "").trim() as any) || "");
+                      setCarat(normalizeCarat(r.carat));
                       setFile(null);
                       setEditingImageUrl(r.imageUrl ?? "");
                       if (previewUrl) URL.revokeObjectURL(previewUrl);
