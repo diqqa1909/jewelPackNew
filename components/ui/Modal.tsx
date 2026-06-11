@@ -9,13 +9,15 @@ export function Modal({
   onClose,
   title,
   children,
-  className
+  className,
+  panelClassName
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   children: React.ReactNode;
   className?: string;
+  panelClassName?: string;
 }) {
   useEffect(() => {
     if (!open) return;
@@ -35,7 +37,10 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="absolute left-1/2 top-1/2 w-[92vw] max-w-2xl -translate-x-1/2 -translate-y-1/2"
+        className={cn(
+          "absolute left-1/2 top-1/2 w-[92vw] max-w-2xl -translate-x-1/2 -translate-y-1/2",
+          panelClassName
+        )}
       >
         <div className={cn("overflow-hidden rounded-2xl border border-ebony-100 bg-white shadow-2xl", className)}>
           <div className="flex items-center justify-between border-b border-ebony-100 px-5 py-4">
@@ -56,4 +61,3 @@ export function Modal({
     </div>
   );
 }
-

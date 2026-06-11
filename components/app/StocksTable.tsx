@@ -1,6 +1,7 @@
 "use client";
 
 import type { StockMaster } from "@/lib/generated/prisma";
+import { DeleteConfirmModal } from "@/components/ui/DeleteConfirmModal";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -12,15 +13,15 @@ export function StocksTable({ initial }: Props) {
   const [rows, setRows] = useState<StockMaster[]>(initial);
   const [busy, setBusy] = useState(false);
   const [query, setQuery] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<StockMaster | null>(null);
 
   async function remove(id: number) {
-    const ok = confirm("Delete this receipt? This cannot be undone.");
-    if (!ok) return;
     setBusy(true);
     try {
       const res = await fetch(`/api/stock/receipts?id=${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Delete failed");
       setRows((prev) => prev.filter((r) => r.id !== id));
+      setDeleteTarget(null);
     } finally {
       setBusy(false);
     }
@@ -90,7 +91,7 @@ export function StocksTable({ initial }: Props) {
                   </Link>
                   <button
                     type="button"
-                    onClick={() => void remove(r.id)}
+                    onClick={() => setDeleteTarget(r)}
                     disabled={busy}
                     className="ml-2 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
                   >
@@ -110,6 +111,20 @@ export function StocksTable({ initial }: Props) {
           </tbody>
         </table>
       </div>
+
+      <DeleteConfirmModal
+        open={deleteTarget !== null}
+        itemLabel={
+          deleteTarget
+            ? `receipt ${new Date(deleteTarget.transactionDate).toISOString().slice(0, 10)} - ${deleteTarget.gsmCode}`
+            : "this receipt"
+        }
+        busy={busy}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          if (deleteTarget) void remove(deleteTarget.id);
+        }}
+      />
     </div>
   );
 }

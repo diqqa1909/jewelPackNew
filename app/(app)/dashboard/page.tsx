@@ -1,5 +1,6 @@
 import { SalesChart, StockSummary } from "@/components/app/DashboardClient";
 import { Prisma } from "@/lib/generated/prisma";
+import { fetchGoldPrices } from "@/lib/goldPrices";
 import { prismaWithRetry } from "@/lib/prisma";
 import {
   AlertTriangle,
@@ -59,7 +60,8 @@ export default async function DashboardPage() {
     customerCount,
     supplierCount,
     cashAgg,
-    customerSalesRows
+    customerSalesRows,
+    liveGoldPrices
   ] = await Promise.all([
     prismaWithRetry((p) => p.system.findUnique({ where: { id: 1 } })),
     prismaWithRetry((p) =>
@@ -135,7 +137,8 @@ export default async function DashboardPage() {
         select: { customerId: true, sellSubTotal: true, customer: { select: { name: true } } },
         take: 1000
       })
-    )
+    ),
+    fetchGoldPrices()
   ]);
 
   const onHandItems = stockAgg._sum.balanceQty ?? 0;
@@ -180,12 +183,16 @@ export default async function DashboardPage() {
     .slice(0, 5);
 
   const goldRatePer8g = systemRow ? toNumber(systemRow.goldCostRatePer8g) : 0;
-  const goldRates = [
-    { label: "24K (1g)", value: goldRatePer8g / 8 },
-    { label: "22K (1g)", value: (goldRatePer8g / 8) * (22 / 24) },
-    { label: "21K (1g)", value: (goldRatePer8g / 8) * (21 / 24) },
-    { label: "18K (1g)", value: (goldRatePer8g / 8) * (18 / 24) }
-  ];
+  const liveRates = liveGoldPrices.ok ? liveGoldPrices.rates : {};
+  const goldRates = (["24", "22", "21", "18"] as const).map((carat) => ({
+    label: `${carat}K (8g)`,
+    value: Number(liveRates[carat] ?? 0) || (goldRatePer8g * Number(carat)) / 24
+  }));
+  const goldRateUpdated = liveGoldPrices.ok
+    ? liveGoldPrices.fetchedAt
+    : systemRow
+      ? systemRow.updatedAt.toISOString()
+      : "";
 
   const metricCards = [
     {
@@ -272,9 +279,12 @@ export default async function DashboardPage() {
               </div>
             ))}
           </div>
-          <div className="mt-4 flex items-center justify-between text-[11px] font-semibold text-ebony-500">
-            <span>Last Updated: {systemRow ? systemRow.updatedAt.toISOString().slice(0, 10) : "-"}</span>
-            <span className="rounded-md bg-indigo-600 px-3 py-1.5 text-white">Update Rate</span>
+          <div className="mt-4 space-y-2 text-[11px] font-semibold text-ebony-500">
+            <div className="flex items-center justify-between gap-3">
+              <span>Last Updated: {goldRateUpdated ? new Date(goldRateUpdated).toISOString().slice(0, 10) : "-"}</span>
+              
+            </div>
+            <div>{liveGoldPrices.ok ? liveGoldPrices.sourceUrl : liveGoldPrices.error ?? "Using saved system rate."}</div>
           </div>
         </div>
 

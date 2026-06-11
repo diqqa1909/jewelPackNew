@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
+import { DeleteConfirmModal } from "@/components/ui/DeleteConfirmModal";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/ToastProvider";
 
@@ -19,6 +20,8 @@ export function UsersClient() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: "",
@@ -83,15 +86,17 @@ export function UsersClient() {
   }
 
   async function handleDelete(userId: string) {
-    if (!confirm("Are you sure you want to delete this user?")) return;
-
+    setDeleting(true);
     try {
       const res = await fetch(`/api/users?id=${userId}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to delete");
       toast.success("User deleted");
+      setDeleteTarget(null);
       await loadUsers();
     } catch (error) {
       toast.error("Failed to delete user");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -153,7 +158,7 @@ export function UsersClient() {
                           Edit
                         </button>
                         <button
-                          onClick={() => handleDelete(user.id)}
+                          onClick={() => setDeleteTarget(user)}
                           className="text-red-600 hover:text-red-800 text-xs font-medium"
                         >
                           Delete
@@ -238,6 +243,16 @@ export function UsersClient() {
           </div>
         </Modal>
       )}
+
+      <DeleteConfirmModal
+        open={deleteTarget !== null}
+        itemLabel={deleteTarget?.email ?? deleteTarget?.name ?? "this user"}
+        busy={deleting}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          if (deleteTarget) void handleDelete(deleteTarget.id);
+        }}
+      />
     </div>
   );
 }

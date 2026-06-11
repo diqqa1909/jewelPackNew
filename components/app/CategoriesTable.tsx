@@ -1,6 +1,7 @@
 "use client";
 
 import type { Category } from "@/lib/generated/prisma";
+import { DeleteConfirmModal } from "@/components/ui/DeleteConfirmModal";
 import { useToast } from "@/components/ui/ToastProvider";
 import { useMemo, useState } from "react";
 import { buttonClassName } from "@/components/ui/Button";
@@ -14,6 +15,7 @@ export function CategoriesTable({ initial }: Props) {
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<Category | null>(null);
 
   const canAdd = useMemo(() => code.trim() !== "" && name.trim() !== "" && !busy, [busy, code, name]);
   const isEditing = useMemo(() => rows.some((r) => r.code === code.trim()), [code, rows]);
@@ -41,8 +43,6 @@ export function CategoriesTable({ initial }: Props) {
   }
 
   async function remove(targetCode: string) {
-    const ok = confirm(`Delete category ${targetCode}?`);
-    if (!ok) return;
     setBusy(true);
     setError("");
     try {
@@ -52,6 +52,7 @@ export function CategoriesTable({ initial }: Props) {
         throw new Error(msg?.error ?? "Failed");
       }
       setRows((prev) => prev.filter((r) => r.code !== targetCode));
+      setDeleteTarget(null);
       toast.success("Category deleted");
     } catch (e) {
       const message = e instanceof Error ? e.message : "Unable to delete";
@@ -138,7 +139,7 @@ export function CategoriesTable({ initial }: Props) {
                   </button>
                   <button
                     type="button"
-                    onClick={() => void remove(r.code)}
+                    onClick={() => setDeleteTarget(r)}
                     disabled={busy}
                     className={buttonClassName("secondary", "ml-2 px-4 py-2 text-xs text-red-700")}
                   >
@@ -157,6 +158,16 @@ export function CategoriesTable({ initial }: Props) {
           </tbody>
         </table>
       </div>
+
+      <DeleteConfirmModal
+        open={deleteTarget !== null}
+        itemLabel={deleteTarget?.code ?? "this category"}
+        busy={busy}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          if (deleteTarget) void remove(deleteTarget.code);
+        }}
+      />
     </div>
   );
 }

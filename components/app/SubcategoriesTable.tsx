@@ -3,6 +3,7 @@
 import { useToast } from "@/components/ui/ToastProvider";
 import { useEffect, useMemo, useState } from "react";
 import { buttonClassName } from "@/components/ui/Button";
+import { DeleteConfirmModal } from "@/components/ui/DeleteConfirmModal";
 
 type CategoryRow = { code: string; name: string };
 type SubcategoryRow = { code: string; name: string; categoryCode: string; imageUrl: string; carat?: string | null };
@@ -31,6 +32,7 @@ export function SubcategoriesTable({
   const [busy, setBusy] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string>("");
   const [error, setError] = useState<string>("");
+  const [deleteTarget, setDeleteTarget] = useState<SubcategoryRow | null>(null);
   useEffect(() => {
     return () => {
       if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -117,8 +119,6 @@ export function SubcategoriesTable({
   }
 
   async function remove(targetCode: string) {
-    const ok = confirm(`Delete subcategory ${targetCode}?`);
-    if (!ok) return;
     setBusy(true);
     setError("");
     try {
@@ -131,6 +131,7 @@ export function SubcategoriesTable({
       }
       setRows((prev) => prev.filter((r) => r.code !== targetCode));
       if (editingCode === targetCode) resetForm();
+      setDeleteTarget(null);
       toast.success("Subcategory deleted");
     } catch (e) {
       const message = e instanceof Error ? e.message : "Unable to delete";
@@ -270,7 +271,7 @@ export function SubcategoriesTable({
                   </button>
                   <button
                     type="button"
-                    onClick={() => void remove(r.code)}
+                    onClick={() => setDeleteTarget(r)}
                     disabled={busy}
                     className={buttonClassName("secondary", "ml-2 px-4 py-2 text-xs text-red-700")}
                   >
@@ -289,6 +290,16 @@ export function SubcategoriesTable({
           </tbody>
         </table>
       </div>
+
+      <DeleteConfirmModal
+        open={deleteTarget !== null}
+        itemLabel={deleteTarget?.code ?? "this subcategory"}
+        busy={busy}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          if (deleteTarget) void remove(deleteTarget.code);
+        }}
+      />
     </div>
   );
 }

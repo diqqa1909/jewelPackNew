@@ -1,6 +1,7 @@
 "use client";
 
 import type { Goldsmith } from "@/lib/generated/prisma";
+import { DeleteConfirmModal } from "@/components/ui/DeleteConfirmModal";
 import { useToast } from "@/components/ui/ToastProvider";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -15,6 +16,7 @@ export function GoldsmithsTable({ initial }: Props) {
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Goldsmith | null>(null);
 
   const canAdd = useMemo(() => code.trim() !== "" && name.trim() !== "" && !busy, [busy, code, name]);
   const isEditing = useMemo(() => rows.some((r) => r.code === code.trim()), [code, rows]);
@@ -42,13 +44,12 @@ export function GoldsmithsTable({ initial }: Props) {
   }
 
   async function remove(targetCode: string) {
-    const ok = confirm(`Delete goldsmith ${targetCode}?`);
-    if (!ok) return;
     setBusy(true);
     try {
       const res = await fetch(`/api/goldsmiths?code=${encodeURIComponent(targetCode)}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed");
       setRows((prev) => prev.filter((r) => r.code !== targetCode));
+      setDeleteTarget(null);
       toast.success("Goldsmith deleted");
     } catch (e) {
       toast.error("Unable to delete goldsmith", e instanceof Error ? e.message : "Please try again.");
@@ -137,7 +138,7 @@ export function GoldsmithsTable({ initial }: Props) {
                     type="button"
                     onClick={(e) => {
                     e.stopPropagation();
-                    void remove(r.code);
+                    setDeleteTarget(r);
                   }}
                   disabled={busy}
                     className={buttonClassName("secondary", "ml-2 px-4 py-2 text-xs text-red-700")}
@@ -157,6 +158,16 @@ export function GoldsmithsTable({ initial }: Props) {
           </tbody>
         </table>
       </div>
+
+      <DeleteConfirmModal
+        open={deleteTarget !== null}
+        itemLabel={deleteTarget ? `${deleteTarget.code} - ${deleteTarget.name}` : "this goldsmith"}
+        busy={busy}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          if (deleteTarget) void remove(deleteTarget.code);
+        }}
+      />
     </div>
   );
 }

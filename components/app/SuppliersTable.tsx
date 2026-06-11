@@ -1,6 +1,7 @@
 "use client";
 
 import type { Supplier } from "@/lib/generated/prisma";
+import { DeleteConfirmModal } from "@/components/ui/DeleteConfirmModal";
 import { useToast } from "@/components/ui/ToastProvider";
 import { useMemo, useState } from "react";
 import { buttonClassName } from "@/components/ui/Button";
@@ -18,6 +19,7 @@ export function SuppliersTable({ initial }: Props) {
   const [address, setAddress] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<Supplier | null>(null);
 
   const canSave = useMemo(() => name.trim() !== "" && !busy, [busy, name]);
 
@@ -56,8 +58,6 @@ export function SuppliersTable({ initial }: Props) {
   }
 
   async function remove(id: number) {
-    const ok = confirm("Delete this supplier?");
-    if (!ok) return;
     setBusy(true);
     setError("");
     try {
@@ -66,6 +66,7 @@ export function SuppliersTable({ initial }: Props) {
       if (!res.ok) throw new Error(json?.error ?? "Delete failed");
       setRows((prev) => prev.filter((r) => r.id !== id));
       if (editingId === id) resetForm();
+      setDeleteTarget(null);
       toast.success("Supplier deleted");
     } catch (e) {
       const message = e instanceof Error ? e.message : "Delete failed";
@@ -176,7 +177,7 @@ export function SuppliersTable({ initial }: Props) {
                   </button>
                   <button
                     type="button"
-                    onClick={() => void remove(r.id)}
+                    onClick={() => setDeleteTarget(r)}
                     disabled={busy}
                     className={buttonClassName("secondary", "ml-2 px-4 py-2 text-xs text-red-700")}
                   >
@@ -195,6 +196,16 @@ export function SuppliersTable({ initial }: Props) {
           </tbody>
         </table>
       </div>
+
+      <DeleteConfirmModal
+        open={deleteTarget !== null}
+        itemLabel={deleteTarget?.name ?? "this supplier"}
+        busy={busy}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          if (deleteTarget) void remove(deleteTarget.id);
+        }}
+      />
     </div>
   );
 }

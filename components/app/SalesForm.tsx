@@ -1,6 +1,7 @@
 "use client";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
+import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/ToastProvider";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -16,6 +17,15 @@ type AvailabilityRow = {
   balanceQty: number;
   balanceGoldWeight: string;
   balanceCost: string;
+};
+
+type GoldPricesResponse = {
+  ok?: boolean;
+  sourceUrl?: string;
+  fetchedAt?: string;
+  unit?: "LKR_PER_8G";
+  rates?: Partial<Record<"18" | "19" | "20" | "21" | "22" | "24", string>>;
+  error?: string;
 };
 
 type Line = {
@@ -63,6 +73,10 @@ export function SalesForm() {
   const [salesmen, setSalesmen] = useState<SalesmanRow[]>([]);
   const [subcategories, setSubcategories] = useState<SubcategoryRow[]>([]);
   const [availability, setAvailability] = useState<AvailabilityRow[]>([]);
+  const [goldPrices, setGoldPrices] = useState<GoldPricesResponse["rates"]>({});
+  const [goldPriceSource, setGoldPriceSource] = useState("");
+  const [goldPriceFetchedAt, setGoldPriceFetchedAt] = useState("");
+  const [goldPriceError, setGoldPriceError] = useState("");
 
   const [transactionDate, setTransactionDate] = useState(todayISO());
   const [salesmanId, setSalesmanId] = useState<number | "">("");
@@ -87,6 +101,8 @@ export function SalesForm() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
+  const [barcodePickerRowId, setBarcodePickerRowId] = useState<string | null>(null);
+  const [pickerIndex, setPickerIndex] = useState(0);
   const [cellRefs] = useState(
     () => new Map<string, HTMLSelectElement | HTMLInputElement | HTMLButtonElement | null>()
   );
@@ -151,14 +167,15 @@ export function SalesForm() {
     let active = true;
     (async () => {
       try {
-        const [c1, c2, c3, c4, inv] = await Promise.all([
+        const [c1, c2, c3, c4, inv, gold] = await Promise.all([
           fetch("/api/customers", { cache: "no-store" }).then((r) => r.json()),
           fetch("/api/salesmen", { cache: "no-store" }).then((r) => r.json()),
           fetch("/api/subcategories", { cache: "no-store" }).then((r) => r.json()),
           fetch("/api/stock/availability", { cache: "no-store" }).then((r) => r.json()),
           fetch(`/api/sales?preview=1&transactionDate=${encodeURIComponent(todayISO())}`, {
             cache: "no-store"
-          }).then((r) => r.json())
+          }).then((r) => r.json()),
+          fetch("/api/gold-prices", { cache: "no-store" }).then((r) => r.json())
         ]);
         if (!active) return;
         setCustomers(c1.customers ?? []);
@@ -166,6 +183,14 @@ export function SalesForm() {
         setSubcategories(c3.subcategories ?? []);
         setAvailability(c4.rows ?? []);
         setInvoiceNo(inv.saleNo ?? "");
+        if (gold?.ok) {
+          setGoldPrices(gold.rates ?? {});
+          setGoldPriceSource(gold.sourceUrl ?? "");
+          setGoldPriceFetchedAt(gold.fetchedAt ?? "");
+          setGoldPriceError("");
+        } else {
+          setGoldPriceError(gold?.error ?? "Unable to load live gold prices.");
+        }
       } catch {
         // ignore
       } finally {
@@ -232,6 +257,10 @@ export function SalesForm() {
     for (const s of subcategories) map.set(s.code, s);
     return map;
   }, [subcategories]);
+
+  useEffect(() => {
+    setPickerIndex(0);
+  }, [itemSearch, barcodePickerRowId]);
 
   const totals = useMemo(() => {
     let totalQty = 0;
@@ -300,6 +329,28 @@ export function SalesForm() {
   const paidValue = Math.max(0, toNumber(paidAmount));
   const balanceDue = Math.max(0, grandTotal - paidValue);
 
+  function rateForCarat(carat: string | null | undefined) {
+    const key = normalizeCarat(carat) as keyof NonNullable<GoldPricesResponse["rates"]>;
+    return goldPrices?.[key] ?? "";
+  }
+
+  function goldRateLabel(carat: string) {
+    const rate = rateForCarat(carat);
+    return rate || (goldPriceError ? "Unavailable" : "");
+  }
+
+  useEffect(() => {
+    if (!goldPrices || Object.keys(goldPrices).length === 0) return;
+    setLines((prev) =>
+      prev.map((line) => {
+        if (line.sellRatePer8g || !line.carat) return line;
+        const rate = rateForCarat(line.carat);
+        return rate ? { ...line, sellRatePer8g: rate } : line;
+      })
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [goldPrices]);
+
   function updateLine(id: string, patch: Partial<Line>) {
     setLines((prev) =>
       prev.map((l) => {
@@ -309,11 +360,52 @@ export function SalesForm() {
           const sub = String(patch.subcategoryCode ?? "").trim();
           const sc = subcategoryByCode.get(sub);
           next.carat = normalizeCarat(sc?.carat);
+          if (!next.sellRatePer8g) {
+            const rate = rateForCarat(next.carat);
+            if (rate) next.sellRatePer8g = rate;
+          }
         }
         return next;
       })
     );
     setError("");
+  }
+
+  function openBarcodePicker(rowId: string) {
+    setBarcodePickerRowId(rowId);
+    setItemSearch("");
+    setPickerIndex(0);
+  }
+
+  function closeBarcodePicker() {
+    setBarcodePickerRowId(null);
+    setItemSearch("");
+    setPickerIndex(0);
+  }
+
+  function selectBarcodeItem(code: string) {
+    if (!barcodePickerRowId) return;
+    updateLine(barcodePickerRowId, { subcategoryCode: code });
+    closeBarcodePicker();
+    window.setTimeout(() => focusCell(barcodePickerRowId, "qty"), 0);
+  }
+
+  function handlePickerKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setPickerIndex((prev) => Math.min(prev + 1, Math.max(0, subcategoriesSorted.length - 1)));
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setPickerIndex((prev) => Math.max(0, prev - 1));
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const selected = subcategoriesSorted[pickerIndex] ?? subcategoriesSorted[0];
+      if (selected) selectBarcodeItem(selected.code);
+    }
   }
 
   function addLine() {
@@ -403,17 +495,6 @@ export function SalesForm() {
       ) : null}
 
       <div className="rounded-lg border border-ebony-100 bg-white p-4 shadow-sm">
-        <div className="relative max-w-2xl">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ebony-500" />
-          <input
-            value={itemSearch}
-            onChange={(e) => setItemSearch(e.target.value)}
-            placeholder="Search item by barcode / design / name..."
-            className="h-10 w-full rounded-md border border-ebony-200 bg-white pl-9 pr-10 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
-          />
-          <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ebony-400" />
-        </div>
-
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-6">
           <label className="space-y-1.5 text-sm">
             <div className="text-xs font-bold text-ebony-800">Invoice No</div>
@@ -507,7 +588,7 @@ export function SalesForm() {
           <label className="space-y-1.5 text-sm">
             <div className="text-xs font-bold text-ebony-800">Gold Rate (24K)</div>
             <input
-              value={lines.find((l) => normalizeCarat(l.carat) === "24")?.sellRatePer8g ?? ""}
+              value={goldRateLabel("24")}
               readOnly
               placeholder="0.00"
               className="h-10 w-full rounded-md border border-ebony-200 bg-ebony-50 px-3 text-right text-sm font-semibold text-ebony-700 outline-none"
@@ -517,7 +598,17 @@ export function SalesForm() {
           <label className="space-y-1.5 text-sm">
             <div className="text-xs font-bold text-ebony-800">Gold Rate (22K)</div>
             <input
-              value={lines.find((l) => normalizeCarat(l.carat) === "22")?.sellRatePer8g ?? ""}
+              value={goldRateLabel("22")}
+              readOnly
+              placeholder="0.00"
+              className="h-10 w-full rounded-md border border-ebony-200 bg-ebony-50 px-3 text-right text-sm font-semibold text-ebony-700 outline-none"
+            />
+          </label>
+
+          <label className="space-y-1.5 text-sm">
+            <div className="text-xs font-bold text-ebony-800">Gold Rate (21K)</div>
+            <input
+              value={goldRateLabel("21")}
               readOnly
               placeholder="0.00"
               className="h-10 w-full rounded-md border border-ebony-200 bg-ebony-50 px-3 text-right text-sm font-semibold text-ebony-700 outline-none"
@@ -527,12 +618,22 @@ export function SalesForm() {
           <label className="space-y-1.5 text-sm">
             <div className="text-xs font-bold text-ebony-800">Gold Rate (18K)</div>
             <input
-              value={lines.find((l) => normalizeCarat(l.carat) === "18")?.sellRatePer8g ?? ""}
+              value={goldRateLabel("18")}
               readOnly
               placeholder="0.00"
               className="h-10 w-full rounded-md border border-ebony-200 bg-ebony-50 px-3 text-right text-sm font-semibold text-ebony-700 outline-none"
             />
           </label>
+        </div>
+
+        <div className="mt-3 text-xs font-semibold text-ebony-500">
+          {goldPriceError
+            ? goldPriceError
+            : goldPriceFetchedAt
+              ? `Live rates from ${goldPriceSource || "goldpricesrilanka.com"} at ${new Date(
+                  goldPriceFetchedAt
+                ).toLocaleString()}`
+              : "Loading live gold prices..."}
         </div>
       </div>
 
@@ -576,20 +677,15 @@ export function SalesForm() {
                         {index + 1}
                       </td>
                       <td className="border border-ebony-100 p-0">
-                        <select
-                          value={l.subcategoryCode}
-                          onChange={(e) => updateLine(l.id, { subcategoryCode: e.target.value })}
+                        <button
+                          type="button"
+                          onClick={() => openBarcodePicker(l.id)}
                           onKeyDown={(e) => handleTabNav(e, l.id, "subcategory")}
                           ref={(el) => setCellRef(l.id, "subcategory", el)}
-                          className="h-10 w-full min-w-40 border-0 bg-white px-2 text-sm outline-none focus:bg-cream-50"
+                          className="h-10 w-full min-w-40 border-0 bg-white px-2 text-left text-sm outline-none focus:bg-cream-50"
                         >
-                          <option value="">Select item...</option>
-                          {subcategoriesSorted.map((s) => (
-                            <option key={s.code} value={s.code}>
-                              {s.code} - {s.name}
-                            </option>
-                          ))}
-                          </select>
+                          {l.subcategoryCode || "Select item..."}
+                        </button>
                           {qtyErrors.get(l.id) ? (
                             <div className="px-2 pb-1 text-xs font-semibold text-red-600">{qtyErrors.get(l.id)}</div>
                           ) : null}
@@ -774,6 +870,87 @@ export function SalesForm() {
           Cancel
         </button>
       </div>
+
+      <Modal
+        open={barcodePickerRowId !== null}
+        onClose={closeBarcodePicker}
+        title="Select Barcode"
+        panelClassName="max-w-4xl"
+      >
+        <div className="space-y-4">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ebony-500" />
+            <input
+              autoFocus
+              value={itemSearch}
+              onChange={(e) => setItemSearch(e.target.value)}
+              onKeyDown={handlePickerKeyDown}
+              placeholder="Search by code, description, or category..."
+              className="h-11 w-full rounded-lg border border-ebony-200 bg-white pl-9 pr-4 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+            />
+          </div>
+
+          <div className="max-h-[48vh] overflow-auto rounded-lg border border-ebony-100">
+            <table className="w-full min-w-[680px] text-sm">
+              <thead className="sticky top-0 bg-ebony-50 text-left text-[11px] font-bold uppercase tracking-wide text-ebony-600">
+                <tr>
+                  <th className="px-4 py-3">Code</th>
+                  <th className="px-4 py-3">Description</th>
+                  <th className="px-4 py-3">Karat</th>
+                  <th className="px-4 py-3 text-right">Available Qty</th>
+                  <th className="px-4 py-3 text-right">Available Weight</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-ebony-100">
+                {subcategoriesSorted.map((item, index) => {
+                  const available = availabilityBySubcategory.get(item.code);
+                  const isActive = index === pickerIndex;
+                  return (
+                    <tr
+                      key={item.code}
+                      tabIndex={0}
+                      onClick={() => selectBarcodeItem(item.code)}
+                      onMouseEnter={() => setPickerIndex(index)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          selectBarcodeItem(item.code);
+                        }
+                      }}
+                      className={[
+                        "cursor-pointer bg-white outline-none hover:bg-cream-50",
+                        isActive ? "bg-gold-100/60" : ""
+                      ].join(" ")}
+                    >
+                      <td className="px-4 py-3 font-bold text-ebony-900">{item.code}</td>
+                      <td className="px-4 py-3 text-ebony-700">{item.name}</td>
+                      <td className="px-4 py-3 font-semibold text-ebony-800">{normalizeCarat(item.carat) || "-"}</td>
+                      <td className="px-4 py-3 text-right font-semibold tabular-nums text-ebony-900">
+                        {available?.balanceQty ?? 0}
+                      </td>
+                      <td className="px-4 py-3 text-right font-semibold tabular-nums text-ebony-900">
+                        {(available?.balanceGoldWeight ?? 0).toFixed(3)} g
+                      </td>
+                    </tr>
+                  );
+                })}
+                {subcategoriesSorted.length === 0 ? (
+                  <tr>
+                    <td className="px-4 py-8 text-center text-sm font-semibold text-ebony-600" colSpan={5}>
+                      No matching items.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex items-center justify-between text-xs font-semibold text-ebony-500">
+            <span>{subcategoriesSorted.length} items available</span>
+            <span>Use arrow keys and Enter to select</span>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 
