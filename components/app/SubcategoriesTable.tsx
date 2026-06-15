@@ -14,6 +14,10 @@ function normalizeCarat(value: string | null | undefined) {
   return raw ? `${raw}K` : "";
 }
 
+function sameName(left: string, right: string) {
+  return left.trim().localeCompare(right.trim(), undefined, { sensitivity: "accent" }) === 0;
+}
+
 export function SubcategoriesTable({
   initial,
   categories
@@ -33,6 +37,8 @@ export function SubcategoriesTable({
   const [previewUrl, setPreviewUrl] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [deleteTarget, setDeleteTarget] = useState<SubcategoryRow | null>(null);
+  const isEditing = editingCode.trim() !== "";
+
   useEffect(() => {
     return () => {
       if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -40,11 +46,9 @@ export function SubcategoriesTable({
   }, [previewUrl]);
 
   const canSave = useMemo(
-    () => name.trim() !== "" && categoryCode.trim() !== "" && carat.trim() !== "" && !busy,
-    [busy, categoryCode, name, carat]
+    () => name.trim() !== "" && (isEditing || (categoryCode.trim() !== "" && carat.trim() !== "")) && !busy,
+    [busy, categoryCode, name, carat, isEditing]
   );
-
-  const isEditing = editingCode.trim() !== "";
 
   async function uploadToCloudinary(selected: File): Promise<string> {
     const formData = new FormData();
@@ -81,12 +85,23 @@ export function SubcategoriesTable({
     setBusy(true);
     setError("");
     try {
+      const duplicateSubcategory = rows.some(
+        (row) =>
+          row.code !== editingCode &&
+          row.categoryCode === categoryCode &&
+          normalizeCarat(row.carat) === normalizeCarat(carat) &&
+          sameName(row.name, name)
+      );
+      if (duplicateSubcategory) {
+        throw new Error("Subcategory already exists");
+      }
+
       const nextImageUrl = file ? await uploadToCloudinary(file) : undefined;
       const payload = {
         code: editingCode || undefined,
         name,
-        categoryCode,
-        carat: carat.trim(),
+        ...(isEditing ? {} : { categoryCode }),
+        ...(isEditing ? {} : { carat: carat.trim() }),
         imageUrl: file ? nextImageUrl : isEditing ? editingImageUrl || null : null
       };
 
@@ -96,8 +111,8 @@ export function SubcategoriesTable({
         body: JSON.stringify(payload)
       });
       if (!res.ok) {
-        const txt = await res.text().catch(() => "");
-        throw new Error(txt || "Save failed");
+        const msg = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(msg?.error ?? "Save failed");
       }
       const json = (await res.json()) as { subcategory: SubcategoryRow };
       setRows((prev) =>
@@ -156,29 +171,41 @@ export function SubcategoriesTable({
           placeholder="Subcategory Name"
           className="w-full rounded-lg border border-ebony-200 bg-white px-4 py-2.5 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
         />
-        <select
-          value={categoryCode}
-          onChange={(e) => setCategoryCode(e.target.value)}
-          className="w-full rounded-lg border border-ebony-200 bg-white px-4 py-2.5 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
-        >
-          {categories.map((c) => (
-            <option key={c.code} value={c.code}>
-              {c.code}
-            </option>
-          ))}
-        </select>
-        <select
-          value={carat}
-          onChange={(e) => setCarat(e.target.value)}
-          className="w-full rounded-lg border border-ebony-200 bg-white px-4 py-2.5 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
-        >
-          <option value="">Select carat...</option>
-          {CARAT_VALUES.map((value) => (
-            <option key={value} value={value}>
-              {value}
-            </option>
-          ))}
-        </select>
+        {isEditing ? (
+          <div className="w-full rounded-lg border border-ebony-200 bg-ebony-50 px-4 py-2.5 text-sm text-ebony-700">
+            Category: <span className="font-semibold text-ebony-900">{categoryCode || "-"}</span>
+          </div>
+        ) : (
+          <select
+            value={categoryCode}
+            onChange={(e) => setCategoryCode(e.target.value)}
+            className="w-full rounded-lg border border-ebony-200 bg-white px-4 py-2.5 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+          >
+            {categories.map((c) => (
+              <option key={c.code} value={c.code}>
+                {c.code}
+              </option>
+            ))}
+          </select>
+        )}
+        {isEditing ? (
+          <div className="w-full rounded-lg border border-ebony-200 bg-ebony-50 px-4 py-2.5 text-sm text-ebony-700">
+            Carat: <span className="font-semibold text-ebony-900">{carat || "-"}</span>
+          </div>
+        ) : (
+          <select
+            value={carat}
+            onChange={(e) => setCarat(e.target.value)}
+            className="w-full rounded-lg border border-ebony-200 bg-white px-4 py-2.5 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+          >
+            <option value="">Select carat...</option>
+            {CARAT_VALUES.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
+        )}
         <input
           type="file"
           accept="image/*"

@@ -23,20 +23,26 @@ export function CategoriesTable({ initial }: Props) {
   async function add() {
     if (!canAdd) return;
     setBusy(true);
+    setError("");
     try {
       const res = await fetch("/api/categories", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ code, name })
       });
-      if (!res.ok) throw new Error("Failed");
+      if (!res.ok) {
+        const msg = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(msg?.error ?? "Failed");
+      }
       const data = (await res.json()) as { category: Category };
       setRows((prev) => [...prev.filter((r) => r.code !== data.category.code), data.category].sort((a, b) => a.code.localeCompare(b.code)));
       setCode("");
       setName("");
       toast.success(isEditing ? "Category updated" : "Category added");
     } catch (e) {
-      toast.error("Unable to save category", e instanceof Error ? e.message : "Please try again.");
+      const message = e instanceof Error ? e.message : "Please try again.";
+      setError(message);
+      toast.error("Unable to save category", message);
     } finally {
       setBusy(false);
     }
@@ -71,11 +77,16 @@ export function CategoriesTable({ initial }: Props) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ code: targetCode, name: nextName })
       });
-      if (!res.ok) throw new Error("Failed");
+      if (!res.ok) {
+        const msg = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(msg?.error ?? "Failed");
+      }
       setRows((prev) => prev.map((r) => (r.code === targetCode ? { ...r, name: nextName } : r)));
       toast.success("Category updated");
     } catch (e) {
-      toast.error("Unable to update category", e instanceof Error ? e.message : "Please try again.");
+      const message = e instanceof Error ? e.message : "Please try again.";
+      setError(message);
+      toast.error("Unable to update category", message);
     } finally {
       setBusy(false);
     }

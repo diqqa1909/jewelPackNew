@@ -52,3 +52,35 @@ body {
     @apply bg-ebony-900 text-white font-semibold rounded-lg px-4 py-2 transition-all duration-200 hover:bg-ebony-800 active:scale-95;
   }
 }
+
+@layer utilities {
+  @keyframes toast-slide-in {
+    from {
+      opacity: 0;
+      transform: translateY(-1rem);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes toast-slide-out {
+    from {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateY(-1rem);
+    }
+  }
+
+  .animate-toast-slide-in {
+    animation: toast-slide-in 180ms ease-out both;
+  }
+
+  .animate-toast-slide-out {
+    animation: toast-slide-out 200ms ease-in both;
+  }
+}

@@ -33,16 +33,33 @@ function id() {
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [closingToastIds, setClosingToastIds] = useState<Set<string>>(() => new Set());
 
   const remove = useCallback((toastId: string) => {
     setToasts((prev) => prev.filter((toast) => toast.id !== toastId));
+    setClosingToastIds((prev) => {
+      if (!prev.has(toastId)) return prev;
+      const next = new Set(prev);
+      next.delete(toastId);
+      return next;
+    });
   }, []);
+
+  const dismiss = useCallback((toastId: string) => {
+    setClosingToastIds((prev) => {
+      if (prev.has(toastId)) return prev;
+      const next = new Set(prev);
+      next.add(toastId);
+      return next;
+    });
+    window.setTimeout(() => remove(toastId), 220);
+  }, [remove]);
 
   const notify = useCallback((toast: ToastInput) => {
     const next = { id: id(), type: toast.type ?? "info", title: toast.title, description: toast.description };
     setToasts((prev) => [next, ...prev].slice(0, 5));
-    window.setTimeout(() => remove(next.id), 4200);
-  }, [remove]);
+    window.setTimeout(() => dismiss(next.id), 4200);
+  }, [dismiss]);
 
   useEffect(() => {
     function onToast(event: Event) {
@@ -66,9 +83,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div className="pointer-events-none fixed right-4 top-4 z-[100] flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-3 print:hidden">
+      <div className="pointer-events-none fixed left-1/2 top-4 z-[100] flex w-[min(24rem,calc(100vw-2rem))] -translate-x-1/2 flex-col gap-3 print:hidden">
         {toasts.map((toast) => {
           const Icon = toast.type === "success" ? CheckCircle2 : toast.type === "error" ? XCircle : Info;
+          const isClosing = closingToastIds.has(toast.id);
           const tone =
             toast.type === "success"
               ? "border-emerald-200 bg-emerald-50 text-emerald-800"
@@ -78,7 +96,9 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           return (
             <div
               key={toast.id}
-              className={`pointer-events-auto flex items-start gap-3 rounded-lg border px-4 py-3 shadow-lg ${tone}`}
+              className={`pointer-events-auto flex items-start gap-3 rounded-lg border px-4 py-3 shadow-lg ${
+                isClosing ? "animate-toast-slide-out" : "animate-toast-slide-in"
+              } ${tone}`}
             >
               <Icon className="mt-0.5 h-5 w-5 shrink-0" />
               <div className="min-w-0 flex-1">
@@ -87,7 +107,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               </div>
               <button
                 type="button"
-                onClick={() => remove(toast.id)}
+                onClick={() => dismiss(toast.id)}
                 className="grid h-6 w-6 shrink-0 place-items-center rounded-md opacity-70 hover:bg-white/70 hover:opacity-100"
                 aria-label="Dismiss notification"
                 title="Dismiss"

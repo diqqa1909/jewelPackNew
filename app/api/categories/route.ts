@@ -12,6 +12,16 @@ export async function POST(req: Request) {
   const name = (body.name ?? "").trim();
   if (!code || !name) return NextResponse.json({ error: "Missing code/name" }, { status: 400 });
 
+  const duplicateName = await prisma.category.findFirst({
+    where: {
+      name: { equals: name, mode: "insensitive" },
+      NOT: { code }
+    }
+  });
+  if (duplicateName) {
+    return NextResponse.json({ error: "Category already exists" }, { status: 409 });
+  }
+
   const category = await prisma.category.upsert({
     where: { code },
     create: { code, name },
@@ -25,6 +35,16 @@ export async function PATCH(req: Request) {
   const code = (body.code ?? "").trim();
   const name = (body.name ?? "").trim();
   if (!code || !name) return NextResponse.json({ error: "Missing code/name" }, { status: 400 });
+
+  const duplicateName = await prisma.category.findFirst({
+    where: {
+      name: { equals: name, mode: "insensitive" },
+      NOT: { code }
+    }
+  });
+  if (duplicateName) {
+    return NextResponse.json({ error: "Category already exists" }, { status: 409 });
+  }
 
   const category = await prisma.category.update({
     where: { code },

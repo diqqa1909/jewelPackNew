@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
 import { buttonClassName } from "@/components/ui/Button";
 import { prismaWithRetry } from "@/lib/prisma";
+import { ReceiptForm } from "@/components/app/ReceiptForm";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +26,17 @@ function dateText(value: Date) {
   }).format(value);
 }
 
-export default async function PurchaseViewPage({ params }: { params: { id: string } }) {
+function dateInputValue(value: Date) {
+  return value.toISOString().slice(0, 10);
+}
+
+export default async function PurchaseViewPage({
+  params,
+  searchParams
+}: {
+  params: { id: string };
+  searchParams?: { edit?: string };
+}) {
   const id = Number(params.id);
   if (!Number.isFinite(id)) {
     return <div className="rounded-lg border border-ebony-200 bg-white p-5 text-sm font-semibold text-ebony-700">Invalid purchase id.</div>;
@@ -42,11 +53,66 @@ export default async function PurchaseViewPage({ params }: { params: { id: strin
     return <div className="rounded-lg border border-ebony-200 bg-white p-5 text-sm font-semibold text-ebony-700">Purchase not found.</div>;
   }
 
+  const isEditing = searchParams?.edit === "1";
+  const formId = "purchase-edit-form";
+
+  if (isEditing) {
+    return (
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Link href={`/purchases/${purchase.id}`} className={buttonClassName("secondary", "px-5 py-2.5")}>
+            Cancel
+          </Link>
+          <button
+            type="submit"
+            form={formId}
+            className={buttonClassName("primary", "px-5 py-2.5")}
+          >
+            Save Changes
+          </button>
+        </div>
+
+        <ReceiptForm
+          mode="edit"
+          receiptId={purchase.id}
+          submitPath="/api/purchases"
+          redirectPath={`/purchases/${purchase.id}`}
+          title={`Edit Purchase #${purchase.purchaseNo}`}
+          description="Update purchase receipt details."
+          submitLabel="Save Changes"
+          layout="table"
+          formId={formId}
+          initialValues={{
+            transactionDate: dateInputValue(purchase.purchaseDate),
+            location: purchase.location ?? "",
+            gsmCode: purchase.gsmCode ?? "",
+            gsmName: purchase.gsmName ?? "",
+            categoryCode: purchase.categoryCode ?? "",
+            articleName: purchase.articleName ?? "",
+            subcategoryCode: purchase.subcategoryCode ?? "",
+            qty: String(purchase.qty ?? ""),
+            description: purchase.description ?? "",
+            carat: purchase.carat ? String(purchase.carat) : "",
+            wastageYN: purchase.wastageYN ? "Y" : "N",
+            goldWeight: purchase.goldWeight.toString(),
+            wastageMg: purchase.wastageMg.toString(),
+            labourCharges: purchase.labourCharges.toString(),
+            otherCosts: purchase.otherCosts.toString(),
+            remarks: purchase.remarks ?? ""
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      <div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <Link href="/purchases" className={buttonClassName("secondary", "px-5 py-2.5")}>
           ← Back to Purchases
+        </Link>
+        <Link href={`/purchases/${purchase.id}?edit=1`} className={buttonClassName("primary", "px-5 py-2.5")}>
+          Edit Purchase
         </Link>
       </div>
 

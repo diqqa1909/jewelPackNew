@@ -26,6 +26,7 @@ type ReceiptFormState = {
   remarks: string;
 };
 
+type ReceiptFormInitialValues = Partial<ReceiptFormState>;
 type Errors = Partial<Record<keyof ReceiptFormState, string>> & { form?: string };
 const CARAT_VALUES = ["18K", "19K", "20K", "21K", "22K", "24K"];
 
@@ -94,7 +95,8 @@ export function ReceiptForm({
   description,
   submitLabel,
   layout = "default",
-  formId
+  formId,
+  initialValues
 }: {
   mode: "create" | "edit";
   receiptId?: number;
@@ -105,6 +107,7 @@ export function ReceiptForm({
   submitLabel?: string;
   layout?: "default" | "table";
   formId?: string;
+  initialValues?: ReceiptFormInitialValues;
 }) {
   const router = useRouter();
   const [form, setForm] = useState<ReceiptFormState>(emptyForm());
@@ -228,6 +231,11 @@ export function ReceiptForm({
   }, [form.wastageYN]);
 
   useEffect(() => {
+    if (mode === "edit" && initialValues) {
+      setForm({ ...emptyForm(), ...initialValues });
+      setLoading(false);
+      return;
+    }
     if (mode !== "edit" || !receiptId) return;
     let active = true;
     (async () => {
@@ -262,7 +270,7 @@ export function ReceiptForm({
     return () => {
       active = false;
     };
-  }, [mode, receiptId]);
+  }, [initialValues, mode, receiptId]);
 
   const goldCostCalculated = useMemo(() => {
     const weight = toNumber(form.goldWeight);
@@ -324,13 +332,17 @@ export function ReceiptForm({
             : payload
         )
       });
-      if (!res.ok) throw new Error("Save failed");
+      if (!res.ok) {
+        const json = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(json?.error ?? "Save failed");
+      }
       setSaveState("saved");
       setForm(emptyForm());
       router.push(redirectPath);
-    } catch {
+    } catch (e) {
       setSaveState("error");
-      setErrors((prev) => ({ ...prev, form: "Save failed. Please try again." }));
+      const message = e instanceof Error ? e.message : "Save failed. Please try again.";
+      setErrors((prev) => ({ ...prev, form: message }));
     }
   }
 
