@@ -26,11 +26,28 @@ function formatDate(value: Date) {
   }).format(value);
 }
 
+function formatDateTime(value: Date) {
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(value);
+}
+
+function text(value: unknown) {
+  if (value == null) return "-";
+  const raw = String(value).trim();
+  return raw || "-";
+}
+
 export default async function PurchasesPage() {
   const purchases = await prismaWithRetry((p) =>
     p.purchase.findMany({
       orderBy: [{ createdAt: "desc" }],
-      take: 200
+      take: 200,
+      include: { supplier: true }
     })
   );
 
@@ -54,73 +71,130 @@ export default async function PurchasesPage() {
         </Link>
       </div>
 
-      <Card>
+      <Card className="min-w-0 overflow-hidden">
         <CardHeader>
           <CardTitle>Purchase Register</CardTitle>
           <CardDescription>Receipt-style purchase entries saved through the purchase form.</CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="overflow-hidden rounded-lg border border-ebony-100 bg-white">
-            <table className="w-full min-w-[1200px] text-sm">
-              <thead className="bg-ebony-50 text-left text-xs font-bold uppercase tracking-widest text-ebony-700">
-                <tr>
-                  <th className="px-5 py-4">No</th>
-                  <th className="px-5 py-4">Date</th>
-                  <th className="px-5 py-4">GSM</th>
-                  <th className="px-5 py-4">Category</th>
-                  <th className="px-5 py-4">Subcategory</th>
-                  <th className="px-5 py-4 text-right">Qty</th>
-                  <th className="px-5 py-4">Carat</th>
-                  <th className="px-5 py-4 text-right">Gold Wt</th>
-                  <th className="px-5 py-4 text-right">Cost</th>
-                  <th className="px-5 py-4">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-ebony-100">
-                {purchases.map((purchase) => (
-                  <tr key={purchase.id} className="bg-white hover:bg-cream-50/60 transition-colors">
-                    <td className="px-5 py-4">
+        <CardContent className="min-w-0 overflow-hidden">
+          <div className="max-w-full overflow-hidden rounded-lg border border-ebony-100 bg-white">
+            <div className="max-w-full overflow-x-auto">
+              <table className="min-w-[2600px] table-fixed text-xs">
+                <thead className="bg-ebony-50 text-left text-[10px] font-bold uppercase tracking-wide text-ebony-700">
+                  <tr>
+                    <th className="w-24 px-3 py-3">ID</th>
+                    <th className="w-36 px-3 py-3">Purchase No</th>
+                    <th className="w-28 px-3 py-3">Date</th>
+                    <th className="w-32 px-3 py-3">Location</th>
+                    <th className="w-24 px-3 py-3">GSM Code</th>
+                    <th className="w-40 px-3 py-3">GSM Name</th>
+                    <th className="w-28 px-3 py-3">Category</th>
+                    <th className="w-40 px-3 py-3">Article</th>
+                    <th className="w-32 px-3 py-3">Subcategory</th>
+                    <th className="w-44 px-3 py-3">Subcategory Name</th>
+                    <th className="w-20 px-3 py-3 text-right">Qty</th>
+                    <th className="w-44 px-3 py-3">Description</th>
+                    <th className="w-20 px-3 py-3">Carat</th>
+                    <th className="w-24 px-3 py-3">Wastage</th>
+                    <th className="w-28 px-3 py-3 text-right">Gold Wt</th>
+                    <th className="w-28 px-3 py-3 text-right">Gold Cost</th>
+                    <th className="w-28 px-3 py-3 text-right">Wastage Mg</th>
+                    <th className="w-28 px-3 py-3 text-right">Wastage</th>
+                    <th className="w-32 px-3 py-3 text-right">Labour</th>
+                    <th className="w-32 px-3 py-3 text-right">Other Costs</th>
+                    <th className="w-32 px-3 py-3 text-right">Total Cost</th>
+                    <th className="w-44 px-3 py-3">Remarks</th>
+                    <th className="w-40 px-3 py-3">Supplier</th>
+                    <th className="w-28 px-3 py-3">Purchase Gold</th>
+                    <th className="w-24 px-3 py-3 text-right">Total Items</th>
+                    <th className="w-28 px-3 py-3 text-right">Total Wt</th>
+                    <th className="w-32 px-3 py-3 text-right">Sub Total</th>
+                    <th className="w-32 px-3 py-3 text-right">Other Charges</th>
+                    <th className="w-32 px-3 py-3 text-right">Total Amount</th>
+                    <th className="w-32 px-3 py-3 text-right">Paid</th>
+                    <th className="w-32 px-3 py-3 text-right">Balance Due</th>
+                    <th className="w-44 px-3 py-3">Notes</th>
+                    <th className="w-36 px-3 py-3">Created</th>
+                    <th className="w-36 px-3 py-3">Updated</th>
+                    <th className="sticky right-0 w-24 bg-ebony-50 px-3 py-3">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-ebony-100">
+                  {purchases.map((purchase) => (
+                    <tr key={purchase.id} className="bg-white hover:bg-cream-50/60 transition-colors">
+                    <td className="px-3 py-3 tabular-nums text-ebony-700">{purchase.id}</td>
+                    <td className="px-3 py-3">
                       <Link href={`/purchases/${purchase.id}`} className="font-semibold text-indigo-900 hover:underline">
                         {purchase.purchaseNo}
                       </Link>
                     </td>
-                    <td className="px-5 py-4 tabular-nums text-ebony-700">{formatDate(purchase.purchaseDate)}</td>
-                    <td className="px-5 py-4">
-                      <div className="font-semibold text-ebony-900">{purchase.gsmCode ?? "-"}</div>
-                      <div className="text-xs text-ebony-600">{purchase.gsmName ?? "-"}</div>
-                    </td>
-                    <td className="px-5 py-4 text-ebony-700">
-                      <div className="font-semibold text-ebony-900">{purchase.categoryCode ?? "-"}</div>
-                      <div className="text-xs text-ebony-600">{purchase.articleName ?? "-"}</div>
-                    </td>
-                    <td className="px-5 py-4 text-ebony-700">
-                      <div className="font-semibold text-ebony-900">{purchase.subcategoryCode ?? "-"}</div>
-                      <div className="text-xs text-ebony-600">{purchase.subcategoryName ?? "-"}</div>
-                    </td>
-                    <td className="px-5 py-4 text-right font-semibold tabular-nums text-ebony-800">{purchase.qty}</td>
-                    <td className="px-5 py-4 text-ebony-700">{purchase.carat ?? "-"}</td>
-                    <td className="px-5 py-4 text-right tabular-nums text-ebony-700">{weight(purchase.goldWeight)} g</td>
-                    <td className="px-5 py-4 text-right font-semibold tabular-nums text-ebony-900">{money(purchase.totalCost)}</td>
-                    <td className="px-5 py-4">
+                    <td className="px-3 py-3 tabular-nums text-ebony-700">{formatDate(purchase.purchaseDate)}</td>
+                    <TextCell value={purchase.location} />
+                    <TextCell value={purchase.gsmCode} strong />
+                    <TextCell value={purchase.gsmName} />
+                    <TextCell value={purchase.categoryCode} strong />
+                    <TextCell value={purchase.articleName} />
+                    <TextCell value={purchase.subcategoryCode} strong />
+                    <TextCell value={purchase.subcategoryName} />
+                    <td className="px-3 py-3 text-right font-semibold tabular-nums text-ebony-800">{purchase.qty}</td>
+                    <TextCell value={purchase.description} />
+                    <TextCell value={purchase.carat} />
+                    <td className="px-3 py-3 font-semibold text-ebony-800">{purchase.wastageYN ? "Y" : "N"}</td>
+                    <td className="px-3 py-3 text-right tabular-nums text-ebony-700">{weight(purchase.goldWeight)} g</td>
+                    <td className="px-3 py-3 text-right tabular-nums text-ebony-700">{money(purchase.goldCost)}</td>
+                    <td className="px-3 py-3 text-right tabular-nums text-ebony-700">{weight(purchase.wastageMg)}</td>
+                    <td className="px-3 py-3 text-right tabular-nums text-ebony-700">{money(purchase.wastage)}</td>
+                    <td className="px-3 py-3 text-right tabular-nums text-ebony-700">{money(purchase.labourCharges)}</td>
+                    <td className="px-3 py-3 text-right tabular-nums text-ebony-700">{money(purchase.otherCosts)}</td>
+                    <td className="px-3 py-3 text-right font-semibold tabular-nums text-ebony-900">{money(purchase.totalCost)}</td>
+                    <TextCell value={purchase.remarks} />
+                    <TextCell value={purchase.supplier?.name ?? purchase.supplierId} />
+                    <TextCell value={purchase.purchaseGold} />
+                    <td className="px-3 py-3 text-right tabular-nums text-ebony-700">{purchase.totalItems}</td>
+                    <td className="px-3 py-3 text-right tabular-nums text-ebony-700">{weight(purchase.totalWeight)} g</td>
+                    <td className="px-3 py-3 text-right tabular-nums text-ebony-700">{money(purchase.subTotal)}</td>
+                    <td className="px-3 py-3 text-right tabular-nums text-ebony-700">{money(purchase.otherCharges)}</td>
+                    <td className="px-3 py-3 text-right font-semibold tabular-nums text-ebony-900">{money(purchase.totalAmount)}</td>
+                    <td className="px-3 py-3 text-right tabular-nums text-ebony-700">{money(purchase.paidAmount)}</td>
+                    <td className="px-3 py-3 text-right font-semibold tabular-nums text-red-600">{money(purchase.balanceDue)}</td>
+                    <TextCell value={purchase.notes} />
+                    <td className="px-3 py-3 tabular-nums text-ebony-700">{formatDateTime(purchase.createdAt)}</td>
+                    <td className="px-3 py-3 tabular-nums text-ebony-700">{formatDateTime(purchase.updatedAt)}</td>
+                    <td className="sticky right-0 bg-white px-3 py-3 shadow-[-8px_0_12px_-12px_rgba(0,0,0,0.35)]">
                       <Link href={`/purchases/${purchase.id}`} className={buttonClassName("secondary", "px-4 py-2 text-xs")}>
                         View
                       </Link>
                     </td>
-                  </tr>
-                ))}
-                {purchases.length === 0 ? (
-                  <tr>
-                    <td className="px-5 py-8 text-center text-sm text-ebony-600" colSpan={10}>
-                      No purchases yet. Start by creating the first entry.
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
+                    </tr>
+                  ))}
+                  {purchases.length === 0 ? (
+                    <tr>
+                      <td className="px-5 py-8 text-center text-sm text-ebony-600" colSpan={35}>
+                        No purchases yet. Start by creating the first entry.
+                      </td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
           </div>
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function TextCell({ value, strong = false }: { value: unknown; strong?: boolean }) {
+  return (
+    <td
+      className={[
+        "truncate px-3 py-3 text-ebony-700",
+        strong ? "font-semibold text-ebony-900" : ""
+      ].join(" ")}
+      title={text(value)}
+    >
+      {text(value)}
+    </td>
   );
 }
 

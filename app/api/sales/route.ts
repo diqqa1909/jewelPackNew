@@ -194,16 +194,16 @@ export async function POST(req: Request) {
       // independently because a sale can be for any partial weight/qty.
       const receipts = await tx.purchase.findMany({
         where: {
-          subcategoryCode: reqLine.subcategoryCode,
-          carat,
+          subcategoryCode: reqLine.subcategoryCode
         },
         orderBy: [{ purchaseDate: "asc" }, { id: "asc" }]
       });
-      if (receipts.length === 0) {
+      const matchingReceipts = receipts.filter((row) => normalizeCarat(row.carat) === carat);
+      if (matchingReceipts.length === 0) {
         throw new Error(`No stock available for ${reqLine.subcategoryCode}${carat ? ` (${carat})` : ""}`);
       }
 
-      const receiptIds = receipts.map((r) => r.id);
+      const receiptIds = matchingReceipts.map((r) => r.id);
       const existingSales = receiptIds.length
         ? await tx.sale.findMany({
             where: { purchaseId: { in: receiptIds } },
@@ -225,7 +225,7 @@ export async function POST(req: Request) {
       let remainingQty = reqLine.qty;
       let remainingWeight = reqLine.goldWeight;
 
-      for (const r of receipts) {
+      for (const r of matchingReceipts) {
         if (remainingQty <= 0 && remainingWeight.lessThanOrEqualTo(new Prisma.Decimal("0"))) break;
 
         const alreadySold = soldByPurchase.get(r.id) ?? { qty: 0, weight: new Prisma.Decimal("0") };

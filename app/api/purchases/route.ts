@@ -94,7 +94,6 @@ export async function POST(req: Request) {
 
     const system = await prisma.system.findUnique({ where: { id: 1 } });
     const goldRatePer8g = system?.goldCostRatePer8g ?? new Prisma.Decimal("0");
-    const wastageRatePerMg = system?.wastageRateMgPer8g ?? new Prisma.Decimal("0");
 
     const goldsmith = await prisma.goldsmith.findUnique({ where: { code: body.gsmCode } });
     const category = await prisma.category.findUnique({ where: { code: body.categoryCode } });
@@ -114,7 +113,9 @@ export async function POST(req: Request) {
     const wastageMg = decimal(body.wastageMg ?? "0");
     const goldCost = goldWeight.div(new Prisma.Decimal("8")).mul(goldRatePer8g);
     const wastageEnabled = isWastageEnabled(body.wastageYN);
-    const wastageCost = wastageEnabled ? wastageMg.mul(wastageRatePerMg) : new Prisma.Decimal("0");
+    const wastageCost = wastageEnabled
+      ? goldWeight.div(new Prisma.Decimal("8")).mul(goldRatePer8g)
+      : new Prisma.Decimal("0");
     const labourCharges = decimal(body.labourCharges ?? "0");
     const otherCosts = decimal(body.otherCosts ?? "0");
     const totalCost = goldCost.plus(wastageCost).plus(labourCharges).plus(otherCosts);
@@ -204,7 +205,6 @@ export async function PATCH(req: Request) {
 
     const system = await prisma.system.findUnique({ where: { id: 1 } });
     const goldRatePer8g = system?.goldCostRatePer8g ?? new Prisma.Decimal("0");
-    const wastageRatePerMg = system?.wastageRateMgPer8g ?? new Prisma.Decimal("0");
 
     const goldsmith = await prisma.goldsmith.findUnique({ where: { code: body.gsmCode } });
     const category = await prisma.category.findUnique({ where: { code: body.categoryCode } });
@@ -254,7 +254,9 @@ export async function PATCH(req: Request) {
     const wastageMg = decimal(body.wastageMg ?? "0");
     const goldCost = goldWeight.div(new Prisma.Decimal("8")).mul(goldRatePer8g);
     const wastageEnabled = isWastageEnabled(body.wastageYN);
-    const wastageCost = wastageEnabled ? wastageMg.mul(wastageRatePerMg) : new Prisma.Decimal("0");
+    const wastageCost = wastageEnabled
+      ? goldWeight.div(new Prisma.Decimal("8")).mul(goldRatePer8g)
+      : new Prisma.Decimal("0");
     const labourCharges = decimal(body.labourCharges ?? "0");
     const otherCosts = decimal(body.otherCosts ?? "0");
     const totalCost = goldCost.plus(wastageCost).plus(labourCharges).plus(otherCosts);

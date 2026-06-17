@@ -1,4 +1,3 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
 import { GoldsmithsTable } from "@/components/app/GoldsmithsTable";
 import { prismaWithRetry } from "@/lib/prisma";
 
@@ -11,15 +10,5 @@ export default async function GoldsmithsPage() {
     })
   );
 
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Goldsmiths</CardTitle>
-        <CardDescription>Manage GSM codes and names.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <GoldsmithsTable initial={goldsmiths} />
-      </CardContent>
-    </Card>
-  );
+  return <GoldsmithsTable initial={goldsmiths} />;
 }

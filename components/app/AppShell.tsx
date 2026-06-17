@@ -3,7 +3,6 @@
 import { Sidebar } from "@/components/app/Sidebar";
 import { Topbar } from "@/components/app/Topbar";
 import { ToastProvider } from "@/components/ui/ToastProvider";
-import { buttonClassName } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
 import { Menu, X } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -46,11 +45,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <button
               type="button"
               onClick={() => setOpen(true)}
-              className={buttonClassName("secondary", "rounded-none border-b-0 px-4 md:hidden")}
+              className="inline-flex h-full min-h-14 w-14 items-center justify-center border-r border-ebony-100 bg-white text-ebony-700 transition-colors hover:bg-ebony-50 md:hidden"
               aria-label="Open menu"
               title="Open menu"
             >
-              <Menu className="h-5 w-5" />
+              <Menu className="h-5 w-5 text-current" aria-hidden="true" />
             </button>
             <div className="min-w-0 flex-1">
               <Topbar
@@ -58,11 +57,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <button
                     type="button"
                     onClick={() => setSidebarOpen((value) => !value)}
-                    className={buttonClassName("secondary", "hidden h-10 w-10 shrink-0 px-0 py-0 shadow-sm md:inline-flex")}
+                    className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-md border border-ebony-200 bg-white text-ebony-700 shadow-sm transition-colors hover:bg-ebony-50 md:inline-flex"
                     aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
                     title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
                   >
-                    <Menu className="h-4 w-4" />
+                    <Menu className="h-4 w-4 text-current" aria-hidden="true" />
                   </button>
                 }
               />
@@ -99,11 +98,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className={buttonClassName("secondary", "h-9 w-9 px-0 py-0")}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-ebony-200 bg-white text-ebony-700 transition-colors hover:bg-ebony-50"
                 aria-label="Close menu"
                 title="Close menu"
               >
-                <X className="h-4 w-4" />
+                <X className="h-4 w-4 text-current" aria-hidden="true" />
               </button>
             </div>
             <div className="min-h-0 flex-1">

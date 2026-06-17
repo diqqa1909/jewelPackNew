@@ -15,7 +15,6 @@ import {
   Settings,
   ShoppingBag,
   LogOut,
-  Truck,
   Users
 } from "lucide-react";
 
@@ -44,8 +43,7 @@ export const navSections: NavSection[] = [
     label: "People",
     items: [
       { href: "/customers", label: "Customers", icon: Users },
-      { href: "/suppliers", label: "Suppliers", icon: Truck },
-      { href: "/goldsmiths", label: "Workers / Goldsmith", icon: Users },
+      { href: "/goldsmiths", label: "Suppliers / Goldsmith", icon: Users },
       { href: "/salesmen", label: "Salesmen", icon: Users }
     ]
   },

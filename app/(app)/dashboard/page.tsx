@@ -1,6 +1,6 @@
 import { SalesChart, StockSummary } from "@/components/app/DashboardClient";
-import { Prisma } from "@/lib/generated/prisma";
 import { fetchGoldPrices } from "@/lib/goldPrices";
+import { buildInventorySummary } from "@/lib/inventory-summary";
 import { prismaWithRetry } from "@/lib/prisma";
 import {
   AlertTriangle,
@@ -48,15 +48,14 @@ export default async function DashboardPage() {
 
   const [
     systemRow,
-    stockAgg,
-    categoryCount,
+    inventoryPurchases,
+    inventorySales,
+    categories,
+    subcategories,
     invAgg30d,
     invAggToday,
     recentInvoices,
-    lowStockRows,
-    workerPending,
     monthInvoices,
-    stockByCategoryAgg,
     customerCount,
     supplierCount,
     cashAgg,
@@ -65,12 +64,36 @@ export default async function DashboardPage() {
   ] = await Promise.all([
     prismaWithRetry((p) => p.system.findUnique({ where: { id: 1 } })),
     prismaWithRetry((p) =>
-      p.stockMaster.aggregate({
-        _sum: { balanceQty: true, balanceGoldWeight: true, balanceCost: true },
-        _count: { _all: true }
+      p.purchase.findMany({
+        select: {
+          id: true,
+          categoryCode: true,
+          articleName: true,
+          subcategoryCode: true,
+          subcategoryName: true,
+          carat: true,
+          qty: true,
+          goldWeight: true,
+          totalCost: true,
+          gsmCode: true,
+          gsmName: true
+        }
       })
     ),
-    prismaWithRetry((p) => p.category.count()),
+    prismaWithRetry((p) =>
+      p.sale.findMany({
+        select: {
+          purchaseId: true,
+          subcategoryCode: true,
+          carat: true,
+          qty: true,
+          goldWeight: true,
+          cost: true
+        }
+      })
+    ),
+    prismaWithRetry((p) => p.category.findMany({ orderBy: { name: "asc" } })),
+    prismaWithRetry((p) => p.subcategory.findMany({ orderBy: [{ categoryCode: "asc" }, { code: "asc" }] })),
     prismaWithRetry((p) =>
       p.salesNTX.aggregate({
         where: { transactionDate: { gte: from30d } },
@@ -93,35 +116,11 @@ export default async function DashboardPage() {
       })
     ),
     prismaWithRetry((p) =>
-      p.stockMaster.findMany({
-        where: { balanceQty: { gt: 0, lte: 2 } },
-        orderBy: [{ balanceQty: "asc" }, { updatedAt: "desc" }],
-        take: 8
-      })
-    ),
-    prismaWithRetry((p) =>
-      p.stockMaster.groupBy({
-        by: ["gsmCode", "gsmName"],
-        where: { balanceQty: { gt: 0 } },
-        _sum: { balanceQty: true, balanceGoldWeight: true },
-        orderBy: { _sum: { balanceQty: "desc" } },
-        take: 8
-      })
-    ),
-    prismaWithRetry((p) =>
       p.salesNTX.findMany({
         where: { transactionDate: { gte: startOfMonth } },
         select: { transactionDate: true, sellSubTotal: true },
         orderBy: { transactionDate: "asc" },
         take: 2000
-      })
-    ),
-    prismaWithRetry((p) =>
-      p.stockMaster.groupBy({
-        by: ["categoryCode", "articleName"],
-        _sum: { balanceQty: true, balanceGoldWeight: true },
-        orderBy: { _sum: { balanceQty: "desc" } },
-        take: 8
       })
     ),
     prismaWithRetry((p) => p.customer.count()),
@@ -141,22 +140,84 @@ export default async function DashboardPage() {
     fetchGoldPrices()
   ]);
 
-  const onHandItems = stockAgg._sum.balanceQty ?? 0;
-  const netGoldWeight = toNumber(stockAgg._sum.balanceGoldWeight ?? new Prisma.Decimal("0"));
-  const invAmount30d = toNumber(invAgg30d._sum.sellSubTotal ?? new Prisma.Decimal("0"));
-  const invAmountToday = toNumber(invAggToday._sum.sellSubTotal ?? new Prisma.Decimal("0"));
+  const { subcategoryRows } = buildInventorySummary({
+    categories,
+    subcategories,
+    purchases: inventoryPurchases,
+    sales: inventorySales
+  });
+  const availableRows = subcategoryRows.filter((row) => row.availableQty > 0 || row.availableGoldWeight > 0);
+  const onHandItems = availableRows.reduce((sum, row) => sum + row.availableQty, 0);
+  const netGoldWeight = availableRows.reduce((sum, row) => sum + row.availableGoldWeight, 0);
+  const stockValue = Math.max(
+    0,
+    inventoryPurchases.reduce((sum, purchase) => sum + toNumber(purchase.totalCost), 0) -
+      inventorySales.reduce((sum, sale) => sum + toNumber(sale.cost), 0)
+  );
+  const lowStockRows = availableRows
+    .filter((row) => row.availableQty > 0 && row.availableQty <= 2)
+    .sort((a, b) => a.availableQty - b.availableQty || a.subcategoryName.localeCompare(b.subcategoryName))
+    .slice(0, 8);
+  const stockByCategory = Array.from(
+    availableRows
+      .reduce((map, row) => {
+        const key = row.categoryName || row.categoryCode || "Uncategorized";
+        map.set(key, (map.get(key) ?? 0) + row.availableGoldWeight);
+        return map;
+      }, new Map<string, number>())
+      .entries()
+  )
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 8);
+  const soldByPurchase = inventorySales.reduce((map, sale) => {
+    if (sale.purchaseId == null) return map;
+    const current = map.get(sale.purchaseId) ?? { qty: 0, weight: 0 };
+    current.qty += Number(sale.qty ?? 0);
+    current.weight += toNumber(sale.goldWeight);
+    map.set(sale.purchaseId, current);
+    return map;
+  }, new Map<number, { qty: number; weight: number }>());
+  const workerPending = Array.from(
+    inventoryPurchases
+      .reduce((map, purchase) => {
+        const gsmCode = (purchase.gsmCode ?? "").trim();
+        const gsmName = (purchase.gsmName ?? "").trim();
+        if (!gsmCode && !gsmName) return map;
+        const sold = soldByPurchase.get(purchase.id) ?? { qty: 0, weight: 0 };
+        const pendingQty = Math.max(0, Number(purchase.qty ?? 0) - sold.qty);
+        const pendingWeight = Math.max(0, toNumber(purchase.goldWeight) - sold.weight);
+        if (pendingQty <= 0 && pendingWeight <= 0) return map;
+        const key = gsmCode || gsmName;
+        const current = map.get(key) ?? {
+          gsmCode: key,
+          gsmName: gsmName || gsmCode || "-",
+          balanceQty: 0,
+          balanceGoldWeight: 0
+        };
+        current.balanceQty += pendingQty;
+        current.balanceGoldWeight += pendingWeight;
+        map.set(key, current);
+        return map;
+      }, new Map<string, { gsmCode: string; gsmName: string; balanceQty: number; balanceGoldWeight: number }>())
+      .values()
+  )
+    .sort((a, b) => b.balanceQty - a.balanceQty)
+    .slice(0, 8);
+  const invAmount30d = toNumber(invAgg30d._sum.sellSubTotal ?? 0);
+  const invAmountToday = toNumber(invAggToday._sum.sellSubTotal ?? 0);
   const invCountToday = invAggToday._count._all ?? 0;
   const cashInHand =
-    toNumber(cashAgg._sum.debit ?? new Prisma.Decimal("0")) -
-    toNumber(cashAgg._sum.credit ?? new Prisma.Decimal("0")) +
-    toNumber(cashAgg._sum.bankDebit ?? new Prisma.Decimal("0")) -
-    toNumber(cashAgg._sum.bankCredit ?? new Prisma.Decimal("0"));
+    toNumber(cashAgg._sum.debit ?? 0) -
+    toNumber(cashAgg._sum.credit ?? 0) +
+    toNumber(cashAgg._sum.bankDebit ?? 0) -
+    toNumber(cashAgg._sum.bankCredit ?? 0);
 
   const salesPoints = (() => {
     const map = new Map<string, number>();
     for (const inv of monthInvoices) {
       const day = new Date(inv.transactionDate).toISOString().slice(8, 10);
-      const amt = toNumber(inv.sellSubTotal ?? new Prisma.Decimal("0"));
+      const amt = toNumber(inv.sellSubTotal ?? 0);
       map.set(day, (map.get(day) ?? 0) + amt);
     }
     return Array.from(map.entries())
@@ -164,16 +225,11 @@ export default async function DashboardPage() {
       .map(([day, amount]) => ({ day, amount: Math.round(amount) }));
   })();
 
-  const stockByCategory = stockByCategoryAgg.map((r) => ({
-    name: r.articleName || r.categoryCode,
-    value: toNumber(r._sum.balanceGoldWeight ?? new Prisma.Decimal("0"))
-  }));
-
   const topCustomers = Array.from(
     customerSalesRows
       .reduce((map, row) => {
         const current = map.get(row.customerId) ?? { name: row.customer.name, amount: 0 };
-        current.amount += toNumber(row.sellSubTotal ?? new Prisma.Decimal("0"));
+        current.amount += toNumber(row.sellSubTotal ?? 0);
         map.set(row.customerId, current);
         return map;
       }, new Map<number, { name: string; amount: number }>())
@@ -205,7 +261,7 @@ export default async function DashboardPage() {
     },
     {
       label: "Stock Value",
-      value: formatLkr(toNumber(stockAgg._sum.balanceCost ?? new Prisma.Decimal("0"))),
+      value: formatLkr(stockValue),
       meta: `${onHandItems.toLocaleString("en-US")} pieces`,
       icon: PackageCheck,
       color: "text-emerald-600",
@@ -214,7 +270,7 @@ export default async function DashboardPage() {
     {
       label: "Gold Stock (Net)",
       value: formatWeight(netGoldWeight),
-      meta: `Across ${categoryCount} categories`,
+      meta: `Across ${categories.length} categories`,
       icon: Gem,
       color: "text-amber-600",
       bg: "bg-amber-50"
@@ -309,11 +365,11 @@ export default async function DashboardPage() {
               </thead>
               <tbody className="divide-y divide-ebony-100">
                 {lowStockRows.slice(0, 5).map((r) => (
-                  <tr key={r.id} className="bg-white">
+                  <tr key={`${r.subcategoryCode}-${r.carat}`} className="bg-white">
                     <td className="px-4 py-3 font-semibold text-ebony-900">{r.subcategoryName}</td>
-                    <td className="px-4 py-3 tabular-nums text-ebony-700">{formatWeight(toNumber(r.balanceGoldWeight))}</td>
+                    <td className="px-4 py-3 tabular-nums text-ebony-700">{formatWeight(r.availableGoldWeight)}</td>
                     <td className="px-4 py-3 text-ebony-700">{r.carat ?? "-"}</td>
-                    <td className="px-4 py-3 text-right font-bold tabular-nums text-ebony-900">{r.balanceQty}</td>
+                    <td className="px-4 py-3 text-right font-bold tabular-nums text-ebony-900">{r.availableQty}</td>
                   </tr>
                 ))}
                 {lowStockRows.length === 0 ? (
@@ -364,9 +420,9 @@ export default async function DashboardPage() {
                 {workerPending.slice(0, 5).map((r) => (
                   <tr key={r.gsmCode} className="bg-white">
                     <td className="px-4 py-3 font-semibold text-ebony-900">{r.gsmName}</td>
-                    <td className="px-4 py-3 text-right font-semibold tabular-nums text-ebony-800">{r._sum.balanceQty ?? 0}</td>
+                    <td className="px-4 py-3 text-right font-semibold tabular-nums text-ebony-800">{r.balanceQty}</td>
                     <td className="px-4 py-3 text-right font-semibold tabular-nums text-ebony-800">
-                      {formatWeight(toNumber(r._sum.balanceGoldWeight))}
+                      {formatWeight(r.balanceGoldWeight)}
                     </td>
                   </tr>
                 ))}

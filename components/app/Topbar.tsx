@@ -43,11 +43,11 @@ export function Topbar({ sidebarToggle }: { sidebarToggle?: ReactNode }) {
           <button
             type="button"
             onClick={() => router.back()}
-            className={buttonClassName("secondary", "h-10 w-10 px-0 py-0 shadow-sm")}
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-ebony-200 bg-white text-ebony-700 shadow-sm transition-colors hover:bg-ebony-50"
             aria-label="Back"
             title="Back"
           >
-            <ArrowLeft className="h-4 w-4" />
+            <ArrowLeft className="h-4 w-4 text-current" aria-hidden="true" />
           </button>
         )}
         <div>
@@ -55,6 +55,17 @@ export function Topbar({ sidebarToggle }: { sidebarToggle?: ReactNode }) {
             {title}
           </h1>
         </div>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-ebony-200 bg-white text-ebony-700 shadow-sm transition-colors hover:bg-ebony-50"
+          aria-label="Notifications"
+          title="Notifications"
+        >
+          <Bell className="h-4 w-4 text-current" aria-hidden="true" />
+        </button>
       </div>
 
       <div className="hidden items-center gap-3 md:flex">
@@ -70,14 +81,6 @@ export function Topbar({ sidebarToggle }: { sidebarToggle?: ReactNode }) {
         <div className="text-xs font-semibold text-ebony-600 tabular-nums">{todayLabel}</div>
         <button
           type="button"
-          className={buttonClassName("secondary", "h-10 w-10 px-0 py-0 shadow-sm")}
-          aria-label="Notifications"
-          title="Notifications"
-        >
-          <Bell className="h-4 w-4" />
-        </button>
-        <button
-          type="button"
           className={buttonClassName("secondary", "px-3 py-2 shadow-sm")}
           aria-label="User menu"
           title="User menu"
@@ -89,4 +92,3 @@ export function Topbar({ sidebarToggle }: { sidebarToggle?: ReactNode }) {
     </header>
   );
 }
-
