@@ -63,10 +63,20 @@ export default async function SaleViewPage({ params }: { params: { id: string } 
     );
   }
 
+  const paidAgg = await prismaWithRetry((p) =>
+    p.transaction.aggregate({
+      where: {
+        referenceNumber: sale.saleNo,
+        type: "PAYMENT",
+        ...(sale.customer.accountNumber ? { accountNumber: sale.customer.accountNumber } : {})
+      },
+      _sum: { credit: true }
+    })
+  );
+
   const totalNetWeight = sale.items.reduce((sum, item) => sum + Number(item.goldWeight.toString()), 0);
-  const totalMaking = 0;
   const grandTotal = Number(sale.sellSubTotal.toString());
-  const paidAmount = 0;
+  const paidAmount = Number(paidAgg._sum.credit?.toString() ?? 0);
   const balanceDue = Math.max(0, grandTotal - paidAmount);
 
   return (
@@ -182,7 +192,6 @@ export default async function SaleViewPage({ params }: { params: { id: string } 
 
             <div className="overflow-hidden rounded-md border border-ebony-300 text-sm">
               <SummaryRow label="Total Net Weight" value={`${weight(totalNetWeight)} g`} />
-              <SummaryRow label="Total Making" value={money(totalMaking)} />
               <SummaryRow label="Grand Total" value={money(grandTotal)} strong />
               <SummaryRow label="Paid Amount" value={money(paidAmount)} />
               <SummaryRow label="Balance Due" value={money(balanceDue)} danger />

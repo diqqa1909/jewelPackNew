@@ -57,6 +57,9 @@ export async function POST(req: Request) {
       customerId: number;
       salesmanId?: number | null;
       remarks?: string;
+      paymentType?: string;
+      discount?: string;
+      paidAmount?: string;
       items: SaleLineInput[];
     }>;
 
@@ -159,6 +162,9 @@ export async function POST(req: Request) {
     let headerTotalWeight = new Prisma.Decimal("0");
     let headerTotalCost = new Prisma.Decimal("0");
     let headerSellSubTotal = new Prisma.Decimal("0");
+    const discount = clampDecimalNonNegative(decimal(String(body.discount ?? "0")));
+    const paidAmount = clampDecimalNonNegative(decimal(String(body.paidAmount ?? "0")));
+    const paymentType = (body.paymentType ?? "Credit").trim() || "Credit";
 
     for (const reqLine of requested) {
       const sub = await tx.subcategory.findUnique({ where: { code: reqLine.subcategoryCode } });
@@ -283,6 +289,7 @@ export async function POST(req: Request) {
       }
     }
 
+    const grandTotal = clampDecimalNonNegative(headerSellSubTotal.minus(discount));
     const updatedHeader = await tx.salesNTX.update({
       where: { id: createdHeader.id },
       data: {
@@ -290,7 +297,7 @@ export async function POST(req: Request) {
         totalQty: headerTotalQty,
         totalGoldWeight: headerTotalWeight,
         totalCost: headerTotalCost,
-        sellSubTotal: headerSellSubTotal
+        sellSubTotal: grandTotal
       }
     });
 
@@ -303,7 +310,7 @@ export async function POST(req: Request) {
           source: "INV",
           account: customer.name,
           memo: updatedHeader.saleNo,
-          debit: headerSellSubTotal,
+          debit: grandTotal,
           credit: new Prisma.Decimal("0"),
           accountNumber: acct,
           type: "INVOICE",
@@ -311,6 +318,22 @@ export async function POST(req: Request) {
           remarks: (body.remarks ?? "").trim() || null
         }
       });
+      if (paidAmount.greaterThan(new Prisma.Decimal("0"))) {
+        await tx.transaction.create({
+          data: {
+            date: txDate,
+            source: paymentType.toUpperCase(),
+            account: customer.name,
+            memo: `Payment for ${updatedHeader.saleNo}`,
+            debit: new Prisma.Decimal("0"),
+            credit: paidAmount,
+            accountNumber: acct,
+            type: "PAYMENT",
+            referenceNumber: updatedHeader.saleNo,
+            remarks: (body.remarks ?? "").trim() || null
+          }
+        });
+      }
     }
 
     return { header: updatedHeader };

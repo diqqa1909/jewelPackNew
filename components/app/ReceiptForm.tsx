@@ -799,23 +799,23 @@ export function ReceiptForm({
                 </div>
 
                 <div className="overflow-hidden rounded-lg border border-ebony-100 bg-white shadow-sm">
-                  <div className="max-w-full overflow-x-auto">
-                    <table className="w-full min-w-[1180px] table-fixed text-sm">
-                      <thead className="bg-ebony-50 text-left text-[11px] font-bold uppercase tracking-wide text-ebony-600">
+                  <div className="max-w-full overflow-hidden">
+                    <table className="w-full table-fixed text-[11px]">
+                      <thead className="bg-ebony-50 text-left text-[10px] font-bold uppercase tracking-wide text-ebony-600">
                         <tr>
-                          <th className="w-12 border border-ebony-100 px-3 py-2 text-center">#</th>
-                          <th className="w-36 border border-ebony-100 px-3 py-2">Subcategory *</th>
-                          <th className="w-44 border border-ebony-100 px-3 py-2">Description</th>
-                          <th className="w-20 border border-ebony-100 px-3 py-2">Carat</th>
-                          <th className="w-20 border border-ebony-100 px-3 py-2 text-right">Qty *</th>
-                          <th className="w-24 border border-ebony-100 px-3 py-2">Wastage</th>
-                          <th className="w-28 border border-ebony-100 px-3 py-2 text-right">Gold Wt *</th>
-                          <th className="w-28 border border-ebony-100 px-3 py-2 text-right">Wastage Wt</th>
-                          <th className="w-28 border border-ebony-100 px-3 py-2 text-right">Labour</th>
-                          <th className="w-28 border border-ebony-100 px-3 py-2 text-right">Gold Cost</th>
-                          <th className="w-28 border border-ebony-100 px-3 py-2 text-right">Wastage Cost</th>
-                          <th className="w-28 border border-ebony-100 px-3 py-2 text-right">Total Cost</th>
-                          <th className="w-16 border border-ebony-100 px-3 py-2 text-center">Action</th>
+                          <th className="w-[3%] border border-ebony-100 px-1 py-1.5 text-center">#</th>
+                          <th className="w-[11%] border border-ebony-100 px-1 py-1.5">Subcat *</th>
+                          <th className="w-[15%] border border-ebony-100 px-1 py-1.5">Desc</th>
+                          <th className="w-[5%] border border-ebony-100 px-1 py-1.5">K</th>
+                          <th className="w-[5%] border border-ebony-100 px-1 py-1.5 text-right">Qty *</th>
+                          <th className="w-[6%] border border-ebony-100 px-1 py-1.5">Wtg</th>
+                          <th className="w-[7%] border border-ebony-100 px-1 py-1.5 text-right">Gold Wt *</th>
+                          <th className="w-[7%] border border-ebony-100 px-1 py-1.5 text-right">Wtg Wt</th>
+                          <th className="w-[7%] border border-ebony-100 px-1 py-1.5 text-right">Labour</th>
+                          <th className="w-[8%] border border-ebony-100 px-1 py-1.5 text-right">Gold Cost</th>
+                          <th className="w-[9%] border border-ebony-100 px-1 py-1.5 text-right">Wtg Cost</th>
+                          <th className="w-[8%] border border-ebony-100 px-1 py-1.5 text-right">Total</th>
+                          <th className="w-[4%] border border-ebony-100 px-1 py-1.5 text-center"> </th>
                         </tr>
                       </thead>
                       <tbody>
@@ -824,14 +824,14 @@ export function ReceiptForm({
                           const generatedWastage = lineGeneratedWastage(line);
                           return (
                             <tr key={line.id} className="bg-white">
-                              <td className="border border-ebony-100 px-3 py-2 text-center font-semibold text-ebony-700">
+                              <td className="border border-ebony-100 px-1 py-1 text-center font-semibold text-ebony-700">
                                 {index + 1}
                               </td>
                               <td className="border border-ebony-100 p-0">
                                 <button
                                   type="button"
                                   onClick={() => openSubcategoryPicker(line.id)}
-                                  className="h-10 w-full border-0 bg-white px-2 text-left text-sm outline-none focus:bg-cream-50"
+                                  className="h-8 w-full truncate border-0 bg-white px-1 text-left text-[11px] outline-none focus:bg-cream-50"
                                 >
                                   {line.subcategoryCode || "Select item..."}
                                 </button>
@@ -842,10 +842,10 @@ export function ReceiptForm({
                                   value={line.description}
                                   onChange={(e) => updateLine(line.id, "description", e.target.value)}
                                   placeholder="Item details"
-                                  className="h-10 w-full border-0 bg-white px-2 text-sm outline-none focus:bg-cream-50"
+                                  className="h-8 w-full border-0 bg-white px-1 text-[11px] outline-none focus:bg-cream-50"
                                 />
                               </td>
-                              <td className="border border-ebony-100 px-3 py-2 font-semibold text-ebony-800">
+                              <td className="border border-ebony-100 px-1 py-1 font-semibold text-ebony-800">
                                 {line.carat || "-"}
                               </td>
                               <td className="border border-ebony-100 p-0">
@@ -853,7 +853,7 @@ export function ReceiptForm({
                                   inputMode="numeric"
                                   value={line.qty}
                                   onChange={(e) => updateLine(line.id, "qty", sanitizeInt(e.target.value))}
-                                  className="h-10 w-full border-0 bg-white px-2 text-right outline-none focus:bg-cream-50"
+                                  className="h-8 w-full border-0 bg-white px-1 text-right text-[11px] outline-none focus:bg-cream-50"
                                 />
                                 {rowErrors.qty && <FieldError>{rowErrors.qty}</FieldError>}
                               </td>
@@ -861,7 +861,7 @@ export function ReceiptForm({
                                 <select
                                   value={line.wastageYN}
                                   onChange={(e) => updateLine(line.id, "wastageYN", e.target.value as "Y" | "N")}
-                                  className="h-10 w-full border-0 bg-white px-2 outline-none focus:bg-cream-50"
+                                  className="h-8 w-full border-0 bg-white px-1 text-[11px] outline-none focus:bg-cream-50"
                                 >
                                   <option value="N">N</option>
                                   <option value="Y">Y</option>
@@ -872,7 +872,7 @@ export function ReceiptForm({
                                   inputMode="decimal"
                                   value={line.goldWeight}
                                   onChange={(e) => updateLine(line.id, "goldWeight", sanitizeDecimal(e.target.value))}
-                                  className="h-10 w-full border-0 bg-white px-2 text-right outline-none focus:bg-cream-50"
+                                  className="h-8 w-full border-0 bg-white px-1 text-right text-[11px] outline-none focus:bg-cream-50"
                                 />
                                 {rowErrors.goldWeight && <FieldError>{rowErrors.goldWeight}</FieldError>}
                               </td>
@@ -883,7 +883,7 @@ export function ReceiptForm({
                                   disabled={line.wastageYN !== "Y"}
                                   value={generatedWastage}
                                   onChange={(e) => updateLine(line.id, "wastageMg", sanitizeDecimal(e.target.value))}
-                                  className="h-10 w-full border-0 bg-white px-2 text-right outline-none focus:bg-cream-50 disabled:bg-ebony-50 read-only:bg-ebony-50"
+                                  className="h-8 w-full border-0 bg-white px-1 text-right text-[11px] outline-none focus:bg-cream-50 disabled:bg-ebony-50 read-only:bg-ebony-50"
                                 />
                                 {rowErrors.wastageMg && <FieldError>{rowErrors.wastageMg}</FieldError>}
                               </td>
@@ -892,29 +892,29 @@ export function ReceiptForm({
                                   inputMode="decimal"
                                   value={line.labourCharges}
                                   onChange={(e) => updateLine(line.id, "labourCharges", sanitizeDecimal(e.target.value))}
-                                  className="h-10 w-full border-0 bg-white px-2 text-right outline-none focus:bg-cream-50"
+                                  className="h-8 w-full border-0 bg-white px-1 text-right text-[11px] outline-none focus:bg-cream-50"
                                 />
                                 {rowErrors.labourCharges && <FieldError>{rowErrors.labourCharges}</FieldError>}
                               </td>
-                              <td className="border border-ebony-100 px-3 py-2 text-right font-semibold tabular-nums text-ebony-800">
+                              <td className="border border-ebony-100 px-1 py-1 text-right font-semibold tabular-nums text-ebony-800">
                                 {lineGoldCost(line).toFixed(2)}
                               </td>
-                              <td className="border border-ebony-100 px-3 py-2 text-right font-semibold tabular-nums text-ebony-800">
+                              <td className="border border-ebony-100 px-1 py-1 text-right font-semibold tabular-nums text-ebony-800">
                                 {lineWastageCost(line).toFixed(2)}
                               </td>
-                              <td className="border border-ebony-100 px-3 py-2 text-right font-extrabold tabular-nums text-ebony-900">
+                              <td className="border border-ebony-100 px-1 py-1 text-right font-extrabold tabular-nums text-ebony-900">
                                 {lineTotalCost(line).toFixed(2)}
                               </td>
-                              <td className="border border-ebony-100 px-2 py-1 text-center">
+                              <td className="border border-ebony-100 px-1 py-1 text-center">
                                 <button
                                   type="button"
                                   onClick={() => removeLine(line.id)}
                                   disabled={lines.length === 1}
-                                  className="inline-flex h-8 w-8 items-center justify-center rounded-md text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
+                                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
                                   aria-label="Remove row"
                                   title="Remove row"
                                 >
-                                  <Trash2 className="h-4 w-4" />
+                                  <Trash2 className="h-3.5 w-3.5" />
                                 </button>
                               </td>
                             </tr>

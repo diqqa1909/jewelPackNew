@@ -158,7 +158,7 @@ export default async function GoldsmithTrackingPage({ params }: { params: { code
               <tr>
                 <th className="px-4 py-3">Date</th>
                 <th className="px-4 py-3">Item</th>
-                <th className="px-4 py-3 text-right">Given</th>
+                <th className="px-4 py-3 text-right">Received</th>
                 <th className="px-4 py-3 text-right">Returned</th>
                 <th className="px-4 py-3 text-right">Pending</th>
                 <th className="px-4 py-3 text-right">Labour</th>

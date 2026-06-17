@@ -109,11 +109,24 @@ export function buildInventorySummary({
     const subcategoryCode = (s.subcategoryCode ?? "").trim();
     if (!subcategoryCode) continue;
     const sub = subcategoryByCode.get(subcategoryCode);
+    const categoryCode = sub?.categoryCode ?? "";
+    if (categoryCode) {
+      const currentCategory = categoryMap.get(categoryCode) ?? {
+        categoryCode,
+        categoryName: categoryByCode.get(categoryCode) ?? categoryCode,
+        purchasedQty: 0,
+        soldQty: 0,
+        availableQty: 0
+      };
+      currentCategory.soldQty += Number(s.qty ?? 0);
+      categoryMap.set(categoryCode, currentCategory);
+    }
+
     const carat = normalizeCarat(s.carat) || sub?.carat || "";
     const key = `${subcategoryCode}||${carat}`;
     const current = subcategoryMap.get(key) ?? {
-      categoryCode: sub?.categoryCode ?? "",
-      categoryName: categoryByCode.get(sub?.categoryCode ?? "") ?? sub?.categoryCode ?? "",
+      categoryCode,
+      categoryName: categoryByCode.get(categoryCode) ?? categoryCode,
       subcategoryCode,
       subcategoryName: sub?.name ?? subcategoryCode,
       carat,

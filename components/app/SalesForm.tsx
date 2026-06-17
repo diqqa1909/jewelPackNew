@@ -19,15 +19,6 @@ type AvailabilityRow = {
   balanceCost: string;
 };
 
-type GoldPricesResponse = {
-  ok?: boolean;
-  sourceUrl?: string;
-  fetchedAt?: string;
-  unit?: "LKR_PER_8G";
-  rates?: Partial<Record<"18" | "19" | "20" | "21" | "22" | "24", string>>;
-  error?: string;
-};
-
 type Line = {
   id: string;
   subcategoryCode: string;
@@ -73,10 +64,6 @@ export function SalesForm() {
   const [salesmen, setSalesmen] = useState<SalesmanRow[]>([]);
   const [subcategories, setSubcategories] = useState<SubcategoryRow[]>([]);
   const [availability, setAvailability] = useState<AvailabilityRow[]>([]);
-  const [goldPrices, setGoldPrices] = useState<GoldPricesResponse["rates"]>({});
-  const [goldPriceSource, setGoldPriceSource] = useState("");
-  const [goldPriceFetchedAt, setGoldPriceFetchedAt] = useState("");
-  const [goldPriceError, setGoldPriceError] = useState("");
 
   const [transactionDate, setTransactionDate] = useState(todayISO());
   const [salesmanId, setSalesmanId] = useState<number | "">("");
@@ -167,15 +154,14 @@ export function SalesForm() {
     let active = true;
     (async () => {
       try {
-        const [c1, c2, c3, c4, inv, gold] = await Promise.all([
+        const [c1, c2, c3, c4, inv] = await Promise.all([
           fetch("/api/customers", { cache: "no-store" }).then((r) => r.json()),
           fetch("/api/salesmen", { cache: "no-store" }).then((r) => r.json()),
           fetch("/api/subcategories", { cache: "no-store" }).then((r) => r.json()),
           fetch("/api/stock/availability", { cache: "no-store" }).then((r) => r.json()),
           fetch(`/api/sales?preview=1&transactionDate=${encodeURIComponent(todayISO())}`, {
             cache: "no-store"
-          }).then((r) => r.json()),
-          fetch("/api/gold-prices", { cache: "no-store" }).then((r) => r.json())
+          }).then((r) => r.json())
         ]);
         if (!active) return;
         setCustomers(c1.customers ?? []);
@@ -183,14 +169,6 @@ export function SalesForm() {
         setSubcategories(c3.subcategories ?? []);
         setAvailability(c4.rows ?? []);
         setInvoiceNo(inv.saleNo ?? "");
-        if (gold?.ok) {
-          setGoldPrices(gold.rates ?? {});
-          setGoldPriceSource(gold.sourceUrl ?? "");
-          setGoldPriceFetchedAt(gold.fetchedAt ?? "");
-          setGoldPriceError("");
-        } else {
-          setGoldPriceError(gold?.error ?? "Unable to load live gold prices.");
-        }
       } catch {
         // ignore
       } finally {
@@ -319,37 +297,11 @@ export function SalesForm() {
     return customers.find((c) => c.id === id) ?? null;
   }, [customerId, customers]);
 
-  const totalMaking = useMemo(() => {
-    return lines.reduce((sum, l) => sum + Math.max(0, toNumber(l.goldWeight)) * 100, 0);
-  }, [lines]);
-
-  const totalAmount = sellSubTotal + totalMaking;
+  const totalAmount = sellSubTotal;
   const discountValue = Math.max(0, toNumber(discount));
   const grandTotal = Math.max(0, totalAmount - discountValue);
   const paidValue = Math.max(0, toNumber(paidAmount));
   const balanceDue = Math.max(0, grandTotal - paidValue);
-
-  function rateForCarat(carat: string | null | undefined) {
-    const key = normalizeCarat(carat) as keyof NonNullable<GoldPricesResponse["rates"]>;
-    return goldPrices?.[key] ?? "";
-  }
-
-  function goldRateLabel(carat: string) {
-    const rate = rateForCarat(carat);
-    return rate || (goldPriceError ? "Unavailable" : "");
-  }
-
-  useEffect(() => {
-    if (!goldPrices || Object.keys(goldPrices).length === 0) return;
-    setLines((prev) =>
-      prev.map((line) => {
-        if (line.sellRatePer8g || !line.carat) return line;
-        const rate = rateForCarat(line.carat);
-        return rate ? { ...line, sellRatePer8g: rate } : line;
-      })
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [goldPrices]);
 
   function updateLine(id: string, patch: Partial<Line>) {
     setLines((prev) =>
@@ -360,10 +312,6 @@ export function SalesForm() {
           const sub = String(patch.subcategoryCode ?? "").trim();
           const sc = subcategoryByCode.get(sub);
           next.carat = normalizeCarat(sc?.carat);
-          if (!next.sellRatePer8g) {
-            const rate = rateForCarat(next.carat);
-            if (rate) next.sellRatePer8g = rate;
-          }
         }
         return next;
       })
@@ -461,7 +409,16 @@ export function SalesForm() {
       const res = await fetch("/api/sales", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ transactionDate, salesmanId: sid, customerId: cid, remarks, items })
+        body: JSON.stringify({
+          transactionDate,
+          salesmanId: sid,
+          customerId: cid,
+          remarks,
+          paymentType,
+          discount,
+          paidAmount,
+          items
+        })
       });
       const json = (await res.json().catch(() => null)) as { error?: string } | null;
       if (!res.ok) throw new Error(json?.error ?? "Save failed");
@@ -478,6 +435,10 @@ export function SalesForm() {
       ]);
       setRemarks("");
       setSalesmanId("");
+      setCustomerId("");
+      setDiscount("");
+      setPaidAmount("");
+      setPaymentType("Credit");
       router.push("/sales");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Save failed");
@@ -584,56 +545,6 @@ export function SalesForm() {
               <option>Bank</option>
             </select>
           </label>
-
-          <label className="space-y-1.5 text-sm">
-            <div className="text-xs font-bold text-ebony-800">Gold Rate (24K)</div>
-            <input
-              value={goldRateLabel("24")}
-              readOnly
-              placeholder="0.00"
-              className="h-10 w-full rounded-md border border-ebony-200 bg-ebony-50 px-3 text-right text-sm font-semibold text-ebony-700 outline-none"
-            />
-          </label>
-
-          <label className="space-y-1.5 text-sm">
-            <div className="text-xs font-bold text-ebony-800">Gold Rate (22K)</div>
-            <input
-              value={goldRateLabel("22")}
-              readOnly
-              placeholder="0.00"
-              className="h-10 w-full rounded-md border border-ebony-200 bg-ebony-50 px-3 text-right text-sm font-semibold text-ebony-700 outline-none"
-            />
-          </label>
-
-          <label className="space-y-1.5 text-sm">
-            <div className="text-xs font-bold text-ebony-800">Gold Rate (21K)</div>
-            <input
-              value={goldRateLabel("21")}
-              readOnly
-              placeholder="0.00"
-              className="h-10 w-full rounded-md border border-ebony-200 bg-ebony-50 px-3 text-right text-sm font-semibold text-ebony-700 outline-none"
-            />
-          </label>
-
-          <label className="space-y-1.5 text-sm">
-            <div className="text-xs font-bold text-ebony-800">Gold Rate (18K)</div>
-            <input
-              value={goldRateLabel("18")}
-              readOnly
-              placeholder="0.00"
-              className="h-10 w-full rounded-md border border-ebony-200 bg-ebony-50 px-3 text-right text-sm font-semibold text-ebony-700 outline-none"
-            />
-          </label>
-        </div>
-
-        <div className="mt-3 text-xs font-semibold text-ebony-500">
-          {goldPriceError
-            ? goldPriceError
-            : goldPriceFetchedAt
-              ? `Live rates from ${goldPriceSource || "goldpricesrilanka.com"} at ${new Date(
-                  goldPriceFetchedAt
-                ).toLocaleString()}`
-              : "Loading live gold prices..."}
         </div>
       </div>
 
@@ -664,8 +575,7 @@ export function SalesForm() {
                   const subAvail = l.subcategoryCode ? availabilityBySubcategory.get(l.subcategoryCode) : undefined;
                   const sellRate = Math.max(0, toNumber(l.sellRatePer8g));
                   const netWeight = Math.max(0, toNumber(l.goldWeight));
-                  const making = netWeight * 100;
-                  const amount = (netWeight / 8) * sellRate + making;
+                  const amount = (netWeight / 8) * sellRate;
                   const availableQty = Math.max(0, Number(avail?.balanceQty ?? subAvail?.balanceQty ?? 0));
                   const availableWeight = Math.max(
                     0,
@@ -793,7 +703,6 @@ export function SalesForm() {
         <div className="rounded-lg border border-ebony-100 bg-white shadow-sm">
           {[
             ["Total Net Weight", `${totals.totalWeight.toFixed(3)} g`],
-            ["Total Making", totalMaking.toFixed(2)],
             ["Total Amount", totalAmount.toFixed(2)]
           ].map(([label, value]) => (
             <div key={label} className="flex items-center justify-between border-b border-ebony-100 px-4 py-3 text-sm">
