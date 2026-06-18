@@ -42,8 +42,6 @@ export default async function DashboardPage() {
   const now = new Date();
   const fromToday = new Date(now);
   fromToday.setHours(0, 0, 0, 0);
-  const from30d = new Date(now);
-  from30d.setDate(from30d.getDate() - 30);
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
   const [
@@ -52,12 +50,12 @@ export default async function DashboardPage() {
     inventorySales,
     categories,
     subcategories,
-    invAgg30d,
     invAggToday,
     recentInvoices,
     monthInvoices,
-    customerCount,
-    supplierCount,
+    customerAccounts,
+    customerTransactions,
+    purchasePendingAgg,
     cashAgg,
     customerSalesRows,
     liveGoldPrices
@@ -96,13 +94,6 @@ export default async function DashboardPage() {
     prismaWithRetry((p) => p.subcategory.findMany({ orderBy: [{ categoryCode: "asc" }, { code: "asc" }] })),
     prismaWithRetry((p) =>
       p.salesNTX.aggregate({
-        where: { transactionDate: { gte: from30d } },
-        _sum: { sellSubTotal: true },
-        _count: { _all: true }
-      })
-    ),
-    prismaWithRetry((p) =>
-      p.salesNTX.aggregate({
         where: { transactionDate: { gte: fromToday } },
         _sum: { sellSubTotal: true },
         _count: { _all: true }
@@ -123,8 +114,25 @@ export default async function DashboardPage() {
         take: 2000
       })
     ),
-    prismaWithRetry((p) => p.customer.count()),
-    prismaWithRetry((p) => p.supplier.count()),
+    prismaWithRetry((p) =>
+      p.customer.findMany({
+        where: { accountNumber: { not: null } },
+        select: { accountNumber: true }
+      })
+    ),
+    prismaWithRetry((p) =>
+      p.transaction.findMany({
+        where: { accountNumber: { not: null } },
+        select: { accountNumber: true, debit: true, credit: true }
+      })
+    ),
+    prismaWithRetry((p) =>
+      p.purchase.aggregate({
+        where: { balanceDue: { gt: 0 } },
+        _sum: { balanceDue: true },
+        _count: { _all: true }
+      })
+    ),
     prismaWithRetry((p) =>
       p.transaction.aggregate({
         _sum: { debit: true, credit: true, bankDebit: true, bankCredit: true }
@@ -132,7 +140,7 @@ export default async function DashboardPage() {
     ),
     prismaWithRetry((p) =>
       p.salesNTX.findMany({
-        where: { transactionDate: { gte: from30d } },
+        where: { transactionDate: { gte: startOfMonth } },
         select: { customerId: true, sellSubTotal: true, customer: { select: { name: true } } },
         take: 1000
       })
@@ -204,9 +212,25 @@ export default async function DashboardPage() {
   )
     .sort((a, b) => b.balanceQty - a.balanceQty)
     .slice(0, 8);
-  const invAmount30d = toNumber(invAgg30d._sum.sellSubTotal ?? 0);
   const invAmountToday = toNumber(invAggToday._sum.sellSubTotal ?? 0);
   const invCountToday = invAggToday._count._all ?? 0;
+  const customerAccountSet = new Set(customerAccounts.map((customer) => (customer.accountNumber ?? "").trim()).filter(Boolean));
+  const customerBalances = Array.from(
+    customerTransactions
+      .reduce((map, tx) => {
+        const accountNumber = (tx.accountNumber ?? "").trim();
+        if (!customerAccountSet.has(accountNumber)) return map;
+        map.set(accountNumber, (map.get(accountNumber) ?? 0) + toNumber(tx.debit) - toNumber(tx.credit));
+        return map;
+      }, new Map<string, number>())
+      .values()
+  );
+  const customerPendingAmount = customerBalances
+    .filter((balance) => balance > 0)
+    .reduce((sum, balance) => sum + balance, 0);
+  const customerPendingCount = customerBalances.filter((balance) => balance > 0).length;
+  const supplierPendingAmount = toNumber(purchasePendingAgg._sum.balanceDue ?? 0);
+  const supplierPendingCount = purchasePendingAgg._count._all ?? 0;
   const cashInHand =
     toNumber(cashAgg._sum.debit ?? 0) -
     toNumber(cashAgg._sum.credit ?? 0) +
@@ -277,16 +301,16 @@ export default async function DashboardPage() {
     },
     {
       label: "Customer Pending",
-      value: formatLkr(invAmount30d),
-      meta: `${customerCount} customers`,
+      value: formatLkr(customerPendingAmount),
+      meta: `${customerPendingCount} customers pending`,
       icon: Users,
       color: "text-violet-600",
       bg: "bg-violet-50"
     },
     {
       label: "Supplier Pending",
-      value: `${supplierCount}`,
-      meta: "Suppliers",
+      value: formatLkr(supplierPendingAmount),
+      meta: `${supplierPendingCount} purchases due`,
       icon: ShoppingBag,
       color: "text-rose-600",
       bg: "bg-rose-50"
@@ -436,7 +460,6 @@ export default async function DashboardPage() {
               </tbody>
             </table>
           </div>
-          <div className="mt-4 text-right text-xs font-bold text-indigo-700">View All</div>
         </div>
       </section>
 

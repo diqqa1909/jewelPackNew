@@ -83,6 +83,7 @@ export default async function PurchaseViewPage({
           layout="table"
           formId={formId}
           initialValues={{
+            purchaseType: purchase.purchaseType === "Rate" ? "Rate" : "Gold",
             transactionDate: dateInputValue(purchase.purchaseDate),
             location: purchase.location ?? "",
             gsmCode: purchase.gsmCode ?? "",
@@ -134,6 +135,7 @@ export default async function PurchaseViewPage({
           <CardContent>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               <DetailItem label="Purchase No" value={purchase.purchaseNo} />
+              <DetailItem label="Purchase Type" value={purchase.purchaseType === "Rate" ? "Rate" : "Gold"} />
               <DetailItem label="Date" value={dateText(purchase.purchaseDate)} />
               <DetailItem label="Supplier" value={purchase.supplier?.name ?? "-"} />
               <DetailItem label="GSM Code" value={purchase.gsmCode ?? "-"} />

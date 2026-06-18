@@ -376,7 +376,7 @@ export function SalesForm() {
     setLines((prev) => (prev.length === 1 ? prev : prev.filter((l) => l.id !== id)));
   }
 
-  async function submit() {
+  async function submit(destination: "list" | "invoice" = "list") {
     setError("");
     const sid = typeof salesmanId === "number" ? salesmanId : Number(salesmanId);
     const cid = typeof customerId === "number" ? customerId : Number(customerId);
@@ -420,8 +420,9 @@ export function SalesForm() {
           items
         })
       });
-      const json = (await res.json().catch(() => null)) as { error?: string } | null;
+      const json = (await res.json().catch(() => null)) as { error?: string; sale?: { id?: number } } | null;
       if (!res.ok) throw new Error(json?.error ?? "Save failed");
+      const savedSaleId = Number(json?.sale?.id);
       toast.success("Invoice saved", invoiceNo || undefined);
       setLines([
         {
@@ -439,7 +440,7 @@ export function SalesForm() {
       setDiscount("");
       setPaidAmount("");
       setPaymentType("Credit");
-      router.push("/sales");
+      router.push(destination === "invoice" && Number.isFinite(savedSaleId) ? `/sales/${savedSaleId}` : "/sales");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Save failed");
     } finally {
@@ -745,7 +746,7 @@ export function SalesForm() {
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
-          onClick={() => void submit()}
+          onClick={() => void submit("invoice")}
           disabled={busy}
           className="inline-flex items-center gap-2 rounded-md bg-indigo-700 px-6 py-3 text-sm font-bold text-white hover:bg-indigo-800 disabled:cursor-not-allowed disabled:opacity-60"
         >

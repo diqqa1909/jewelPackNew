@@ -217,6 +217,7 @@ model Purchase {
   id              Int       @id @default(autoincrement())
   purchaseNo      String    @unique
   purchaseDate    DateTime
+  purchaseType    String    @default("Gold")
   location        String?
   gsmCode         String?
   gsmName         String?

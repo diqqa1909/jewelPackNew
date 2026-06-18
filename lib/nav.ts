@@ -56,7 +56,10 @@ export const navSections: NavSection[] = [
   },
   {
     label: "Accounts",
-    items: [{ href: "/accounts", label: "Accounts", icon: Building2 }]
+    items: [
+      { href: "/accounts", label: "Accounts", icon: Building2 },
+      { href: "/payments", label: "Payments", icon: CreditCard }
+    ]
   },
   {
     label: "Reports",

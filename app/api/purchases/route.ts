@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 
 type PurchasePayload = {
+  purchaseType?: "Gold" | "Rate";
   transactionDate: string;
   location?: string;
   gsmCode: string;
@@ -35,6 +36,10 @@ function decimal(value: string | null | undefined) {
 
 function isWastageEnabled(value: unknown) {
   return value === true || value === "Y";
+}
+
+function normalizePurchaseType(value: unknown) {
+  return value === "Rate" ? "Rate" : "Gold";
 }
 
 function nextPurchaseNo(date: Date) {
@@ -96,6 +101,7 @@ export async function POST(req: Request) {
     const goldRatePer8g = system?.goldCostRatePer8g ?? new Prisma.Decimal("0");
 
     const goldsmith = await prisma.goldsmith.findUnique({ where: { code: body.gsmCode } });
+    const purchaseType = normalizePurchaseType(body.purchaseType);
     const category = await prisma.category.findUnique({ where: { code: body.categoryCode } });
     const subcategory = await prisma.subcategory.findUnique({ where: { code: body.subcategoryCode } });
     if (!category) return NextResponse.json({ error: "Invalid category" }, { status: 400 });
@@ -134,6 +140,7 @@ export async function POST(req: Request) {
         data: {
           purchaseNo,
           purchaseDate,
+          purchaseType,
           location: (body.location ?? "").trim() || null,
           gsmCode: body.gsmCode,
           gsmName: goldsmith?.name ?? "",
@@ -207,6 +214,7 @@ export async function PATCH(req: Request) {
     const goldRatePer8g = system?.goldCostRatePer8g ?? new Prisma.Decimal("0");
 
     const goldsmith = await prisma.goldsmith.findUnique({ where: { code: body.gsmCode } });
+    const purchaseType = normalizePurchaseType(body.purchaseType);
     const category = await prisma.category.findUnique({ where: { code: body.categoryCode } });
     const subcategory = await prisma.subcategory.findUnique({ where: { code: body.subcategoryCode } });
     if (!category) return NextResponse.json({ error: "Invalid category" }, { status: 400 });
@@ -265,6 +273,7 @@ export async function PATCH(req: Request) {
       where: { id },
       data: {
         purchaseDate,
+        purchaseType,
         location: (body.location ?? "").trim() || null,
         gsmCode: body.gsmCode,
         gsmName: goldsmith?.name ?? "",

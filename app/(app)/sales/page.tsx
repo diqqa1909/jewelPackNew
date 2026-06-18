@@ -6,6 +6,15 @@ import { buttonClassName } from "@/components/ui/Button";
 
 export const dynamic = "force-dynamic";
 
+function toNumber(value: unknown) {
+  if (typeof value === "number") return value;
+  if (value && typeof (value as { toString(): string }).toString === "function") {
+    const n = Number((value as { toString(): string }).toString());
+    return Number.isFinite(n) ? n : 0;
+  }
+  return 0;
+}
+
 export default async function SalesPage() {
   const sales = await prismaWithRetry((p) =>
     p.salesNTX.findMany({
@@ -14,6 +23,27 @@ export default async function SalesPage() {
       include: { customer: true }
     })
   );
+  const saleNos = sales.map((sale) => sale.saleNo);
+  const payments = saleNos.length
+    ? await prismaWithRetry((p) =>
+        p.transaction.findMany({
+          where: {
+            referenceNumber: { in: saleNos },
+            type: "PAYMENT"
+          },
+          select: {
+            referenceNumber: true,
+            credit: true
+          }
+        })
+      )
+    : [];
+  const paidBySaleNo = payments.reduce((map, payment) => {
+    const key = payment.referenceNumber ?? "";
+    if (!key) return map;
+    map.set(key, (map.get(key) ?? 0) + toNumber(payment.credit));
+    return map;
+  }, new Map<string, number>());
 
   return (
     <div className="space-y-6">
@@ -33,16 +63,22 @@ export default async function SalesPage() {
         </CardHeader>
         <CardContent>
           <SalesTable
-            initial={sales.map((s) => ({
-              id: s.id,
-              saleNo: s.saleNo,
-              transactionDate: new Date(s.transactionDate).toISOString().slice(0, 10),
-              customerName: s.customer.name,
-              totalItems: s.totalItems,
-              totalQty: s.totalQty,
-              totalGoldWeight: s.totalGoldWeight.toString(),
-              totalCost: s.sellSubTotal.toString()
-            }))}
+            initial={sales.map((s) => {
+              const grandTotal = toNumber(s.sellSubTotal);
+              const paidAmount = paidBySaleNo.get(s.saleNo) ?? 0;
+              return {
+                id: s.id,
+                saleNo: s.saleNo,
+                transactionDate: new Date(s.transactionDate).toISOString().slice(0, 10),
+                customerName: s.customer.name,
+                totalItems: s.totalItems,
+                totalQty: s.totalQty,
+                totalGoldWeight: s.totalGoldWeight.toString(),
+                grandTotal: grandTotal.toString(),
+                paidAmount: paidAmount.toString(),
+                balanceDue: Math.max(0, grandTotal - paidAmount).toString()
+              };
+            })}
           />
         </CardContent>
       </Card>
