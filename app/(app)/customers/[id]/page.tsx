@@ -16,6 +16,12 @@ function formatMoney(value: unknown) {
   return n.toLocaleString("en-LK", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function formatWeight(value: unknown) {
+  const n = Number(toDecimal(value).toString());
+  if (!Number.isFinite(n)) return "0.000";
+  return n.toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+}
+
 function formatDate(value: Date) {
   return new Intl.DateTimeFormat("en-GB", {
     day: "2-digit",
@@ -93,7 +99,7 @@ export default async function CustomerAccountPage({
         prismaWithRetry((p) =>
           p.transaction.aggregate({
             where: { accountNumber },
-            _sum: { debit: true, credit: true }
+            _sum: { debit: true, credit: true, goldIssued: true, goldReceived: true }
           })
         ),
         prismaWithRetry((p) =>
@@ -104,19 +110,35 @@ export default async function CustomerAccountPage({
           })
         )
       ])
-    : [{ _sum: { debit: new Prisma.Decimal("0"), credit: new Prisma.Decimal("0") } } as any, []];
+    : [
+        {
+          _sum: {
+            debit: new Prisma.Decimal("0"),
+            credit: new Prisma.Decimal("0"),
+            goldIssued: new Prisma.Decimal("0"),
+            goldReceived: new Prisma.Decimal("0")
+          }
+        } as any,
+        []
+      ];
 
   const totalSales = toDecimal(agg?._sum?.debit);
   const totalPayments = toDecimal(agg?._sum?.credit);
   const pendingAmount = totalSales.minus(totalPayments);
+  const totalGoldIssued = toDecimal(agg?._sum?.goldIssued);
+  const totalGoldReceived = toDecimal(agg?._sum?.goldReceived);
+  const pendingGold = totalGoldIssued.minus(totalGoldReceived);
   let running = new Prisma.Decimal("0");
+  let runningGold = new Prisma.Decimal("0");
   const ledgerRows = txsAsc
     .map((tx) => {
       running = running.plus(tx.debit).minus(tx.credit);
-      return { ...tx, balance: running };
+      runningGold = runningGold.plus(tx.goldIssued).minus(tx.goldReceived);
+      return { ...tx, balance: running, goldBalance: runningGold };
     })
     .reverse();
   const runningBalance = ledgerRows[0]?.balance ?? pendingAmount;
+  const runningGoldBalance = ledgerRows[0]?.goldBalance ?? pendingGold;
 
   const defaultFrom = fromParam || dateInput(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const defaultTo = toParam || dateInput(new Date());
@@ -147,6 +169,21 @@ export default async function CustomerAccountPage({
         <div className="rounded-lg border border-ebony-100 bg-white p-5 shadow-sm">
           <div className="text-xs font-bold text-ebony-600">Pending Amount</div>
           <div className="mt-4 text-2xl font-extrabold tabular-nums text-red-600">{formatMoney(pendingAmount)}</div>
+        </div>
+      </section>
+
+      <section className="grid gap-4 md:grid-cols-3">
+        <div className="rounded-lg border border-ebony-100 bg-white p-5 shadow-sm">
+          <div className="text-xs font-bold text-ebony-600">Gold Issued</div>
+          <div className="mt-4 text-xl font-extrabold tabular-nums text-ebony-900">{formatWeight(totalGoldIssued)} g</div>
+        </div>
+        <div className="rounded-lg border border-ebony-100 bg-white p-5 shadow-sm">
+          <div className="text-xs font-bold text-ebony-600">Gold Received</div>
+          <div className="mt-4 text-xl font-extrabold tabular-nums text-ebony-900">{formatWeight(totalGoldReceived)} g</div>
+        </div>
+        <div className="rounded-lg border border-ebony-100 bg-white p-5 shadow-sm">
+          <div className="text-xs font-bold text-ebony-600">Gold Balance</div>
+          <div className="mt-4 text-2xl font-extrabold tabular-nums text-amber-700">{formatWeight(pendingGold)} g</div>
         </div>
       </section>
 
@@ -190,12 +227,15 @@ export default async function CustomerAccountPage({
 
       <section className="overflow-hidden rounded-lg border border-ebony-100 bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[920px] text-sm">
+          <table className="w-full min-w-[1180px] text-sm">
             <thead className="bg-ebony-50 text-left text-xs font-bold text-ebony-700">
               <tr>
                 <th className="px-5 py-4">Date</th>
                 <th className="px-5 py-4">Ref No</th>
                 <th className="px-5 py-4">Particulars</th>
+                <th className="px-5 py-4 text-right">Gold Issued (g)</th>
+                <th className="px-5 py-4 text-right">Received (g)</th>
+                <th className="px-5 py-4 text-right">Gold Balance (g)</th>
                 <th className="px-5 py-4 text-right">Debit (LKR)</th>
                 <th className="px-5 py-4 text-right">Credit (LKR)</th>
                 <th className="px-5 py-4 text-right">Balance (LKR)</th>
@@ -207,6 +247,15 @@ export default async function CustomerAccountPage({
                   <td className="px-5 py-3 tabular-nums text-ebony-700">{formatDate(tx.date)}</td>
                   <td className="px-5 py-3 font-semibold tabular-nums text-ebony-800">{tx.referenceNumber || "-"}</td>
                   <td className="px-5 py-3 text-ebony-700">{tx.memo || tx.remarks || tx.source || "-"}</td>
+                  <td className="px-5 py-3 text-right font-semibold tabular-nums text-ebony-900">
+                    {formatWeight(tx.goldIssued)}
+                  </td>
+                  <td className="px-5 py-3 text-right font-semibold tabular-nums text-ebony-900">
+                    {formatWeight(tx.goldReceived)}
+                  </td>
+                  <td className="px-5 py-3 text-right font-semibold tabular-nums text-ebony-900">
+                    {formatWeight(tx.goldBalance)}
+                  </td>
                   <td className="px-5 py-3 text-right font-semibold tabular-nums text-ebony-900">
                     {formatMoney(tx.debit)}
                   </td>
@@ -220,7 +269,7 @@ export default async function CustomerAccountPage({
               ))}
               {ledgerRows.length === 0 ? (
                 <tr>
-                  <td className="px-5 py-10 text-center text-sm text-ebony-600" colSpan={6}>
+                  <td className="px-5 py-10 text-center text-sm text-ebony-600" colSpan={9}>
                     No ledger transactions found.
                   </td>
                 </tr>
@@ -231,6 +280,8 @@ export default async function CustomerAccountPage({
       </section>
 
       <div className="flex items-center justify-end gap-10 rounded-lg bg-white px-6 py-5 shadow-sm">
+        <span className="text-sm font-bold text-ebony-800">Gold Balance</span>
+        <span className="text-2xl font-extrabold tabular-nums text-amber-700">{formatWeight(runningGoldBalance)} g</span>
         <span className="text-sm font-bold text-ebony-800">Running Balance</span>
         <span className="text-2xl font-extrabold tabular-nums text-red-600">{formatMoney(runningBalance)}</span>
       </div>

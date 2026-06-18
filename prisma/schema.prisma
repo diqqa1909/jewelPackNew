@@ -134,6 +134,8 @@ model Transaction {
   type            String?
   bankDebit       Decimal? @default(0) @map("bank_debit") @db.Decimal(12, 2)
   bankCredit      Decimal? @default(0) @map("bank_credit") @db.Decimal(12, 2)
+  goldIssued      Decimal  @default(0) @map("gold_issued") @db.Decimal(12, 3)
+  goldReceived    Decimal  @default(0) @map("gold_received") @db.Decimal(12, 3)
   realizedDate    DateTime? @map("realized_date") @db.Date
   referenceNumber String?  @map("reference_number")
   remarks         String?
@@ -159,6 +161,8 @@ model SalesNTX {
   totalItems    Int
   totalQty      Int
   totalGoldWeight Decimal
+  totalStoneWeight Decimal @default(0)
+  totalNetWeight Decimal @default(0)
   totalCost     Decimal
   sellRatePer8g Decimal @default(0)
   sellSubTotal  Decimal @default(0)
@@ -188,6 +192,8 @@ model Sale {
   carat           String?
   qty             Int
   goldWeight      Decimal
+  stoneWeight     Decimal @default(0)
+  netWeight       Decimal @default(0)
   cost            Decimal
   sellRatePer8g   Decimal @default(0)
   sellCost        Decimal @default(0)

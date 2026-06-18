@@ -25,6 +25,7 @@ type Line = {
   carat: string;
   qty: string;
   goldWeight: string;
+  stoneWeight: string;
   sellRatePer8g: string;
 };
 
@@ -69,7 +70,7 @@ export function SalesForm() {
   const [salesmanId, setSalesmanId] = useState<number | "">("");
   const [customerId, setCustomerId] = useState<number | "">("");
   const [remarks, setRemarks] = useState("");
-  const [salesType, setSalesType] = useState("Wholesale");
+  const [salesType, setSalesType] = useState("Gold");
   const [paymentType, setPaymentType] = useState("Credit");
   const [discount, setDiscount] = useState("");
   const [paidAmount, setPaidAmount] = useState("");
@@ -82,6 +83,7 @@ export function SalesForm() {
       carat: "",
       qty: "",
       goldWeight: "",
+      stoneWeight: "",
       sellRatePer8g: ""
     }
   ]);
@@ -107,7 +109,7 @@ export function SalesForm() {
     }
   }, [pendingFocusId, lines.length, cellRefs]);
 
-  const navCols = ["subcategory", "qty", "weight", "sellRate"] as const;
+  const navCols = ["subcategory", "qty", "goldWeight", "stoneWeight", "sellRate"] as const;
   type NavCol = (typeof navCols)[number];
 
   function setCellRef(rowId: string, col: NavCol, el: any) {
@@ -242,12 +244,18 @@ export function SalesForm() {
 
   const totals = useMemo(() => {
     let totalQty = 0;
-    let totalWeight = 0;
+    let totalGoldWeight = 0;
+    let totalStoneWeight = 0;
+    let totalNetWeight = 0;
     for (const l of lines) {
       totalQty += Math.max(0, Math.floor(toNumber(l.qty)));
-      totalWeight += Math.max(0, toNumber(l.goldWeight));
+      const goldWeight = Math.max(0, toNumber(l.goldWeight));
+      const stoneWeight = Math.max(0, toNumber(l.stoneWeight));
+      totalGoldWeight += goldWeight;
+      totalStoneWeight += stoneWeight;
+      totalNetWeight += goldWeight + stoneWeight;
     }
-    return { totalItems: lines.filter((l) => l.subcategoryCode).length, totalQty, totalWeight };
+    return { totalItems: lines.filter((l) => l.subcategoryCode).length, totalQty, totalGoldWeight, totalStoneWeight, totalNetWeight };
   }, [lines]);
 
   const qtyErrors = useMemo(() => {
@@ -366,6 +374,7 @@ export function SalesForm() {
         carat: "",
         qty: "",
         goldWeight: "",
+        stoneWeight: "",
         sellRatePer8g: ""
       }
     ]);
@@ -389,6 +398,7 @@ export function SalesForm() {
       subcategoryCode: l.subcategoryCode.trim(),
       qty: Math.floor(toNumber(l.qty)),
       goldWeight: String(l.goldWeight ?? "").trim(),
+      stoneWeight: String(l.stoneWeight ?? "").trim(),
       sellRatePer8g: String(l.sellRatePer8g ?? "").trim()
     }));
 
@@ -431,6 +441,7 @@ export function SalesForm() {
           carat: "",
           qty: "",
           goldWeight: "",
+          stoneWeight: "",
           sellRatePer8g: ""
         }
       ]);
@@ -529,8 +540,8 @@ export function SalesForm() {
               onChange={(e) => setSalesType(e.target.value)}
               className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
             >
-              <option>Wholesale</option>
-              <option>Retail</option>
+              <option>Gold</option>
+              <option>Rate</option>
             </select>
           </label>
 
@@ -554,7 +565,7 @@ export function SalesForm() {
           <div className="px-4 py-6 text-sm font-semibold text-ebony-500">Loading...</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[980px] text-sm">
+            <table className="w-full min-w-[1080px] text-sm">
               <thead className="bg-ebony-50 text-left text-[11px] font-bold uppercase tracking-wide text-ebony-600">
                 <tr>
                   <th className="border border-ebony-100 px-3 py-2 text-center">#</th>
@@ -562,6 +573,7 @@ export function SalesForm() {
                   <th className="border border-ebony-100 px-3 py-2">Description</th>
                   <th className="border border-ebony-100 px-3 py-2">Karat</th>
                   <th className="border border-ebony-100 px-3 py-2 text-right">Qty</th>
+                  <th className="border border-ebony-100 px-3 py-2 text-right">Gold Wt</th>
                   <th className="border border-ebony-100 px-3 py-2 text-right">Stone Wt</th>
                   <th className="border border-ebony-100 px-3 py-2 text-right">Net Wt</th>
                   <th className="border border-ebony-100 px-3 py-2 text-right">Rate/8g</th>
@@ -575,8 +587,10 @@ export function SalesForm() {
                   const avail = l.subcategoryCode && l.carat ? availabilityKeyed.get(`${l.subcategoryCode}||${l.carat}`) : undefined;
                   const subAvail = l.subcategoryCode ? availabilityBySubcategory.get(l.subcategoryCode) : undefined;
                   const sellRate = Math.max(0, toNumber(l.sellRatePer8g));
-                  const netWeight = Math.max(0, toNumber(l.goldWeight));
-                  const amount = (netWeight / 8) * sellRate;
+                  const goldWeight = Math.max(0, toNumber(l.goldWeight));
+                  const stoneWeight = Math.max(0, toNumber(l.stoneWeight));
+                  const netWeight = goldWeight + stoneWeight;
+                  const amount = (goldWeight / 8) * sellRate;
                   const availableQty = Math.max(0, Number(avail?.balanceQty ?? subAvail?.balanceQty ?? 0));
                   const availableWeight = Math.max(
                     0,
@@ -618,7 +632,6 @@ export function SalesForm() {
                           className="h-10 w-full border-0 bg-white px-2 text-right outline-none focus:bg-cream-50"
                         />
                       </td>
-                      <td className="border border-ebony-100 px-3 py-2 text-right tabular-nums text-ebony-700">0.000</td>
                       <td className="border border-ebony-100 p-0">
                         <input
                           inputMode="decimal"
@@ -631,9 +644,9 @@ export function SalesForm() {
                               setError(weightErrors.get(l.id) ?? "Weight exceeded");
                               return;
                             }
-                            return handleTabNav(e, l.id, "weight");
+                            return handleTabNav(e, l.id, "goldWeight");
                           }}
-                          ref={(el) => setCellRef(l.id, "weight", el)}
+                          ref={(el) => setCellRef(l.id, "goldWeight", el)}
                           className={[
                             "h-10 w-full border-0 bg-white px-2 text-right outline-none focus:bg-cream-50",
                             weightErrors.get(l.id) ? "text-red-700" : ""
@@ -642,6 +655,19 @@ export function SalesForm() {
                         {weightErrors.get(l.id) ? (
                           <div className="px-2 pb-1 text-xs font-semibold text-red-600">{weightErrors.get(l.id)}</div>
                         ) : null}
+                      </td>
+                      <td className="border border-ebony-100 p-0">
+                        <input
+                          inputMode="decimal"
+                          value={l.stoneWeight}
+                          onChange={(e) => updateLine(l.id, { stoneWeight: sanitizeDecimal(e.target.value) })}
+                          onKeyDown={(e) => handleTabNav(e, l.id, "stoneWeight")}
+                          ref={(el) => setCellRef(l.id, "stoneWeight", el)}
+                          className="h-10 w-full border-0 bg-white px-2 text-right outline-none focus:bg-cream-50"
+                        />
+                      </td>
+                      <td className="border border-ebony-100 px-3 py-2 text-right tabular-nums text-ebony-700">
+                        {netWeight.toFixed(3)}
                       </td>
                       <td className="border border-ebony-100 p-0">
                         <input
@@ -702,8 +728,10 @@ export function SalesForm() {
         </label>
 
         <div className="rounded-lg border border-ebony-100 bg-white shadow-sm">
-          {[
-            ["Total Net Weight", `${totals.totalWeight.toFixed(3)} g`],
+          {[ 
+            ["Total Gold Weight", `${totals.totalGoldWeight.toFixed(3)} g`],
+            ["Total Stone Weight", `${totals.totalStoneWeight.toFixed(3)} g`],
+            ["Total Net Weight", `${totals.totalNetWeight.toFixed(3)} g`],
             ["Total Amount", totalAmount.toFixed(2)]
           ].map(([label, value]) => (
             <div key={label} className="flex items-center justify-between border-b border-ebony-100 px-4 py-3 text-sm">
@@ -1009,9 +1037,9 @@ export function SalesForm() {
                                 setError(weightErrors.get(l.id) ?? "Weight exceeded");
                                 return;
                               }
-                              return handleTabNav(e, l.id, "weight");
+                              return handleTabNav(e, l.id, "goldWeight");
                             }}
-                            ref={(el) => setCellRef(l.id, "weight", el)}
+                            ref={(el) => setCellRef(l.id, "goldWeight", el)}
                             className={[
                               "h-10 w-full rounded-none border-0 bg-white px-2 text-right outline-none focus:bg-cream-50",
                               weightErrors.get(l.id) ? "text-red-700" : ""
@@ -1066,7 +1094,7 @@ export function SalesForm() {
                       {totals.totalQty}
                     </td>
                     <td className="border border-ebony-200 px-3 py-2 text-right font-bold text-ebony-900">
-                      {totals.totalWeight.toFixed(3)}
+                      {totals.totalNetWeight.toFixed(3)}
                     </td>
                     <td className="border border-ebony-200 px-3 py-2" />
                     <td className="border border-ebony-200 px-3 py-2 text-right font-bold text-ebony-900">

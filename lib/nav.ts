@@ -36,7 +36,8 @@ export const navSections: NavSection[] = [
       { href: "/dashboard", label: "Dashboard", icon: Home },
       { href: "/sales", label: "Sales", icon: CreditCard },
       { href: "/purchases", label: "Purchase", icon: ShoppingBag },
-      { href: "/stock", label: "Inventory", icon: Boxes }
+      { href: "/stock", label: "Inventory", icon: Boxes },
+      { href: "/gold", label: "Gold", icon: Gem }
     ]
   },
   {

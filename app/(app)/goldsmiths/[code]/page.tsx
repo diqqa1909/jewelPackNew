@@ -61,6 +61,8 @@ export default async function GoldsmithTrackingPage({ params }: { params: { code
       soldGoldWeight: sold.weight,
       balanceGoldWeight: pendingWeight,
       labourCharges: toNumber(purchase.labourCharges),
+      labourChargePaid: toNumber(purchase.paidAmount),
+      labourChargeBalance: Math.max(0, toNumber(purchase.labourCharges) - toNumber(purchase.paidAmount)),
       pendingQty,
       status: pendingWeight > 0 ? "Pending" : "Completed"
     };
@@ -72,9 +74,11 @@ export default async function GoldsmithTrackingPage({ params }: { params: { code
       acc.returned += row.soldGoldWeight;
       acc.pending += row.balanceGoldWeight;
       acc.labour += row.labourCharges;
+      acc.labourPaid += row.labourChargePaid;
+      acc.labourBalance += row.labourChargeBalance;
       return acc;
     },
-    { goldGiven: 0, returned: 0, pending: 0, labour: 0 }
+    { goldGiven: 0, returned: 0, pending: 0, labour: 0, labourPaid: 0, labourBalance: 0 }
   );
 
   return (
@@ -153,7 +157,7 @@ export default async function GoldsmithTrackingPage({ params }: { params: { code
           Entry Breakdown
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] text-sm">
+          <table className="w-full min-w-[1060px] text-sm">
             <thead className="bg-ebony-50 text-left text-xs font-bold text-ebony-700">
               <tr>
                 <th className="px-4 py-3">Date</th>
@@ -161,6 +165,8 @@ export default async function GoldsmithTrackingPage({ params }: { params: { code
                 <th className="px-4 py-3 text-right">Received</th>
                 <th className="px-4 py-3 text-right">Returned</th>
                 <th className="px-4 py-3 text-right">Pending</th>
+                <th className="px-4 py-3 text-right">Labour Charge Paid</th>
+                <th className="px-4 py-3 text-right">Balance</th>
                 <th className="px-4 py-3 text-right">Labour</th>
                 <th className="px-4 py-3 text-center">Action</th>
               </tr>
@@ -176,6 +182,8 @@ export default async function GoldsmithTrackingPage({ params }: { params: { code
                   <td className="px-4 py-3 text-right tabular-nums text-ebony-800">{fmt(row.goldWeight)}</td>
                   <td className="px-4 py-3 text-right tabular-nums text-ebony-800">{fmt(row.soldGoldWeight)}</td>
                   <td className="px-4 py-3 text-right tabular-nums text-ebony-800">{fmt(row.balanceGoldWeight)}</td>
+                  <td className="px-4 py-3 text-right tabular-nums text-ebony-800">{fmt(row.labourChargePaid, 2)}</td>
+                  <td className="px-4 py-3 text-right tabular-nums text-ebony-800">{fmt(row.labourChargeBalance, 2)}</td>
                   <td className="px-4 py-3 text-right tabular-nums text-ebony-800">{fmt(row.labourCharges, 2)}</td>
                   <td className="px-4 py-3 text-center">
                     <Link href={`/purchases/${row.id}`} className={buttonClassName("secondary", "h-8 w-8 px-0 py-0 text-ebony-500")} aria-label="View entry" title="View entry">

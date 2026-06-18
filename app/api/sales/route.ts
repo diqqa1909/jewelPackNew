@@ -7,6 +7,7 @@ type SaleLineInput = {
   subcategoryCode: string;
   qty: number;
   goldWeight: string;
+  stoneWeight?: string;
   sellRatePer8g: string;
 };
 
@@ -90,6 +91,7 @@ export async function POST(req: Request) {
       subcategoryCode: string;
       qty: number;
       goldWeight: Prisma.Decimal;
+      stoneWeight: Prisma.Decimal;
       sellRatePer8g: Prisma.Decimal;
     }> = [];
     for (const row of items) {
@@ -100,15 +102,16 @@ export async function POST(req: Request) {
       const weight = decimal(String(row.goldWeight ?? "0"));
       if (weight.lessThanOrEqualTo(new Prisma.Decimal("0")))
         return NextResponse.json({ error: "Invalid weight" }, { status: 400 });
+      const stoneWeight = clampDecimalNonNegative(decimal(String(row.stoneWeight ?? "0")));
       const rate = decimal(String(row.sellRatePer8g ?? "0"));
       if (rate.lessThanOrEqualTo(new Prisma.Decimal("0")))
         return NextResponse.json({ error: "Invalid sell rate" }, { status: 400 });
-      normalized.push({ subcategoryCode, qty, goldWeight: weight, sellRatePer8g: rate });
+      normalized.push({ subcategoryCode, qty, goldWeight: weight, stoneWeight, sellRatePer8g: rate });
     }
 
     const aggregated = new Map<
       string,
-      { subcategoryCode: string; qty: number; goldWeight: Prisma.Decimal; sellRatePer8g: Prisma.Decimal }
+      { subcategoryCode: string; qty: number; goldWeight: Prisma.Decimal; stoneWeight: Prisma.Decimal; sellRatePer8g: Prisma.Decimal }
     >();
     for (const r of normalized) {
       const key = `${r.subcategoryCode}||${r.sellRatePer8g.toString()}`;
@@ -118,7 +121,8 @@ export async function POST(req: Request) {
         aggregated.set(key, {
           ...prev,
           qty: prev.qty + r.qty,
-          goldWeight: prev.goldWeight.plus(r.goldWeight)
+          goldWeight: prev.goldWeight.plus(r.goldWeight),
+          stoneWeight: prev.stoneWeight.plus(r.stoneWeight)
         });
     }
     const requested = Array.from(aggregated.values());
@@ -160,6 +164,8 @@ export async function POST(req: Request) {
     let headerTotalQty = 0;
     let headerTotalItems = 0;
     let headerTotalWeight = new Prisma.Decimal("0");
+    let headerTotalStoneWeight = new Prisma.Decimal("0");
+    let headerTotalNetWeight = new Prisma.Decimal("0");
     let headerTotalCost = new Prisma.Decimal("0");
     let headerSellSubTotal = new Prisma.Decimal("0");
     const discount = clampDecimalNonNegative(decimal(String(body.discount ?? "0")));
@@ -230,6 +236,8 @@ export async function POST(req: Request) {
 
       let remainingQty = reqLine.qty;
       let remainingWeight = reqLine.goldWeight;
+      let remainingStoneWeight = reqLine.stoneWeight;
+      const originalGoldWeight = reqLine.goldWeight;
 
       for (const r of matchingReceipts) {
         if (remainingQty <= 0 && remainingWeight.lessThanOrEqualTo(new Prisma.Decimal("0"))) break;
@@ -258,6 +266,12 @@ export async function POST(req: Request) {
           : (r.totalCost ?? new Prisma.Decimal("0")).div(receiptWeight);
         const takeCost = effectiveWeight.mul(perGramCost);
         const lineSellCost = effectiveWeight.div(new Prisma.Decimal("8")).mul(reqLine.sellRatePer8g);
+        const stoneShare =
+          originalGoldWeight.equals(new Prisma.Decimal("0"))
+            ? new Prisma.Decimal("0")
+            : reqLine.stoneWeight.mul(effectiveWeight).div(originalGoldWeight);
+        const effectiveStoneWeight = stoneShare.greaterThan(remainingStoneWeight) ? remainingStoneWeight : stoneShare;
+        const effectiveNetWeight = effectiveWeight.plus(effectiveStoneWeight);
 
         await tx.sale.create({
           data: {
@@ -268,6 +282,8 @@ export async function POST(req: Request) {
             carat,
             qty: takeQty,
             goldWeight: effectiveWeight,
+            stoneWeight: effectiveStoneWeight,
+            netWeight: effectiveNetWeight,
             cost: takeCost,
             sellRatePer8g: reqLine.sellRatePer8g,
             sellCost: lineSellCost
@@ -276,10 +292,13 @@ export async function POST(req: Request) {
 
         remainingQty -= takeQty;
         remainingWeight = clampDecimalNonNegative(remainingWeight.minus(effectiveWeight));
+        remainingStoneWeight = clampDecimalNonNegative(remainingStoneWeight.minus(effectiveStoneWeight));
 
         headerTotalQty += takeQty;
         headerTotalItems += 1;
         headerTotalWeight = headerTotalWeight.plus(effectiveWeight);
+        headerTotalStoneWeight = headerTotalStoneWeight.plus(effectiveStoneWeight);
+        headerTotalNetWeight = headerTotalNetWeight.plus(effectiveNetWeight);
         headerTotalCost = headerTotalCost.plus(takeCost);
         headerSellSubTotal = headerSellSubTotal.plus(lineSellCost);
       }
@@ -296,6 +315,8 @@ export async function POST(req: Request) {
         totalItems: headerTotalItems,
         totalQty: headerTotalQty,
         totalGoldWeight: headerTotalWeight,
+        totalStoneWeight: headerTotalStoneWeight,
+        totalNetWeight: headerTotalNetWeight,
         totalCost: headerTotalCost,
         sellSubTotal: grandTotal
       }
@@ -312,6 +333,8 @@ export async function POST(req: Request) {
           memo: updatedHeader.saleNo,
           debit: grandTotal,
           credit: new Prisma.Decimal("0"),
+          goldIssued: headerTotalWeight,
+          goldReceived: new Prisma.Decimal("0"),
           accountNumber: acct,
           type: "INVOICE",
           referenceNumber: updatedHeader.saleNo,
@@ -327,6 +350,8 @@ export async function POST(req: Request) {
             memo: `Payment for ${updatedHeader.saleNo}`,
             debit: new Prisma.Decimal("0"),
             credit: paidAmount,
+            goldIssued: new Prisma.Decimal("0"),
+            goldReceived: new Prisma.Decimal("0"),
             accountNumber: acct,
             type: "PAYMENT",
             referenceNumber: updatedHeader.saleNo,
