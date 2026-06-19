@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/ToastProvider";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { type FocusEvent, useEffect, useMemo, useState } from "react";
 import { CalendarDays, Plus, Search, Save, Send, Trash2 } from "lucide-react";
 
 type CustomerRow = { id: number; name: string; phone?: string | null };
@@ -57,6 +57,10 @@ function sanitizeDecimal(raw: string) {
   return s.slice(0, firstDot + 1) + s.slice(firstDot + 1).replace(/\./g, "");
 }
 
+function selectOnFocus(e: FocusEvent<HTMLInputElement>) {
+  e.currentTarget.select();
+}
+
 export function SalesForm() {
   const router = useRouter();
   const toast = useToast();
@@ -72,8 +76,8 @@ export function SalesForm() {
   const [remarks, setRemarks] = useState("");
   const [salesType, setSalesType] = useState("Gold");
   const [paymentType, setPaymentType] = useState("Credit");
-  const [discount, setDiscount] = useState("");
-  const [paidAmount, setPaidAmount] = useState("");
+  const [discount, setDiscount] = useState("0");
+  const [paidAmount, setPaidAmount] = useState("0");
   const [itemSearch, setItemSearch] = useState("");
   const [invoiceNo, setInvoiceNo] = useState("");
   const [lines, setLines] = useState<Line[]>([
@@ -81,10 +85,10 @@ export function SalesForm() {
       id: uid(),
       subcategoryCode: "",
       carat: "",
-      qty: "",
-      goldWeight: "",
-      stoneWeight: "",
-      sellRatePer8g: ""
+      qty: "0",
+      goldWeight: "0",
+      stoneWeight: "0",
+      sellRatePer8g: "0"
     }
   ]);
   const [busy, setBusy] = useState(false);
@@ -372,10 +376,10 @@ export function SalesForm() {
         id: nextId,
         subcategoryCode: "",
         carat: "",
-        qty: "",
-        goldWeight: "",
-        stoneWeight: "",
-        sellRatePer8g: ""
+        qty: "0",
+        goldWeight: "0",
+        stoneWeight: "0",
+        sellRatePer8g: "0"
       }
     ]);
     setPendingFocusId(nextId);
@@ -439,17 +443,17 @@ export function SalesForm() {
           id: uid(),
           subcategoryCode: "",
           carat: "",
-          qty: "",
-          goldWeight: "",
-          stoneWeight: "",
-          sellRatePer8g: ""
+          qty: "0",
+          goldWeight: "0",
+          stoneWeight: "0",
+          sellRatePer8g: "0"
         }
       ]);
       setRemarks("");
       setSalesmanId("");
       setCustomerId("");
-      setDiscount("");
-      setPaidAmount("");
+      setDiscount("0");
+      setPaidAmount("0");
       setPaymentType("Credit");
       router.push(destination === "invoice" && Number.isFinite(savedSaleId) ? `/sales/${savedSaleId}` : "/sales");
     } catch (e) {
@@ -601,13 +605,13 @@ export function SalesForm() {
                       <td className="border border-ebony-100 px-3 py-2 text-center font-semibold text-ebony-700">
                         {index + 1}
                       </td>
-                      <td className="border border-ebony-100 p-0">
+                      <td className="border border-ebony-100 p-0 focus-within:bg-gold-50 focus-within:ring-2 focus-within:ring-inset focus-within:ring-gold-500">
                         <button
                           type="button"
                           onClick={() => openBarcodePicker(l.id)}
                           onKeyDown={(e) => handleTabNav(e, l.id, "subcategory")}
                           ref={(el) => setCellRef(l.id, "subcategory", el)}
-                          className="h-10 w-full min-w-40 border-0 bg-white px-2 text-left text-sm outline-none focus:bg-cream-50"
+                          className="h-10 w-full min-w-40 border-0 bg-transparent px-2 text-left text-sm outline-none focus:bg-gold-50"
                         >
                           {l.subcategoryCode || "Select item..."}
                         </button>
@@ -622,20 +626,22 @@ export function SalesForm() {
                         </td>
                       <td className="border border-ebony-100 px-3 py-2 font-medium text-ebony-800">{sub?.name ?? "-"}</td>
                       <td className="border border-ebony-100 px-3 py-2 font-semibold text-ebony-800">{l.carat || "-"}</td>
-                      <td className="border border-ebony-100 p-0">
+                      <td className="border border-ebony-100 p-0 focus-within:bg-gold-50 focus-within:ring-2 focus-within:ring-inset focus-within:ring-gold-500">
                         <input
                           inputMode="numeric"
                           value={l.qty}
+                          onFocus={selectOnFocus}
                           onChange={(e) => updateLine(l.id, { qty: sanitizeInt(e.target.value) })}
                           onKeyDown={(e) => handleTabNav(e, l.id, "qty")}
                           ref={(el) => setCellRef(l.id, "qty", el)}
-                          className="h-10 w-full border-0 bg-white px-2 text-right outline-none focus:bg-cream-50"
+                          className="h-10 w-full border-0 bg-transparent px-2 text-right outline-none focus:bg-gold-50"
                         />
                       </td>
-                      <td className="border border-ebony-100 p-0">
+                      <td className="border border-ebony-100 p-0 focus-within:bg-gold-50 focus-within:ring-2 focus-within:ring-inset focus-within:ring-gold-500">
                         <input
                           inputMode="decimal"
                           value={l.goldWeight}
+                          onFocus={selectOnFocus}
                           onChange={(e) => updateLine(l.id, { goldWeight: sanitizeDecimal(e.target.value) })}
                           onKeyDown={(e) => {
                             if (e.key !== "Tab") return;
@@ -648,7 +654,7 @@ export function SalesForm() {
                           }}
                           ref={(el) => setCellRef(l.id, "goldWeight", el)}
                           className={[
-                            "h-10 w-full border-0 bg-white px-2 text-right outline-none focus:bg-cream-50",
+                            "h-10 w-full border-0 bg-transparent px-2 text-right outline-none focus:bg-gold-50",
                             weightErrors.get(l.id) ? "text-red-700" : ""
                           ].join(" ")}
                         />
@@ -656,23 +662,25 @@ export function SalesForm() {
                           <div className="px-2 pb-1 text-xs font-semibold text-red-600">{weightErrors.get(l.id)}</div>
                         ) : null}
                       </td>
-                      <td className="border border-ebony-100 p-0">
+                      <td className="border border-ebony-100 p-0 focus-within:bg-gold-50 focus-within:ring-2 focus-within:ring-inset focus-within:ring-gold-500">
                         <input
                           inputMode="decimal"
                           value={l.stoneWeight}
+                          onFocus={selectOnFocus}
                           onChange={(e) => updateLine(l.id, { stoneWeight: sanitizeDecimal(e.target.value) })}
                           onKeyDown={(e) => handleTabNav(e, l.id, "stoneWeight")}
                           ref={(el) => setCellRef(l.id, "stoneWeight", el)}
-                          className="h-10 w-full border-0 bg-white px-2 text-right outline-none focus:bg-cream-50"
+                          className="h-10 w-full border-0 bg-transparent px-2 text-right outline-none focus:bg-gold-50"
                         />
                       </td>
                       <td className="border border-ebony-100 px-3 py-2 text-right tabular-nums text-ebony-700">
                         {netWeight.toFixed(3)}
                       </td>
-                      <td className="border border-ebony-100 p-0">
+                      <td className="border border-ebony-100 p-0 focus-within:bg-gold-50 focus-within:ring-2 focus-within:ring-inset focus-within:ring-gold-500">
                         <input
                           inputMode="decimal"
                           value={l.sellRatePer8g}
+                          onFocus={selectOnFocus}
                           onChange={(e) => updateLine(l.id, { sellRatePer8g: sanitizeDecimal(e.target.value) })}
                           onKeyDown={(e) => {
                             if (e.key === "Tab") return handleTabNav(e, l.id, "sellRate");
@@ -681,7 +689,7 @@ export function SalesForm() {
                             addLine();
                           }}
                           ref={(el) => setCellRef(l.id, "sellRate", el)}
-                          className="h-10 w-full border-0 bg-white px-2 text-right outline-none focus:bg-cream-50"
+                          className="h-10 w-full border-0 bg-transparent px-2 text-right outline-none focus:bg-gold-50"
                         />
                       </td>
                       <td className="border border-ebony-100 px-3 py-2 text-right font-bold tabular-nums text-ebony-900">
@@ -745,6 +753,7 @@ export function SalesForm() {
             <input
               inputMode="decimal"
               value={discount}
+              onFocus={selectOnFocus}
               onChange={(e) => setDiscount(sanitizeDecimal(e.target.value))}
               placeholder="0.00"
               className="h-9 w-32 rounded-md border border-ebony-200 px-2 text-right font-bold tabular-nums outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
@@ -759,6 +768,7 @@ export function SalesForm() {
             <input
               inputMode="decimal"
               value={paidAmount}
+              onFocus={selectOnFocus}
               onChange={(e) => setPaidAmount(sanitizeDecimal(e.target.value))}
               placeholder="0.00"
               className="h-9 w-32 rounded-md border border-ebony-200 px-2 text-right font-bold tabular-nums outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"

@@ -77,6 +77,10 @@ function sanitizeDecimal(raw: string) {
   return s.slice(0, firstDot + 1) + s.slice(firstDot + 1).replace(/\./g, "");
 }
 
+function selectOnFocus(e: React.FocusEvent<HTMLInputElement>) {
+  e.currentTarget.select();
+}
+
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -91,14 +95,14 @@ function emptyLine(): PurchaseLine & { id: string } {
     categoryCode: "",
     articleName: "",
     subcategoryCode: "",
-    qty: "",
+    qty: "0",
     description: "",
     carat: "",
     wastageYN: "N",
-    goldWeight: "",
-    wastageMg: "",
-    labourCharges: "",
-    otherCosts: ""
+    goldWeight: "0",
+    wastageMg: "0",
+    labourCharges: "0",
+    otherCosts: "0"
   };
 }
 
@@ -112,14 +116,14 @@ function emptyForm(): ReceiptFormState {
     categoryCode: "",
     articleName: "",
     subcategoryCode: "",
-    qty: "",
+    qty: "0",
     description: "",
     carat: "",
     wastageYN: "N",
-    goldWeight: "",
-    wastageMg: "",
-    labourCharges: "",
-    otherCosts: "",
+    goldWeight: "0",
+    wastageMg: "0",
+    labourCharges: "0",
+    otherCosts: "0",
     remarks: ""
   };
 }
@@ -827,72 +831,76 @@ export function ReceiptForm({
                               <td className="border border-ebony-100 px-1 py-1 text-center font-semibold text-ebony-700">
                                 {index + 1}
                               </td>
-                              <td className="border border-ebony-100 p-0">
+                              <td className="border border-ebony-100 p-0 focus-within:bg-gold-50 focus-within:ring-2 focus-within:ring-inset focus-within:ring-gold-500">
                                 <button
                                   type="button"
                                   onClick={() => openSubcategoryPicker(line.id)}
-                                  className="h-8 w-full truncate border-0 bg-white px-1 text-left text-[11px] outline-none focus:bg-cream-50"
+                                  className="h-8 w-full truncate border-0 bg-transparent px-1 text-left text-[11px] outline-none focus:bg-gold-50"
                                 >
                                   {line.subcategoryCode || "Select item..."}
                                 </button>
                                 {rowErrors.subcategoryCode && <FieldError>{rowErrors.subcategoryCode}</FieldError>}
                               </td>
-                              <td className="border border-ebony-100 p-0">
+                              <td className="border border-ebony-100 p-0 focus-within:bg-gold-50 focus-within:ring-2 focus-within:ring-inset focus-within:ring-gold-500">
                                 <input
                                   value={line.description}
                                   onChange={(e) => updateLine(line.id, "description", e.target.value)}
                                   placeholder="Item details"
-                                  className="h-8 w-full border-0 bg-white px-1 text-[11px] outline-none focus:bg-cream-50"
+                                  className="h-8 w-full border-0 bg-transparent px-1 text-[11px] outline-none focus:bg-gold-50"
                                 />
                               </td>
                               <td className="border border-ebony-100 px-1 py-1 font-semibold text-ebony-800">
                                 {line.carat || "-"}
                               </td>
-                              <td className="border border-ebony-100 p-0">
+                              <td className="border border-ebony-100 p-0 focus-within:bg-gold-50 focus-within:ring-2 focus-within:ring-inset focus-within:ring-gold-500">
                                 <input
                                   inputMode="numeric"
                                   value={line.qty}
+                                  onFocus={selectOnFocus}
                                   onChange={(e) => updateLine(line.id, "qty", sanitizeInt(e.target.value))}
-                                  className="h-8 w-full border-0 bg-white px-1 text-right text-[11px] outline-none focus:bg-cream-50"
+                                  className="h-8 w-full border-0 bg-transparent px-1 text-right text-[11px] outline-none focus:bg-gold-50"
                                 />
                                 {rowErrors.qty && <FieldError>{rowErrors.qty}</FieldError>}
                               </td>
-                              <td className="border border-ebony-100 p-0">
+                              <td className="border border-ebony-100 p-0 focus-within:bg-gold-50 focus-within:ring-2 focus-within:ring-inset focus-within:ring-gold-500">
                                 <select
                                   value={line.wastageYN}
                                   onChange={(e) => updateLine(line.id, "wastageYN", e.target.value as "Y" | "N")}
-                                  className="h-8 w-full border-0 bg-white px-1 text-[11px] outline-none focus:bg-cream-50"
+                                  className="h-8 w-full border-0 bg-transparent px-1 text-[11px] outline-none focus:bg-gold-50"
                                 >
                                   <option value="N">N</option>
                                   <option value="Y">Y</option>
                                 </select>
                               </td>
-                              <td className="border border-ebony-100 p-0">
+                              <td className="border border-ebony-100 p-0 focus-within:bg-gold-50 focus-within:ring-2 focus-within:ring-inset focus-within:ring-gold-500">
                                 <input
                                   inputMode="decimal"
                                   value={line.goldWeight}
+                                  onFocus={selectOnFocus}
                                   onChange={(e) => updateLine(line.id, "goldWeight", sanitizeDecimal(e.target.value))}
-                                  className="h-8 w-full border-0 bg-white px-1 text-right text-[11px] outline-none focus:bg-cream-50"
+                                  className="h-8 w-full border-0 bg-transparent px-1 text-right text-[11px] outline-none focus:bg-gold-50"
                                 />
                                 {rowErrors.goldWeight && <FieldError>{rowErrors.goldWeight}</FieldError>}
                               </td>
-                              <td className="border border-ebony-100 p-0">
+                              <td className="border border-ebony-100 p-0 focus-within:bg-gold-50 focus-within:ring-2 focus-within:ring-inset focus-within:ring-gold-500">
                                 <input
                                   inputMode="decimal"
                                   readOnly={form.purchaseType === "Gold"}
                                   disabled={line.wastageYN !== "Y"}
                                   value={generatedWastage}
+                                  onFocus={selectOnFocus}
                                   onChange={(e) => updateLine(line.id, "wastageMg", sanitizeDecimal(e.target.value))}
-                                  className="h-8 w-full border-0 bg-white px-1 text-right text-[11px] outline-none focus:bg-cream-50 disabled:bg-ebony-50 read-only:bg-ebony-50"
+                                  className="h-8 w-full border-0 bg-transparent px-1 text-right text-[11px] outline-none focus:bg-gold-50 disabled:bg-ebony-50 read-only:bg-ebony-50"
                                 />
                                 {rowErrors.wastageMg && <FieldError>{rowErrors.wastageMg}</FieldError>}
                               </td>
-                              <td className="border border-ebony-100 p-0">
+                              <td className="border border-ebony-100 p-0 focus-within:bg-gold-50 focus-within:ring-2 focus-within:ring-inset focus-within:ring-gold-500">
                                 <input
                                   inputMode="decimal"
                                   value={line.labourCharges}
+                                  onFocus={selectOnFocus}
                                   onChange={(e) => updateLine(line.id, "labourCharges", sanitizeDecimal(e.target.value))}
-                                  className="h-8 w-full border-0 bg-white px-1 text-right text-[11px] outline-none focus:bg-cream-50"
+                                  className="h-8 w-full border-0 bg-transparent px-1 text-right text-[11px] outline-none focus:bg-gold-50"
                                 />
                                 {rowErrors.labourCharges && <FieldError>{rowErrors.labourCharges}</FieldError>}
                               </td>
@@ -1089,6 +1097,7 @@ export function ReceiptForm({
                   <input
                     inputMode="numeric"
                     value={form.qty}
+                    onFocus={selectOnFocus}
                     onChange={(e) => update("qty", sanitizeInt(e.target.value))}
                     placeholder="0"
                     className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
@@ -1111,7 +1120,9 @@ export function ReceiptForm({
                 <label className="space-y-2 text-sm">
                   <div className="font-bold text-ebony-700">Gold Weight</div>
                   <input
+                    inputMode="decimal"
                     value={form.goldWeight}
+                    onFocus={selectOnFocus}
                     onChange={(e) => update("goldWeight", sanitizeDecimal(e.target.value))}
                     placeholder="grams"
                     className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
@@ -1134,6 +1145,7 @@ export function ReceiptForm({
                     inputMode="decimal"
                     disabled={form.wastageYN !== "Y"}
                     value={form.wastageMg}
+                    onFocus={selectOnFocus}
                     onChange={(e) => update("wastageMg", sanitizeDecimal(e.target.value))}
                     placeholder={form.wastageYN === "Y" ? "0" : "Enable wastage to enter"}
                     className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30 disabled:opacity-60"
@@ -1155,6 +1167,7 @@ export function ReceiptForm({
                   <input
                     inputMode="decimal"
                     value={form.labourCharges}
+                    onFocus={selectOnFocus}
                     onChange={(e) => update("labourCharges", sanitizeDecimal(e.target.value))}
                     placeholder="0.00"
                     className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
@@ -1167,6 +1180,7 @@ export function ReceiptForm({
                   <input
                     inputMode="decimal"
                     value={form.otherCosts}
+                    onFocus={selectOnFocus}
                     onChange={(e) => update("otherCosts", sanitizeDecimal(e.target.value))}
                     placeholder="0.00"
                     className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
