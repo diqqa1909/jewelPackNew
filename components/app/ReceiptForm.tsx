@@ -43,7 +43,10 @@ type PurchaseLine = Pick<
   | "wastageMg"
   | "labourCharges"
   | "otherCosts"
->;
+> & {
+  goldCostRatePer8g: string;
+  wastageRateMgPer8g: string;
+};
 const CARAT_VALUES = ["18K", "19K", "20K", "21K", "22K", "24K"];
 
 function normalizeCarat(value: string | null | undefined) {
@@ -102,7 +105,9 @@ function emptyLine(): PurchaseLine & { id: string } {
     goldWeight: "0",
     wastageMg: "0",
     labourCharges: "0",
-    otherCosts: "0"
+    otherCosts: "0",
+    goldCostRatePer8g: "0",
+    wastageRateMgPer8g: "0"
   };
 }
 
@@ -174,6 +179,8 @@ export function ReceiptForm({
     goldCostRatePer8g: "",
     wastageRateMgPer8g: ""
   });
+  const [savedSystemForm, setSavedSystemForm] = useState(systemForm);
+  const [formRates, setFormRates] = useState({ goldCostRatePer8g: 0, wastageRateMgPer8g: 0 });
   const [systemSaveState, setSystemSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [subcatForm, setSubcatForm] = useState({ categoryCode: "", name: "", carat: "" });
   const [subcatSaveState, setSubcatSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -192,18 +199,46 @@ export function ReceiptForm({
   }, [subcatPreviewUrl]);
 
   function update<K extends keyof ReceiptFormState>(key: K, value: ReceiptFormState[K]) {
+    if (key === "goldWeight" || key === "wastageYN") {
+      setFormRates({
+        goldCostRatePer8g: system?.goldCostRatePer8g ?? 0,
+        wastageRateMgPer8g: system?.wastageRateMgPer8g ?? 0
+      });
+    }
     setForm((prev) => ({ ...prev, [key]: value }));
     setErrors((prev) => ({ ...prev, [key]: undefined, form: undefined }));
   }
 
   function updateLine<K extends keyof PurchaseLine>(id: string, key: K, value: PurchaseLine[K]) {
-    setLines((prev) => prev.map((line) => (line.id === id ? { ...line, [key]: value } : line)));
+    setLines((prev) =>
+      prev.map((line) =>
+        line.id === id
+          ? {
+              ...line,
+              [key]: value,
+              ...(key === "goldWeight" || key === "wastageYN"
+                ? {
+                    goldCostRatePer8g: String(system?.goldCostRatePer8g ?? 0),
+                    wastageRateMgPer8g: String(system?.wastageRateMgPer8g ?? 0)
+                  }
+                : {})
+            }
+          : line
+      )
+    );
     setLineErrors((prev) => ({ ...prev, [id]: { ...prev[id], [key]: undefined } }));
     setErrors((prev) => ({ ...prev, form: undefined }));
   }
 
   function addLine() {
-    setLines((prev) => [...prev, emptyLine()]);
+    setLines((prev) => [
+      ...prev,
+      {
+        ...emptyLine(),
+        goldCostRatePer8g: String(system?.goldCostRatePer8g ?? 0),
+        wastageRateMgPer8g: String(system?.wastageRateMgPer8g ?? 0)
+      }
+    ]);
   }
 
   function removeLine(id: string) {
@@ -279,13 +314,19 @@ export function ReceiptForm({
           goldCostRatePer8g: Number(data?.goldCostRatePer8g ?? 0) || 0,
           wastageRateMgPer8g: Number(data?.wastageRateMgPer8g ?? 0) || 0
         });
+        setFormRates({
+          goldCostRatePer8g: Number(data?.goldCostRatePer8g ?? 0) || 0,
+          wastageRateMgPer8g: Number(data?.wastageRateMgPer8g ?? 0) || 0
+        });
         if (data) {
-          setSystemForm({
+          const nextSystemForm = {
             vatRate: String(data.vatRate ?? ""),
             nslRate: String(data.nslRate ?? ""),
             goldCostRatePer8g: String(data.goldCostRatePer8g ?? ""),
             wastageRateMgPer8g: String(data.wastageRateMgPer8g ?? "")
-          });
+          };
+          setSystemForm(nextSystemForm);
+          setSavedSystemForm(nextSystemForm);
         }
       } catch {
         // ignore
@@ -390,12 +431,12 @@ export function ReceiptForm({
 
   useEffect(() => {
     if (form.purchaseType !== "Gold" || form.wastageYN !== "Y") return;
-    const rate = system?.wastageRateMgPer8g ?? 0;
+    const rate = formRates.wastageRateMgPer8g;
     const generated = (toNumber(form.goldWeight) / 8) * rate;
     const next = generated > 0 ? generated.toFixed(3) : "";
     if (form.wastageMg !== next) update("wastageMg", next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.goldWeight, form.purchaseType, form.wastageYN, system?.wastageRateMgPer8g]);
+  }, [form.goldWeight, form.purchaseType, form.wastageYN, formRates.wastageRateMgPer8g]);
 
   useEffect(() => {
     if (mode === "edit" && initialValues) {
@@ -442,16 +483,16 @@ export function ReceiptForm({
 
   const goldCostCalculated = useMemo(() => {
     const weight = toNumber(form.goldWeight);
-    const rate = system?.goldCostRatePer8g ?? 0;
+    const rate = formRates.goldCostRatePer8g;
     return (weight / 8) * rate;
-  }, [form.goldWeight, system?.goldCostRatePer8g]);
+  }, [form.goldWeight, formRates.goldCostRatePer8g]);
 
   const wastageCostCalculated = useMemo(() => {
     if (form.wastageYN !== "Y") return 0;
     const weight = toNumber(form.goldWeight);
-    const goldRate = system?.goldCostRatePer8g ?? 0;
+    const goldRate = formRates.goldCostRatePer8g;
     return (weight / 8) * goldRate;
-  }, [form.goldWeight, form.wastageYN, system?.goldCostRatePer8g]);
+  }, [form.goldWeight, form.wastageYN, formRates.goldCostRatePer8g]);
 
   const totalCost = useMemo(() => {
     return (
@@ -464,18 +505,18 @@ export function ReceiptForm({
 
   function lineGeneratedWastage(line: PurchaseLine) {
     if (form.purchaseType !== "Gold" || line.wastageYN !== "Y") return line.wastageMg;
-    const rate = system?.wastageRateMgPer8g ?? 0;
+    const rate = toNumber(line.wastageRateMgPer8g);
     const generated = (toNumber(line.goldWeight) / 8) * rate;
     return generated > 0 ? generated.toFixed(3) : "";
   }
 
   function lineGoldCost(line: PurchaseLine) {
-    return (toNumber(line.goldWeight) / 8) * (system?.goldCostRatePer8g ?? 0);
+    return (toNumber(line.goldWeight) / 8) * toNumber(line.goldCostRatePer8g);
   }
 
   function lineWastageCost(line: PurchaseLine) {
     if (line.wastageYN !== "Y") return 0;
-    return (toNumber(line.goldWeight) / 8) * (system?.goldCostRatePer8g ?? 0);
+    return (toNumber(line.goldWeight) / 8) * toNumber(line.goldCostRatePer8g);
   }
 
   function lineTotalCost(line: PurchaseLine) {
@@ -494,7 +535,7 @@ export function ReceiptForm({
       { goldCost: 0, wastageCost: 0, labour: 0, total: 0 }
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lines, system?.goldCostRatePer8g, form.purchaseType]);
+  }, [lines, form.purchaseType]);
 
   function validate(): boolean {
     const next: Errors = {};
@@ -609,16 +650,22 @@ export function ReceiptForm({
       goldCostRatePer8g: Number(data?.goldCostRatePer8g ?? 0) || 0,
       wastageRateMgPer8g: Number(data?.wastageRateMgPer8g ?? 0) || 0
     });
-    setSystemForm({
+    const nextSystemForm = {
       vatRate: String(data?.vatRate ?? ""),
       nslRate: String(data?.nslRate ?? ""),
       goldCostRatePer8g: String(data?.goldCostRatePer8g ?? ""),
       wastageRateMgPer8g: String(data?.wastageRateMgPer8g ?? "")
-    });
+    };
+    setSystemForm(nextSystemForm);
+    setSavedSystemForm(nextSystemForm);
   }
 
   async function saveSystemData(e: React.FormEvent) {
     e.preventDefault();
+    if (JSON.stringify(systemForm) === JSON.stringify(savedSystemForm)) {
+      setSystemModalOpen(false);
+      return;
+    }
     setSystemSaveState("saving");
     try {
       const res = await fetch("/api/system", {
@@ -627,7 +674,11 @@ export function ReceiptForm({
         body: JSON.stringify(systemForm)
       });
       if (!res.ok) throw new Error("Save failed");
-      await refreshSystem();
+      setSystem({
+        goldCostRatePer8g: Number(systemForm.goldCostRatePer8g ?? 0) || 0,
+        wastageRateMgPer8g: Number(systemForm.wastageRateMgPer8g ?? 0) || 0
+      });
+      setSavedSystemForm(systemForm);
       setSystemSaveState("saved");
       setTimeout(() => setSystemSaveState("idle"), 1500);
       setSystemModalOpen(false);

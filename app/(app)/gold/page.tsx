@@ -121,7 +121,7 @@ export default async function GoldPage({
   const runningByGoldsmith = new Map<string, number>();
   const ledgerAsc = movementRows.map((row) => {
     const key = row.goldsmithCode || row.goldsmithName || "-";
-    const balance = (runningByGoldsmith.get(key) ?? 0) + row.issued - row.received;
+    const balance = (runningByGoldsmith.get(key) ?? 0) + row.received - row.issued;
     runningByGoldsmith.set(key, balance);
     return { ...row, balance };
   });
@@ -155,7 +155,7 @@ export default async function GoldPage({
     goldsmithParam && from
       ? movementRows
           .filter((row) => matchesGoldsmith(row) && row.date < from)
-          .reduce((sum, row) => sum + row.issued - row.received, 0)
+          .reduce((sum, row) => sum + row.received - row.issued, 0)
       : 0;
 
   const filteredMovements = movementRows.filter((row) => {
@@ -170,7 +170,7 @@ export default async function GoldPage({
   if (goldsmithParam) filteredRunningByGoldsmith.set(goldsmithParam, openingBalance);
   const filteredLedgerAsc = filteredMovements.map((row) => {
     const key = row.goldsmithCode || row.goldsmithName || "-";
-    const balance = (filteredRunningByGoldsmith.get(key) ?? 0) + row.issued - row.received;
+    const balance = (filteredRunningByGoldsmith.get(key) ?? 0) + row.received - row.issued;
     filteredRunningByGoldsmith.set(key, balance);
     return { ...row, balance };
   });
@@ -184,7 +184,7 @@ export default async function GoldPage({
     },
     { issued: 0, received: 0 }
   );
-  const balanceTotal = goldsmithParam ? openingBalance + totals.issued - totals.received : totals.issued - totals.received;
+  const balanceTotal = goldsmithParam ? openingBalance + totals.received - totals.issued : totals.received - totals.issued;
 
   const balances = Array.from(
     filteredLedgerAsc
@@ -201,7 +201,7 @@ export default async function GoldPage({
         };
         current.issued += row.issued;
         current.received += row.received;
-        current.balance += row.issued - row.received;
+        current.balance += row.received - row.issued;
         current.transactions += 1;
         map.set(key, current);
         return map;
