@@ -1,3 +1,4 @@
+import { GoldIssueButton } from "@/components/app/GoldIssueActions";
 import { prismaWithRetry } from "@/lib/prisma";
 import { ArrowDownLeft, ArrowUpRight, Filter, Gem, Search } from "lucide-react";
 import Link from "next/link";
@@ -61,7 +62,14 @@ export default async function GoldPage({
   const from = parseDate(fromParam);
   const to = parseDate(toParam, true);
 
-  const [purchases, sales] = await Promise.all([
+  const [goldsmiths, goldIssues, purchases, sales] = await Promise.all([
+    prismaWithRetry((p) => p.goldsmith.findMany({ orderBy: [{ name: "asc" }] })),
+    prismaWithRetry((p) =>
+      p.goldIssue.findMany({
+        include: { goldsmith: true },
+        orderBy: [{ issueDate: "asc" }, { id: "asc" }]
+      })
+    ),
     prismaWithRetry((p) =>
       p.purchase.findMany({
         where: {
@@ -88,6 +96,20 @@ export default async function GoldPage({
   ]);
 
   const movementRows: Omit<GoldLedgerRow, "balance">[] = [
+    ...goldIssues.map((issue) => ({
+      id: `GOLD-${issue.id}`,
+      date: issue.issueDate,
+      type: "ISSUED" as const,
+      reference: issue.referenceNumber ?? `GI-${String(issue.id).padStart(5, "0")}`,
+      supplier: "Direct Issue",
+      goldsmithCode: issue.goldsmithCode,
+      goldsmithName: issue.goldsmith.name,
+      item: "Gold Issue",
+      carat: issue.carat,
+      issued: toNumber(issue.goldWeight),
+      received: 0,
+      remarks: issue.remarks ?? ""
+    })),
     ...purchases.map((purchase) => ({
       id: `PUR-${purchase.id}`,
       date: purchase.purchaseDate,
@@ -127,10 +149,13 @@ export default async function GoldPage({
   });
 
   const goldsmithOptions = Array.from(
-    ledgerAsc
+    [
+      ...goldsmiths.map((g) => ({ code: g.code, name: g.name })),
+      ...ledgerAsc.map((row) => ({ code: row.goldsmithCode, name: row.goldsmithName }))
+    ]
       .reduce((map, row) => {
-        const key = row.goldsmithCode || row.goldsmithName || "-";
-        if (!map.has(key)) map.set(key, { code: row.goldsmithCode, name: row.goldsmithName });
+        const key = row.code || row.name || "-";
+        if (!map.has(key)) map.set(key, { code: row.code, name: row.name });
         return map;
       }, new Map<string, { code: string; name: string }>())
       .values()
@@ -208,6 +233,22 @@ export default async function GoldPage({
       }, new Map<string, { goldsmithCode: string; goldsmithName: string; supplier: string; issued: number; received: number; balance: number; transactions: number }>())
       .values()
   ).sort((a, b) => b.balance - a.balance || a.goldsmithName.localeCompare(b.goldsmithName));
+
+  for (const goldsmith of goldsmithOptions) {
+    if (goldsmithParam && goldsmith.code !== goldsmithParam) continue;
+    if (balances.some((row) => row.goldsmithCode === goldsmith.code)) continue;
+    balances.push({
+      goldsmithCode: goldsmith.code,
+      goldsmithName: goldsmith.name,
+      supplier: "-",
+      issued: 0,
+      received: 0,
+      balance: goldsmithParam ? openingBalance : 0,
+      transactions: 0
+    });
+  }
+
+  balances.sort((a, b) => b.balance - a.balance || a.goldsmithName.localeCompare(b.goldsmithName));
 
   if (goldsmithParam && balances.length === 0) {
     balances.push({
@@ -338,6 +379,7 @@ export default async function GoldPage({
                 <th className="px-4 py-3 text-right">Received (g)</th>
                 <th className="px-4 py-3 text-right">Balance (g)</th>
                 <th className="px-4 py-3 text-right">Transactions</th>
+                <th className="px-4 py-3 text-center">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-ebony-100">
@@ -354,11 +396,14 @@ export default async function GoldPage({
                   <td className="px-4 py-3 text-right tabular-nums text-ebony-800">{weight(row.received)}</td>
                   <td className="px-4 py-3 text-right font-extrabold tabular-nums text-ebony-900">{weight(row.balance)}</td>
                   <td className="px-4 py-3 text-right tabular-nums text-ebony-700">{row.transactions}</td>
+                  <td className="px-4 py-3 text-center">
+                    <GoldIssueButton goldsmith={{ code: row.goldsmithCode, name: row.goldsmithName }} />
+                  </td>
                 </tr>
               ))}
               {balances.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-8 text-center text-sm text-ebony-600" colSpan={6}>
+                  <td className="px-4 py-8 text-center text-sm text-ebony-600" colSpan={7}>
                     No gold transactions found.
                   </td>
                 </tr>

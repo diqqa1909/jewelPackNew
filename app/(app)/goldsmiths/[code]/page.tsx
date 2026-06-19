@@ -96,7 +96,7 @@ export default async function GoldsmithTrackingPage({ params }: { params: { code
             <thead className="bg-ebony-50 text-left text-xs font-bold text-ebony-700">
               <tr>
                 <th className="px-4 py-4">Worker Name</th>
-                <th className="px-4 py-4 text-right">Gold Given (g)</th>
+                <th className="px-4 py-4 text-right">Received (g)</th>
                 <th className="px-4 py-4 text-right">Returned (g)</th>
                 <th className="px-4 py-4 text-right">Wastage (g)</th>
                 <th className="px-4 py-4 text-right">Pending (g)</th>
@@ -165,7 +165,7 @@ export default async function GoldsmithTrackingPage({ params }: { params: { code
                 <th className="px-4 py-3 text-right">Received</th>
                 <th className="px-4 py-3 text-right">Returned</th>
                 <th className="px-4 py-3 text-right">Pending</th>
-                <th className="px-4 py-3 text-right">Labour Charge Paid</th>
+                <th className="px-4 py-3 text-right">Paid</th>
                 <th className="px-4 py-3 text-right">Balance</th>
                 <th className="px-4 py-3 text-right">Labour</th>
                 <th className="px-4 py-3 text-center">Action</th>

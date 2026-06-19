@@ -60,6 +60,25 @@ model Goldsmith {
   name      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  goldIssues GoldIssue[]
+}
+
+model GoldIssue {
+  id              Int      @id @default(autoincrement())
+  issueDate       DateTime @db.Date
+  goldsmithCode   String
+  goldsmith       Goldsmith @relation(fields: [goldsmithCode], references: [code], onDelete: Restrict)
+  carat           String
+  goldWeight      Decimal  @default(0) @db.Decimal(12, 3)
+  referenceNumber String?
+  remarks         String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([issueDate])
+  @@index([goldsmithCode])
+  @@map("gold_issues")
 }
 
 model Supplier {
