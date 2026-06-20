@@ -62,7 +62,7 @@ export default async function GoldPage({
   const from = parseDate(fromParam);
   const to = parseDate(toParam, true);
 
-  const [goldsmiths, goldIssues, purchases, sales] = await Promise.all([
+  const [goldsmiths, goldIssues, purchases] = await Promise.all([
     prismaWithRetry((p) => p.goldsmith.findMany({ orderBy: [{ name: "asc" }] })),
     prismaWithRetry((p) =>
       p.goldIssue.findMany({
@@ -77,20 +77,6 @@ export default async function GoldPage({
         },
         include: { supplier: true },
         orderBy: [{ purchaseDate: "asc" }, { id: "asc" }]
-      })
-    ),
-    prismaWithRetry((p) =>
-      p.sale.findMany({
-        where: {
-          purchase: {
-            OR: [{ gsmCode: { not: null } }, { gsmName: { not: null } }]
-          }
-        },
-        include: {
-          salesNTX: true,
-          purchase: { include: { supplier: true } }
-        },
-        orderBy: [{ createdAt: "asc" }, { id: "asc" }]
       })
     )
   ]);
@@ -113,30 +99,16 @@ export default async function GoldPage({
     ...purchases.map((purchase) => ({
       id: `PUR-${purchase.id}`,
       date: purchase.purchaseDate,
-      type: "ISSUED" as const,
+      type: "RECEIVED" as const,
       reference: purchase.purchaseNo,
       supplier: purchase.supplier?.name ?? "-",
       goldsmithCode: purchase.gsmCode ?? purchase.gsmName ?? "-",
       goldsmithName: purchase.gsmName ?? purchase.gsmCode ?? "-",
       item: purchase.subcategoryName ?? purchase.subcategoryCode ?? "-",
       carat: purchase.carat ?? "-",
-      issued: toNumber(purchase.goldWeight),
-      received: 0,
-      remarks: purchase.remarks ?? purchase.notes ?? ""
-    })),
-    ...sales.map((sale) => ({
-      id: `SAL-${sale.id}`,
-      date: sale.salesNTX.transactionDate,
-      type: "RECEIVED" as const,
-      reference: sale.salesNTX.saleNo,
-      supplier: sale.purchase?.supplier?.name ?? "-",
-      goldsmithCode: sale.purchase?.gsmCode ?? sale.purchase?.gsmName ?? "-",
-      goldsmithName: sale.purchase?.gsmName ?? sale.purchase?.gsmCode ?? "-",
-      item: sale.purchase?.subcategoryName ?? sale.subcategoryCode,
-      carat: sale.carat ?? sale.purchase?.carat ?? "-",
       issued: 0,
-      received: toNumber(sale.goldWeight),
-      remarks: sale.salesNTX.remarks ?? ""
+      received: toNumber(purchase.goldWeight),
+      remarks: purchase.remarks ?? purchase.notes ?? ""
     }))
   ].sort((a, b) => a.date.getTime() - b.date.getTime() || a.id.localeCompare(b.id));
 

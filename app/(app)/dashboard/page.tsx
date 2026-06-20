@@ -178,39 +178,30 @@ export default async function DashboardPage() {
     .map(([name, value]) => ({ name, value }))
     .sort((a, b) => b.value - a.value)
     .slice(0, 8);
-  const soldByPurchase = inventorySales.reduce((map, sale) => {
-    if (sale.purchaseId == null) return map;
-    const current = map.get(sale.purchaseId) ?? { qty: 0, weight: 0 };
-    current.qty += Number(sale.qty ?? 0);
-    current.weight += toNumber(sale.goldWeight);
-    map.set(sale.purchaseId, current);
-    return map;
-  }, new Map<number, { qty: number; weight: number }>());
-  const workerPending = Array.from(
+  const goldsmithReceivedStock = Array.from(
     inventoryPurchases
       .reduce((map, purchase) => {
         const gsmCode = (purchase.gsmCode ?? "").trim();
         const gsmName = (purchase.gsmName ?? "").trim();
         if (!gsmCode && !gsmName) return map;
-        const sold = soldByPurchase.get(purchase.id) ?? { qty: 0, weight: 0 };
-        const pendingQty = Math.max(0, Number(purchase.qty ?? 0) - sold.qty);
-        const pendingWeight = Math.max(0, toNumber(purchase.goldWeight) - sold.weight);
-        if (pendingQty <= 0 && pendingWeight <= 0) return map;
+        const receivedQty = Number(purchase.qty ?? 0);
+        const receivedWeight = toNumber(purchase.goldWeight);
+        if (receivedQty <= 0 && receivedWeight <= 0) return map;
         const key = gsmCode || gsmName;
         const current = map.get(key) ?? {
           gsmCode: key,
           gsmName: gsmName || gsmCode || "-",
-          balanceQty: 0,
-          balanceGoldWeight: 0
+          receivedQty: 0,
+          receivedGoldWeight: 0
         };
-        current.balanceQty += pendingQty;
-        current.balanceGoldWeight += pendingWeight;
+        current.receivedQty += receivedQty;
+        current.receivedGoldWeight += receivedWeight;
         map.set(key, current);
         return map;
-      }, new Map<string, { gsmCode: string; gsmName: string; balanceQty: number; balanceGoldWeight: number }>())
+      }, new Map<string, { gsmCode: string; gsmName: string; receivedQty: number; receivedGoldWeight: number }>())
       .values()
   )
-    .sort((a, b) => b.balanceQty - a.balanceQty)
+    .sort((a, b) => b.receivedQty - a.receivedQty)
     .slice(0, 8);
   const invAmountToday = toNumber(invAggToday._sum.sellSubTotal ?? 0);
   const invCountToday = invAggToday._count._all ?? 0;
@@ -430,30 +421,30 @@ export default async function DashboardPage() {
         </div>
 
         <div className="rounded-lg border border-ebony-100 bg-white p-5 shadow-sm xl:col-span-4">
-          <h2 className="mb-3 text-sm font-bold text-indigo-900">Worker Pending Jobs</h2>
+          <h2 className="mb-3 text-sm font-bold text-indigo-900">Goldsmith Received Stock</h2>
           <div className="overflow-hidden rounded-lg border border-ebony-100">
             <table className="w-full text-sm">
               <thead className="bg-ebony-50 text-left text-[11px] font-bold uppercase tracking-wide text-ebony-600">
                 <tr>
                   <th className="px-4 py-3">Worker</th>
-                  <th className="px-4 py-3 text-right">Pending Items</th>
-                  <th className="px-4 py-3 text-right">Gold Given</th>
+                  <th className="px-4 py-3 text-right">Received Items</th>
+                  <th className="px-4 py-3 text-right">Gold Received</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-ebony-100">
-                {workerPending.slice(0, 5).map((r) => (
+                {goldsmithReceivedStock.slice(0, 5).map((r) => (
                   <tr key={r.gsmCode} className="bg-white">
                     <td className="px-4 py-3 font-semibold text-ebony-900">{r.gsmName}</td>
-                    <td className="px-4 py-3 text-right font-semibold tabular-nums text-ebony-800">{r.balanceQty}</td>
+                    <td className="px-4 py-3 text-right font-semibold tabular-nums text-ebony-800">{r.receivedQty}</td>
                     <td className="px-4 py-3 text-right font-semibold tabular-nums text-ebony-800">
-                      {formatWeight(r.balanceGoldWeight)}
+                      {formatWeight(r.receivedGoldWeight)}
                     </td>
                   </tr>
                 ))}
-                {workerPending.length === 0 ? (
+                {goldsmithReceivedStock.length === 0 ? (
                   <tr>
                     <td className="px-4 py-8 text-center text-sm text-ebony-600" colSpan={3}>
-                      No pending jobs.
+                      No received stock found.
                     </td>
                   </tr>
                 ) : null}

@@ -35,7 +35,7 @@ const REPORT_TITLES: Record<ReportType, string> = {
   "profit-loss": "Profit & Loss",
   "customer-outstanding": "Customer Outstanding",
   "supplier-outstanding": "Supplier Outstanding",
-  "goldsmith-pending": "Goldsmith Pending Jobs",
+  "goldsmith-pending": "Goldsmith Received Stock",
   payments: "Payments",
   cashbook: "Cashbook"
 };
@@ -453,43 +453,34 @@ export async function GET(req: Request) {
   }
 
   if (type === "goldsmith-pending") {
-    const [purchases, sales] = await Promise.all([
-      prisma.purchase.findMany({ where: { ...(goldsmithCode ? { gsmCode: goldsmithCode } : {}) }, select: { id: true, gsmCode: true, gsmName: true, subcategoryName: true, qty: true, goldWeight: true } }),
-      prisma.sale.findMany({ select: { purchaseId: true, qty: true, goldWeight: true } })
-    ]);
-    const soldByPurchase = sales.reduce((map, sale) => {
-      if (sale.purchaseId == null) return map;
-      const current = map.get(sale.purchaseId) ?? { qty: 0, weight: 0 };
-      current.qty += sale.qty;
-      current.weight += toNumber(sale.goldWeight);
-      map.set(sale.purchaseId, current);
-      return map;
-    }, new Map<number, { qty: number; weight: number }>());
+    const purchases = await prisma.purchase.findMany({
+      where: { ...(goldsmithCode ? { gsmCode: goldsmithCode } : {}) },
+      select: { id: true, gsmCode: true, gsmName: true, subcategoryName: true, qty: true, goldWeight: true }
+    });
     const map = new Map<string, Row>();
     for (const p of purchases) {
-      const sold = soldByPurchase.get(p.id) ?? { qty: 0, weight: 0 };
-      const pendingQty = Math.max(0, p.qty - sold.qty);
-      const pendingWeight = Math.max(0, toNumber(p.goldWeight) - sold.weight);
-      if (pendingQty <= 0 && pendingWeight <= 0) continue;
+      const receivedQty = p.qty;
+      const receivedWeight = toNumber(p.goldWeight);
+      if (receivedQty <= 0 && receivedWeight <= 0) continue;
       const key = p.gsmCode ?? p.gsmName ?? "No goldsmith";
-      const row = map.get(key) ?? { label: p.gsmName ?? key, pendingQty: 0, pendingWeight: 0, jobs: 0 };
-      row.jobs = toNumber(row.jobs) + 1;
-      row.pendingQty = toNumber(row.pendingQty) + pendingQty;
-      row.pendingWeight = toNumber(row.pendingWeight) + pendingWeight;
+      const row = map.get(key) ?? { label: p.gsmName ?? key, receivedQty: 0, receivedWeight: 0, entries: 0 };
+      row.entries = toNumber(row.entries) + 1;
+      row.receivedQty = toNumber(row.receivedQty) + receivedQty;
+      row.receivedWeight = toNumber(row.receivedWeight) + receivedWeight;
       map.set(key, row);
     }
-    const rows = Array.from(map.values()).sort((a, b) => toNumber(b.pendingWeight) - toNumber(a.pendingWeight));
+    const rows = Array.from(map.values()).sort((a, b) => toNumber(b.receivedWeight) - toNumber(a.receivedWeight));
     return reportResponse({
       type,
       columns: [
         { key: "label", label: "Goldsmith" },
-        { key: "jobs", label: "Open Jobs", type: "number" },
-        { key: "pendingQty", label: "Pending Qty", type: "number" },
-        { key: "pendingWeight", label: "Gold Given", type: "weight" }
+        { key: "entries", label: "Entries", type: "number" },
+        { key: "receivedQty", label: "Received Qty", type: "number" },
+        { key: "receivedWeight", label: "Gold Received", type: "weight" }
       ],
       rows,
-      totals: sumRows(rows, ["jobs", "pendingQty", "pendingWeight"]),
-      chartKey: "pendingWeight",
+      totals: sumRows(rows, ["entries", "receivedQty", "receivedWeight"]),
+      chartKey: "receivedWeight",
       appliedFilters
     });
   }

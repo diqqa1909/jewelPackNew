@@ -18,19 +18,12 @@ function fmt(value: unknown, fractionDigits = 3) {
 export default async function GoldsmithTrackingPage({ params }: { params: { code: string } }) {
   const code = decodeURIComponent(params.code);
 
-  const [goldsmith, purchases, sales] = await Promise.all([
+  const [goldsmith, purchases] = await Promise.all([
     prismaWithRetry((p) => p.goldsmith.findUnique({ where: { code } })),
     prismaWithRetry((p) =>
       p.purchase.findMany({
         where: { gsmCode: code },
         orderBy: [{ purchaseDate: "desc" }, { id: "desc" }]
-      })
-    ),
-    prismaWithRetry((p) =>
-      p.sale.findMany({
-        where: { purchase: { gsmCode: code } },
-        include: { purchase: true },
-        orderBy: [{ createdAt: "desc" }, { id: "desc" }]
       })
     )
   ]);
@@ -39,32 +32,21 @@ export default async function GoldsmithTrackingPage({ params }: { params: { code
     return <div className="rounded-lg border border-ebony-100 bg-white p-6 text-sm font-semibold text-ebony-700 shadow-sm">Goldsmith not found.</div>;
   }
 
-  const salesByPurchase = new Map<number, { qty: number; weight: number }>();
-  for (const sale of sales) {
-    if (sale.purchaseId == null) continue;
-    const current = salesByPurchase.get(sale.purchaseId) ?? { qty: 0, weight: 0 };
-    current.qty += Number(sale.qty ?? 0);
-    current.weight += toNumber(sale.goldWeight);
-    salesByPurchase.set(sale.purchaseId, current);
-  }
-
   const rows = purchases.map((purchase) => {
-    const sold = salesByPurchase.get(purchase.id) ?? { qty: 0, weight: 0 };
-    const pendingQty = Math.max(0, Number(purchase.qty ?? 0) - sold.qty);
-    const pendingWeight = Math.max(0, toNumber(purchase.goldWeight) - sold.weight);
+    const goldWeight = toNumber(purchase.goldWeight);
     return {
       id: purchase.id,
       transactionDate: purchase.purchaseDate,
       subcategoryName: purchase.subcategoryName ?? purchase.subcategoryCode ?? "-",
       carat: purchase.carat ?? "-",
-      goldWeight: toNumber(purchase.goldWeight),
-      soldGoldWeight: sold.weight,
-      balanceGoldWeight: pendingWeight,
+      goldWeight,
+      soldGoldWeight: 0,
+      balanceGoldWeight: goldWeight,
       labourCharges: toNumber(purchase.labourCharges),
       labourChargePaid: toNumber(purchase.paidAmount),
       labourChargeBalance: Math.max(0, toNumber(purchase.labourCharges) - toNumber(purchase.paidAmount)),
-      pendingQty,
-      status: pendingWeight > 0 ? "Pending" : "Completed"
+      pendingQty: Number(purchase.qty ?? 0),
+      status: goldWeight > 0 ? "Pending" : "Completed"
     };
   });
 

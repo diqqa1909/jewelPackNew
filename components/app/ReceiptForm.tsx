@@ -230,6 +230,31 @@ export function ReceiptForm({
     setErrors((prev) => ({ ...prev, form: undefined }));
   }
 
+  function captureLatestRatesForLine(id: string) {
+    setLines((prev) =>
+      prev.map((line) =>
+        line.id === id
+          ? {
+              ...line,
+              goldCostRatePer8g: String(system?.goldCostRatePer8g ?? 0),
+              wastageRateMgPer8g: String(system?.wastageRateMgPer8g ?? 0)
+            }
+          : line
+      )
+    );
+  }
+
+  function captureLatestRatesForForm() {
+    setFormRates({
+      goldCostRatePer8g: system?.goldCostRatePer8g ?? 0,
+      wastageRateMgPer8g: system?.wastageRateMgPer8g ?? 0
+    });
+  }
+
+  function isWeightEditKey(key: string) {
+    return key.length === 1 || key === "Backspace" || key === "Delete";
+  }
+
   function addLine() {
     setLines((prev) => [
       ...prev,
@@ -895,12 +920,13 @@ export function ReceiptForm({
                               <td className="border border-ebony-100 p-0 focus-within:bg-gold-50 focus-within:ring-2 focus-within:ring-inset focus-within:ring-gold-500">
                                 <input
                                   value={line.description}
-                                  onChange={(e) => updateLine(line.id, "description", e.target.value)}
+                                  readOnly
+                                  disabled
                                   placeholder="Item details"
-                                  className="h-8 w-full border-0 bg-transparent px-1 text-[11px] outline-none focus:bg-gold-50"
+                                  className="h-8 w-full cursor-not-allowed border-0 bg-ebony-50 px-1 text-[11px] font-semibold text-ebony-700 outline-none"
                                 />
                               </td>
-                              <td className="border border-ebony-100 px-1 py-1 font-semibold text-ebony-800">
+                              <td className="border border-ebony-100 bg-ebony-50 px-1 py-1 font-semibold text-ebony-800">
                                 {line.carat || "-"}
                               </td>
                               <td className="border border-ebony-100 p-0 focus-within:bg-gold-50 focus-within:ring-2 focus-within:ring-inset focus-within:ring-gold-500">
@@ -928,6 +954,10 @@ export function ReceiptForm({
                                   inputMode="decimal"
                                   value={line.goldWeight}
                                   onFocus={selectOnFocus}
+                                  onKeyDown={(e) => {
+                                    if (isWeightEditKey(e.key)) captureLatestRatesForLine(line.id);
+                                  }}
+                                  onPaste={() => captureLatestRatesForLine(line.id)}
                                   onChange={(e) => updateLine(line.id, "goldWeight", sanitizeDecimal(e.target.value))}
                                   className="h-8 w-full border-0 bg-transparent px-1 text-right text-[11px] outline-none focus:bg-gold-50"
                                 />
@@ -1174,6 +1204,10 @@ export function ReceiptForm({
                     inputMode="decimal"
                     value={form.goldWeight}
                     onFocus={selectOnFocus}
+                    onKeyDown={(e) => {
+                      if (isWeightEditKey(e.key)) captureLatestRatesForForm();
+                    }}
+                    onPaste={captureLatestRatesForForm}
                     onChange={(e) => update("goldWeight", sanitizeDecimal(e.target.value))}
                     placeholder="grams"
                     className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
