@@ -25,6 +25,10 @@ function invoiceDate(value: Date) {
   }).format(value);
 }
 
+function decimalKey(value: unknown) {
+  return value && typeof (value as any).toString === "function" ? (value as any).toString() : String(value ?? "");
+}
+
 export default async function SaleViewPage({ params }: { params: { id: string } }) {
   const id = Number(params.id);
   if (!Number.isFinite(id)) {
@@ -78,6 +82,29 @@ export default async function SaleViewPage({ params }: { params: { id: string } 
   const grandTotal = Number(sale.sellSubTotal.toString());
   const paidAmount = Number(paidAgg._sum.credit?.toString() ?? 0);
   const balanceDue = Math.max(0, grandTotal - paidAmount);
+  const invoiceItems = Array.from(
+    sale.items
+      .reduce((map, item) => {
+        const key = [item.subcategoryCode, item.carat ?? "", decimalKey(item.sellRatePer8g)].join("||");
+        const current = map.get(key);
+        if (!current) {
+          map.set(key, {
+            id: item.id,
+            description: item.purchase?.subcategoryName || item.stockMaster?.subcategoryName || item.subcategoryCode,
+            subcategoryCode: item.subcategoryCode,
+            carat: item.carat,
+            goldWeight: Number(item.goldWeight.toString()),
+            sellRatePer8g: Number(item.sellRatePer8g.toString()),
+            sellCost: Number(item.sellCost.toString())
+          });
+          return map;
+        }
+        current.goldWeight += Number(item.goldWeight.toString());
+        current.sellCost += Number(item.sellCost.toString());
+        return map;
+      }, new Map<string, { id: number; description: string; subcategoryCode: string; carat: string | null; goldWeight: number; sellRatePer8g: number; sellCost: number }>())
+      .values()
+  );
 
   return (
     <div className="space-y-4 print:bg-white">
@@ -156,17 +183,16 @@ export default async function SaleViewPage({ params }: { params: { id: string } 
                 </tr>
               </thead>
               <tbody>
-                {sale.items.map((item, index) => {
-                  const itemWeight = Number(item.goldWeight.toString());
-                  const ratePerGram = Number(item.sellRatePer8g.toString()) / 8;
+                {invoiceItems.map((item, index) => {
+                  const ratePerGram = item.sellRatePer8g / 8;
                   return (
                     <tr key={item.id}>
                       <td className="border border-ebony-700 px-3 py-2 text-center font-semibold">{index + 1}</td>
                     <td className="border border-ebony-700 px-3 py-2">
-                        {item.purchase?.subcategoryName || item.stockMaster?.subcategoryName || item.subcategoryCode}
+                        {item.description}
                       </td>
                       <td className="border border-ebony-700 px-3 py-2 text-center">{item.carat || "-"}</td>
-                      <td className="border border-ebony-700 px-3 py-2 text-right tabular-nums">{weight(itemWeight)}</td>
+                      <td className="border border-ebony-700 px-3 py-2 text-right tabular-nums">{weight(item.goldWeight)}</td>
                       <td className="border border-ebony-700 px-3 py-2 text-right tabular-nums">{money(ratePerGram)}</td>
                       <td className="border border-ebony-700 px-3 py-2 text-right font-semibold tabular-nums">
                         {money(item.sellCost)}
@@ -174,7 +200,7 @@ export default async function SaleViewPage({ params }: { params: { id: string } 
                     </tr>
                   );
                 })}
-                {sale.items.length === 0 ? (
+                {invoiceItems.length === 0 ? (
                   <tr>
                     <td className="border border-ebony-700 px-3 py-6 text-center text-ebony-600" colSpan={6}>
                       No items.

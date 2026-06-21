@@ -57,14 +57,13 @@ export async function POST(req: Request) {
 
   const system = await prisma.system.findUnique({ where: { id: 1 } });
   const goldRatePer8g = system?.goldCostRatePer8g ?? new Prisma.Decimal("0");
-  const wastageRatePerMg = system?.wastageRateMgPer8g ?? new Prisma.Decimal("0");
 
   const goldWeight = decimal(body.goldWeight ?? "0");
   const wastageMg = decimal(body.wastageMg ?? "0");
 
   const goldCost = goldWeight.div(new Prisma.Decimal("8")).mul(goldRatePer8g);
   const wastageCost =
-    body.wastageYN === "Y" ? wastageMg.mul(wastageRatePerMg) : new Prisma.Decimal("0");
+    body.wastageYN === "Y" ? wastageMg.div(new Prisma.Decimal("8")).mul(goldRatePer8g) : new Prisma.Decimal("0");
 
   const labourCharges = decimal(body.labourCharges ?? "0");
   const otherCosts = decimal(body.otherCosts ?? "0");
@@ -188,12 +187,11 @@ export async function PATCH(req: Request) {
 
   const system = await prisma.system.findUnique({ where: { id: 1 } });
   const goldRatePer8g = system?.goldCostRatePer8g ?? new Prisma.Decimal("0");
-  const wastageRatePerMg = system?.wastageRateMgPer8g ?? new Prisma.Decimal("0");
 
   const goldWeight = body.goldWeight != null ? decimal(String(body.goldWeight)) : new Prisma.Decimal("0");
   const wastageMg = body.wastageMg != null ? decimal(String(body.wastageMg)) : new Prisma.Decimal("0");
   const goldCost = goldWeight.div(new Prisma.Decimal("8")).mul(goldRatePer8g);
-  const wastageCost = body.wastageYN ? wastageMg.mul(wastageRatePerMg) : new Prisma.Decimal("0");
+  const wastageCost = body.wastageYN ? wastageMg.div(new Prisma.Decimal("8")).mul(goldRatePer8g) : new Prisma.Decimal("0");
   const labourCharges = body.labourCharges != null ? decimal(String(body.labourCharges)) : new Prisma.Decimal("0");
   const otherCosts = body.otherCosts != null ? decimal(String(body.otherCosts)) : new Prisma.Decimal("0");
   const totalCost = goldCost.plus(wastageCost).plus(labourCharges).plus(otherCosts);

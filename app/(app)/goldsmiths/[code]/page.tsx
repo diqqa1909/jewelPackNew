@@ -18,12 +18,18 @@ function fmt(value: unknown, fractionDigits = 3) {
 export default async function GoldsmithTrackingPage({ params }: { params: { code: string } }) {
   const code = decodeURIComponent(params.code);
 
-  const [goldsmith, purchases] = await Promise.all([
+  const [goldsmith, purchases, goldIssues] = await Promise.all([
     prismaWithRetry((p) => p.goldsmith.findUnique({ where: { code } })),
     prismaWithRetry((p) =>
       p.purchase.findMany({
         where: { gsmCode: code },
         orderBy: [{ purchaseDate: "desc" }, { id: "desc" }]
+      })
+    ),
+    prismaWithRetry((p) =>
+      p.goldIssue.findMany({
+        where: { goldsmithCode: code },
+        orderBy: [{ issueDate: "desc" }, { id: "desc" }]
       })
     )
   ]);
@@ -32,36 +38,52 @@ export default async function GoldsmithTrackingPage({ params }: { params: { code
     return <div className="rounded-lg border border-ebony-100 bg-white p-6 text-sm font-semibold text-ebony-700 shadow-sm">Goldsmith not found.</div>;
   }
 
-  const rows = purchases.map((purchase) => {
+  const issueRows = goldIssues.map((issue) => ({
+    id: `ISS-${issue.id}`,
+    transactionDate: issue.issueDate,
+    subcategoryName: "Gold Issue",
+    carat: issue.carat ?? "-",
+    receivedGoldWeight: 0,
+    issuedGoldWeight: toNumber(issue.goldWeight),
+    labourCharges: 0,
+    labourChargePaid: 0,
+    labourChargeBalance: 0,
+    sourceHref: "/gold",
+    sourceLabel: issue.referenceNumber ?? `GI-${String(issue.id).padStart(5, "0")}`
+  }));
+
+  const purchaseRows = purchases.map((purchase) => {
     const goldWeight = toNumber(purchase.goldWeight);
     return {
-      id: purchase.id,
+      id: `PUR-${purchase.id}`,
       transactionDate: purchase.purchaseDate,
       subcategoryName: purchase.subcategoryName ?? purchase.subcategoryCode ?? "-",
       carat: purchase.carat ?? "-",
-      goldWeight,
-      soldGoldWeight: 0,
-      balanceGoldWeight: goldWeight,
+      receivedGoldWeight: goldWeight,
+      issuedGoldWeight: 0,
       labourCharges: toNumber(purchase.labourCharges),
       labourChargePaid: toNumber(purchase.paidAmount),
       labourChargeBalance: Math.max(0, toNumber(purchase.labourCharges) - toNumber(purchase.paidAmount)),
-      pendingQty: Number(purchase.qty ?? 0),
-      status: goldWeight > 0 ? "Pending" : "Completed"
+      sourceHref: `/purchases/${purchase.id}`,
+      sourceLabel: purchase.purchaseNo
     };
   });
+  const rows = [...issueRows, ...purchaseRows].sort(
+    (a, b) => b.transactionDate.getTime() - a.transactionDate.getTime() || b.id.localeCompare(a.id)
+  );
 
   const totals = rows.reduce(
     (acc, row) => {
-      acc.goldGiven += row.goldWeight;
-      acc.returned += row.soldGoldWeight;
-      acc.pending += row.balanceGoldWeight;
+      acc.received += row.receivedGoldWeight;
+      acc.issued += row.issuedGoldWeight;
       acc.labour += row.labourCharges;
       acc.labourPaid += row.labourChargePaid;
       acc.labourBalance += row.labourChargeBalance;
       return acc;
     },
-    { goldGiven: 0, returned: 0, pending: 0, labour: 0, labourPaid: 0, labourBalance: 0 }
+    { received: 0, issued: 0, labour: 0, labourPaid: 0, labourBalance: 0 }
   );
+  const pendingGold = totals.received - totals.issued;
 
   return (
     <div className="space-y-5">
@@ -79,7 +101,7 @@ export default async function GoldsmithTrackingPage({ params }: { params: { code
               <tr>
                 <th className="px-4 py-4">Worker Name</th>
                 <th className="px-4 py-4 text-right">Received (g)</th>
-                <th className="px-4 py-4 text-right">Returned (g)</th>
+                <th className="px-4 py-4 text-right">Issued (g)</th>
                 <th className="px-4 py-4 text-right">Wastage (g)</th>
                 <th className="px-4 py-4 text-right">Pending (g)</th>
                 <th className="px-4 py-4 text-right">Labour Charge</th>
@@ -90,20 +112,20 @@ export default async function GoldsmithTrackingPage({ params }: { params: { code
             <tbody className="divide-y divide-ebony-100">
               <tr className="bg-white">
                 <td className="px-4 py-4 font-bold text-indigo-900">{goldsmith.name}</td>
-                <td className="px-4 py-4 text-right font-semibold tabular-nums text-ebony-800">{fmt(totals.goldGiven)}</td>
-                <td className="px-4 py-4 text-right font-semibold tabular-nums text-ebony-800">{fmt(totals.returned)}</td>
+                <td className="px-4 py-4 text-right font-semibold tabular-nums text-ebony-800">{fmt(totals.received)}</td>
+                <td className="px-4 py-4 text-right font-semibold tabular-nums text-ebony-800">{fmt(totals.issued)}</td>
                 <td className="px-4 py-4 text-right font-semibold tabular-nums text-ebony-800">0.000</td>
-                <td className="px-4 py-4 text-right font-semibold tabular-nums text-ebony-800">{fmt(totals.pending)}</td>
+                <td className="px-4 py-4 text-right font-semibold tabular-nums text-ebony-800">{fmt(pendingGold)}</td>
                 <td className="px-4 py-4 text-right font-semibold tabular-nums text-ebony-800">{fmt(totals.labour, 2)}</td>
                 <td className="px-4 py-4">
                   <span
                     className={
-                      totals.pending > 0
+                      pendingGold !== 0
                         ? "rounded-md bg-amber-50 px-2 py-1 text-xs font-bold text-amber-700"
                         : "rounded-md bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-700"
                     }
                   >
-                    {totals.pending > 0 ? "Pending" : "Completed"}
+                    {pendingGold !== 0 ? "Pending" : "Completed"}
                   </span>
                 </td>
                 <td className="px-4 py-4 text-center">
@@ -114,10 +136,10 @@ export default async function GoldsmithTrackingPage({ params }: { params: { code
               </tr>
               <tr className="bg-ebony-50 font-extrabold">
                 <td className="px-4 py-4 text-ebony-900">Total</td>
-                <td className="px-4 py-4 text-right tabular-nums text-ebony-900">{fmt(totals.goldGiven)}</td>
-                <td className="px-4 py-4 text-right tabular-nums text-ebony-900">{fmt(totals.returned)}</td>
+                <td className="px-4 py-4 text-right tabular-nums text-ebony-900">{fmt(totals.received)}</td>
+                <td className="px-4 py-4 text-right tabular-nums text-ebony-900">{fmt(totals.issued)}</td>
                 <td className="px-4 py-4 text-right tabular-nums text-ebony-900">0.000</td>
-                <td className="px-4 py-4 text-right tabular-nums text-ebony-900">{fmt(totals.pending)}</td>
+                <td className="px-4 py-4 text-right tabular-nums text-ebony-900">{fmt(pendingGold)}</td>
                 <td className="px-4 py-4 text-right tabular-nums text-ebony-900">{fmt(totals.labour, 2)}</td>
                 <td className="px-4 py-4" />
                 <td className="px-4 py-4" />
@@ -145,7 +167,7 @@ export default async function GoldsmithTrackingPage({ params }: { params: { code
                 <th className="px-4 py-3">Date</th>
                 <th className="px-4 py-3">Item</th>
                 <th className="px-4 py-3 text-right">Received</th>
-                <th className="px-4 py-3 text-right">Returned</th>
+                <th className="px-4 py-3 text-right">Issued</th>
                 <th className="px-4 py-3 text-right">Pending</th>
                 <th className="px-4 py-3 text-right">Paid</th>
                 <th className="px-4 py-3 text-right">Balance</th>
@@ -159,16 +181,16 @@ export default async function GoldsmithTrackingPage({ params }: { params: { code
                   <td className="px-4 py-3 tabular-nums text-ebony-700">{new Date(row.transactionDate).toISOString().slice(0, 10)}</td>
                   <td className="px-4 py-3 text-ebony-800">
                     <div className="font-semibold">{row.subcategoryName}</div>
-                    <div className="text-xs text-ebony-500">{row.carat}</div>
+                    <div className="text-xs text-ebony-500">{row.carat} {row.sourceLabel ? `| ${row.sourceLabel}` : ""}</div>
                   </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-ebony-800">{fmt(row.goldWeight)}</td>
-                  <td className="px-4 py-3 text-right tabular-nums text-ebony-800">{fmt(row.soldGoldWeight)}</td>
-                  <td className="px-4 py-3 text-right tabular-nums text-ebony-800">{fmt(row.balanceGoldWeight)}</td>
+                  <td className="px-4 py-3 text-right tabular-nums text-ebony-800">{row.receivedGoldWeight ? fmt(row.receivedGoldWeight) : "-"}</td>
+                  <td className="px-4 py-3 text-right tabular-nums text-ebony-800">{row.issuedGoldWeight ? fmt(row.issuedGoldWeight) : "-"}</td>
+                  <td className="px-4 py-3 text-right tabular-nums text-ebony-800">{fmt(row.receivedGoldWeight - row.issuedGoldWeight)}</td>
                   <td className="px-4 py-3 text-right tabular-nums text-ebony-800">{fmt(row.labourChargePaid, 2)}</td>
                   <td className="px-4 py-3 text-right tabular-nums text-ebony-800">{fmt(row.labourChargeBalance, 2)}</td>
                   <td className="px-4 py-3 text-right tabular-nums text-ebony-800">{fmt(row.labourCharges, 2)}</td>
                   <td className="px-4 py-3 text-center">
-                    <Link href={`/purchases/${row.id}`} className={buttonClassName("secondary", "h-8 w-8 px-0 py-0 text-ebony-500")} aria-label="View entry" title="View entry">
+                    <Link href={row.sourceHref} className={buttonClassName("secondary", "h-8 w-8 px-0 py-0 text-ebony-500")} aria-label="View entry" title="View entry">
                       <Eye className="h-4 w-4" />
                     </Link>
                   </td>

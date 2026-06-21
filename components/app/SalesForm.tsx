@@ -802,15 +802,6 @@ export function SalesForm() {
         </button>
         <button
           type="button"
-          onClick={() => void submit()}
-          disabled={busy}
-          className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-6 py-3 text-sm font-bold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          <Send className="h-4 w-4" />
-          Save & WhatsApp
-        </button>
-        <button
-          type="button"
           onClick={() => router.push("/sales")}
           disabled={busy}
           className="rounded-md bg-ebony-100 px-6 py-3 text-sm font-bold text-ebony-800 hover:bg-ebony-200 disabled:cursor-not-allowed disabled:opacity-60"

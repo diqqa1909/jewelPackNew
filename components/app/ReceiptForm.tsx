@@ -3,10 +3,10 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Modal } from "@/components/ui/Modal";
 import type { StockMaster } from "@/lib/generated/prisma";
-import { Plus, Search, Trash2 } from "lucide-react";
+import { Search, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import type React from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type ReceiptFormState = {
   purchaseType: "Gold" | "Rate";
@@ -157,8 +157,17 @@ export function ReceiptForm({
   initialValues?: ReceiptFormInitialValues;
 }) {
   const router = useRouter();
+  const purchaseDateRef = useRef<HTMLInputElement | null>(null);
+  const didFocusPurchaseDate = useRef(false);
+  const subcategoryListRef = useRef<HTMLDivElement | null>(null);
+  const subcategoryRowRefs = useRef<Array<HTMLTableRowElement | null>>([]);
+  const lineSubcategoryRefs = useRef(new Map<string, HTMLButtonElement | null>());
+  const lineQtyRefs = useRef(new Map<string, HTMLInputElement | null>());
+  const formRef = useRef<HTMLFormElement | null>(null);
+  const lastActiveFormFieldRef = useRef<HTMLElement | null>(null);
   const [form, setForm] = useState<ReceiptFormState>(emptyForm());
   const [lines, setLines] = useState<Array<PurchaseLine & { id: string }>>([emptyLine()]);
+  const [pendingLineFocus, setPendingLineFocus] = useState<{ id: string; field: "subcategory" | "qty" } | null>(null);
   const [errors, setErrors] = useState<Errors>({});
   const [lineErrors, setLineErrors] = useState<Record<string, Partial<Record<keyof PurchaseLine, string>>>>({});
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -191,12 +200,43 @@ export function ReceiptForm({
   const [subcategoryPickerLineId, setSubcategoryPickerLineId] = useState<string | null>(null);
   const [subcategorySearch, setSubcategorySearch] = useState("");
   const [subcategoryPickerIndex, setSubcategoryPickerIndex] = useState(0);
+  const useTableLayout = layout === "table";
 
   useEffect(() => {
     return () => {
       if (subcatPreviewUrl) URL.revokeObjectURL(subcatPreviewUrl);
     };
   }, [subcatPreviewUrl]);
+
+  useEffect(() => {
+    if (loading || didFocusPurchaseDate.current) return;
+    didFocusPurchaseDate.current = true;
+    window.setTimeout(() => purchaseDateRef.current?.focus(), 0);
+  }, [loading]);
+
+  useEffect(() => {
+    if (!pendingLineFocus) return;
+    const target =
+      pendingLineFocus.field === "subcategory"
+        ? lineSubcategoryRefs.current.get(pendingLineFocus.id)
+        : lineQtyRefs.current.get(pendingLineFocus.id);
+    if (target) {
+      target.focus();
+      setPendingLineFocus(null);
+    }
+  }, [lines, pendingLineFocus]);
+
+  useEffect(() => {
+    if (!useTableLayout) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== "F2") return;
+      e.preventDefault();
+      if (saveState === "saving") return;
+      formRef.current?.requestSubmit();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [saveState, useTableLayout]);
 
   function update<K extends keyof ReceiptFormState>(key: K, value: ReceiptFormState[K]) {
     if (key === "goldWeight" || key === "wastageYN") {
@@ -255,15 +295,33 @@ export function ReceiptForm({
     return key.length === 1 || key === "Backspace" || key === "Delete";
   }
 
-  function addLine() {
-    setLines((prev) => [
-      ...prev,
-      {
-        ...emptyLine(),
-        goldCostRatePer8g: String(system?.goldCostRatePer8g ?? 0),
-        wastageRateMgPer8g: String(system?.wastageRateMgPer8g ?? 0)
+  function addLine(focusSubcategory = false) {
+    const nextLine = {
+      ...emptyLine(),
+      goldCostRatePer8g: String(system?.goldCostRatePer8g ?? 0),
+      wastageRateMgPer8g: String(system?.wastageRateMgPer8g ?? 0)
+    };
+    setLines((prev) => [...prev, nextLine]);
+    if (focusSubcategory) setPendingLineFocus({ id: nextLine.id, field: "subcategory" });
+  }
+
+  function rememberActiveFormField(e: React.FocusEvent<HTMLFormElement>) {
+    const target = e.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (!target.matches("input, select, textarea, button")) return;
+    lastActiveFormFieldRef.current = target;
+  }
+
+  function closeSystemModal() {
+    setSystemModalOpen(false);
+    window.setTimeout(() => {
+      const target = lastActiveFormFieldRef.current;
+      if (target && formRef.current?.contains(target)) {
+        target.focus();
+        return;
       }
-    ]);
+      purchaseDateRef.current?.focus();
+    }, 0);
   }
 
   function removeLine(id: string) {
@@ -390,11 +448,22 @@ export function ReceiptForm({
     setSubcategoryPickerOpen(true);
   }
 
-  function closeSubcategoryPicker() {
+  function focusLineField(lineId: string | null, field: "subcategory" | "qty") {
+    if (!lineId) return;
+    window.setTimeout(() => {
+      const target =
+        field === "subcategory" ? lineSubcategoryRefs.current.get(lineId) : lineQtyRefs.current.get(lineId);
+      target?.focus();
+    }, 0);
+  }
+
+  function closeSubcategoryPicker(focusField?: "subcategory" | "qty") {
+    const lineId = subcategoryPickerLineId;
     setSubcategoryPickerOpen(false);
     setSubcategoryPickerLineId(null);
     setSubcategorySearch("");
     setSubcategoryPickerIndex(0);
+    if (focusField) focusLineField(lineId, focusField);
   }
 
   function selectSubcategory(code: string) {
@@ -424,7 +493,7 @@ export function ReceiptForm({
           carat: undefined
         }
       }));
-      closeSubcategoryPicker();
+      closeSubcategoryPicker("qty");
       return;
     }
     setSubcategoryCode(code);
@@ -432,6 +501,11 @@ export function ReceiptForm({
   }
 
   function handleSubcategoryPickerKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Tab" && !e.shiftKey) {
+      e.preventDefault();
+      subcategoryListRef.current?.focus();
+      return;
+    }
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setSubcategoryPickerIndex((prev) => Math.min(prev + 1, Math.max(0, subcategoriesSorted.length - 1)));
@@ -448,6 +522,19 @@ export function ReceiptForm({
       if (selected) selectSubcategory(selected.code);
     }
   }
+
+  useEffect(() => {
+    setSubcategoryPickerIndex(0);
+  }, [subcategorySearch]);
+
+  useEffect(() => {
+    setSubcategoryPickerIndex((prev) => Math.min(prev, Math.max(0, subcategoriesSorted.length - 1)));
+  }, [subcategoriesSorted.length]);
+
+  useEffect(() => {
+    if (!subcategoryPickerOpen) return;
+    subcategoryRowRefs.current[subcategoryPickerIndex]?.scrollIntoView({ block: "nearest" });
+  }, [subcategoryPickerIndex, subcategoryPickerOpen]);
 
   useEffect(() => {
     if (form.wastageYN !== "Y" && form.wastageMg !== "") update("wastageMg", "");
@@ -514,10 +601,10 @@ export function ReceiptForm({
 
   const wastageCostCalculated = useMemo(() => {
     if (form.wastageYN !== "Y") return 0;
-    const weight = toNumber(form.goldWeight);
+    const wastageWeight = toNumber(form.wastageMg);
     const goldRate = formRates.goldCostRatePer8g;
-    return (weight / 8) * goldRate;
-  }, [form.goldWeight, form.wastageYN, formRates.goldCostRatePer8g]);
+    return (wastageWeight / 8) * goldRate;
+  }, [form.wastageMg, form.wastageYN, formRates.goldCostRatePer8g]);
 
   const totalCost = useMemo(() => {
     return (
@@ -541,11 +628,33 @@ export function ReceiptForm({
 
   function lineWastageCost(line: PurchaseLine) {
     if (line.wastageYN !== "Y") return 0;
-    return (toNumber(line.goldWeight) / 8) * toNumber(line.goldCostRatePer8g);
+    return (toNumber(lineGeneratedWastage(line)) / 8) * toNumber(line.goldCostRatePer8g);
   }
 
   function lineTotalCost(line: PurchaseLine) {
     return lineGoldCost(line) + lineWastageCost(line) + toNumber(line.labourCharges) + toNumber(line.otherCosts);
+  }
+
+  function isBlankTableLine(line: PurchaseLine) {
+    return (
+      !line.categoryCode.trim() &&
+      !line.articleName.trim() &&
+      !line.subcategoryCode.trim() &&
+      !line.description.trim() &&
+      !line.carat.trim() &&
+      line.wastageYN === "N" &&
+      toNumber(line.qty) === 0 &&
+      toNumber(line.goldWeight) === 0 &&
+      toNumber(line.wastageMg) === 0 &&
+      toNumber(line.labourCharges) === 0 &&
+      toNumber(line.otherCosts) === 0
+    );
+  }
+
+  function getSavableTableLines() {
+    let end = lines.length;
+    while (end > 1 && isBlankTableLine(lines[end - 1])) end -= 1;
+    return lines.slice(0, end);
   }
 
   const tableTotals = useMemo(() => {
@@ -569,7 +678,7 @@ export function ReceiptForm({
     if (!form.gsmCode.trim()) next.gsmCode = "Required";
 
     if (useTableLayout) {
-      for (const line of lines) {
+      for (const line of getSavableTableLines()) {
         const rowErrors: Partial<Record<keyof PurchaseLine, string>> = {};
         if (!line.categoryCode.trim()) rowErrors.categoryCode = "Required";
         if (!line.subcategoryCode.trim()) rowErrors.subcategoryCode = "Required";
@@ -609,7 +718,7 @@ export function ReceiptForm({
     setSaveState("saving");
     try {
       if (useTableLayout && mode === "create") {
-        for (const line of lines) {
+        for (const line of getSavableTableLines()) {
           const payload = {
             ...form,
             ...line,
@@ -688,7 +797,7 @@ export function ReceiptForm({
   async function saveSystemData(e: React.FormEvent) {
     e.preventDefault();
     if (JSON.stringify(systemForm) === JSON.stringify(savedSystemForm)) {
-      setSystemModalOpen(false);
+      closeSystemModal();
       return;
     }
     setSystemSaveState("saving");
@@ -706,7 +815,7 @@ export function ReceiptForm({
       setSavedSystemForm(systemForm);
       setSystemSaveState("saved");
       setTimeout(() => setSystemSaveState("idle"), 1500);
-      setSystemModalOpen(false);
+      closeSystemModal();
     } catch {
       setSystemSaveState("error");
     }
@@ -758,7 +867,6 @@ export function ReceiptForm({
   const pageTitle = title ?? (mode === "edit" ? "Edit Receipt" : "Add New Receipt");
   const pageDescription = description ?? "Capture inbound stock receipt details.";
   const saveButtonText = submitLabel ?? (mode === "edit" ? "Save Receipt" : "Save Receipt");
-  const useTableLayout = layout === "table";
 
   return (
     <Card className={useTableLayout ? "min-w-0 overflow-hidden" : "max-w-5xl"}>
@@ -803,8 +911,10 @@ export function ReceiptForm({
           <div className="text-sm font-semibold text-slate-500">Loading...</div>
         ) : (
           <form
+            ref={formRef}
             id={formId}
             onSubmit={onSubmit}
+            onFocusCapture={rememberActiveFormField}
             className={useTableLayout ? "space-y-6" : "grid gap-6 md:grid-cols-2"}
           >
             {errors.form && (
@@ -821,6 +931,7 @@ export function ReceiptForm({
                       <div className="text-xs font-bold text-ebony-800">Purchase Date *</div>
                       <input
                         type="date"
+                        ref={purchaseDateRef}
                         value={form.transactionDate}
                         onChange={(e) => update("transactionDate", e.target.value)}
                         className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
@@ -910,6 +1021,9 @@ export function ReceiptForm({
                               <td className="border border-ebony-100 p-0 focus-within:bg-gold-50 focus-within:ring-2 focus-within:ring-inset focus-within:ring-gold-500">
                                 <button
                                   type="button"
+                                  ref={(el) => {
+                                    lineSubcategoryRefs.current.set(line.id, el);
+                                  }}
                                   onClick={() => openSubcategoryPicker(line.id)}
                                   className="h-8 w-full truncate border-0 bg-transparent px-1 text-left text-[11px] outline-none focus:bg-gold-50"
                                 >
@@ -932,6 +1046,9 @@ export function ReceiptForm({
                               <td className="border border-ebony-100 p-0 focus-within:bg-gold-50 focus-within:ring-2 focus-within:ring-inset focus-within:ring-gold-500">
                                 <input
                                   inputMode="numeric"
+                                  ref={(el) => {
+                                    lineQtyRefs.current.set(line.id, el);
+                                  }}
                                   value={line.qty}
                                   onFocus={selectOnFocus}
                                   onChange={(e) => updateLine(line.id, "qty", sanitizeInt(e.target.value))}
@@ -981,6 +1098,11 @@ export function ReceiptForm({
                                   value={line.labourCharges}
                                   onFocus={selectOnFocus}
                                   onChange={(e) => updateLine(line.id, "labourCharges", sanitizeDecimal(e.target.value))}
+                                  onKeyDown={(e) => {
+                                    if (e.key !== "Enter") return;
+                                    e.preventDefault();
+                                    addLine(true);
+                                  }}
                                   className="h-8 w-full border-0 bg-transparent px-1 text-right text-[11px] outline-none focus:bg-gold-50"
                                 />
                                 {rowErrors.labourCharges && <FieldError>{rowErrors.labourCharges}</FieldError>}
@@ -1014,25 +1136,26 @@ export function ReceiptForm({
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={addLine}
-                  className="inline-flex items-center gap-2 rounded-md border border-ebony-200 bg-white px-3 py-2 text-sm font-bold text-indigo-700 shadow-sm hover:bg-ebony-50"
-                >
-                  <Plus className="h-4 w-4" />
-                  Add Item
-                </button>
-
                 <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_310px]">
-                  <label className="space-y-2 text-sm lg:self-end">
-                    <div className="font-bold text-ebony-800">Notes</div>
-                    <textarea
-                      value={form.remarks}
-                      onChange={(e) => update("remarks", e.target.value)}
-                      placeholder="Any special remarks..."
-                      className="min-h-24 w-full resize-y rounded-md border border-ebony-200 bg-white px-4 py-3 outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
-                    />
-                  </label>
+                  <div className="flex flex-wrap items-end gap-3 lg:self-end">
+                    <button
+                      type="submit"
+                      disabled={saveState === "saving"}
+                      className="inline-flex items-center gap-2 rounded-md bg-gold-600 px-6 py-3 text-sm font-bold text-white shadow-sm hover:bg-gold-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {saveState === "saving" ? "Saving..." : "Save (F2)"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => router.push(redirectPath)}
+                      disabled={saveState === "saving"}
+                      className="rounded-md bg-ebony-100 px-6 py-3 text-sm font-bold text-ebony-800 hover:bg-ebony-200 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Cancel
+                    </button>
+                    {saveState === "saved" && <span className="pb-3 text-sm font-bold text-jewel-700">Saved</span>}
+                    {saveState === "error" && <span className="pb-3 text-sm font-bold text-red-600">Save failed</span>}
+                  </div>
 
                   <div className="rounded-lg border border-ebony-100 bg-white shadow-sm">
                     {[
@@ -1051,26 +1174,6 @@ export function ReceiptForm({
                     </div>
                   </div>
                 </div>
-
-                <div className="flex flex-wrap items-center gap-3">
-                  <button
-                    type="submit"
-                    disabled={saveState === "saving"}
-                    className="inline-flex items-center gap-2 rounded-md bg-indigo-700 px-6 py-3 text-sm font-bold text-white hover:bg-indigo-800 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {saveState === "saving" ? "Saving..." : saveButtonText}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => router.push(redirectPath)}
-                    disabled={saveState === "saving"}
-                    className="rounded-md bg-ebony-100 px-6 py-3 text-sm font-bold text-ebony-800 hover:bg-ebony-200 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    Cancel
-                  </button>
-                  {saveState === "saved" && <span className="text-sm font-bold text-jewel-700">Saved</span>}
-                  {saveState === "error" && <span className="text-sm font-bold text-red-600">Save failed</span>}
-                </div>
               </div>
             ) : (
               <>
@@ -1078,6 +1181,7 @@ export function ReceiptForm({
                   <div className="font-bold text-ebony-700">Transaction Date</div>
                   <input
                     type="date"
+                    ref={purchaseDateRef}
                     value={form.transactionDate}
                     onChange={(e) => update("transactionDate", e.target.value)}
                     className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
@@ -1310,7 +1414,7 @@ export function ReceiptForm({
 
       <Modal
         open={subcategoryPickerOpen}
-        onClose={closeSubcategoryPicker}
+        onClose={() => closeSubcategoryPicker("subcategory")}
         title="Select Subcategory"
         panelClassName="max-w-4xl"
       >
@@ -1327,7 +1431,15 @@ export function ReceiptForm({
             />
           </div>
 
-          <div className="max-h-[48vh] overflow-auto rounded-lg border border-ebony-100">
+          <div
+            ref={subcategoryListRef}
+            tabIndex={0}
+            role="listbox"
+            aria-label="Subcategory items"
+            aria-activedescendant={subcategoriesSorted[subcategoryPickerIndex]?.code ? `subcategory-option-${subcategoriesSorted[subcategoryPickerIndex].code}` : undefined}
+            onKeyDown={handleSubcategoryPickerKeyDown}
+            className="max-h-[48vh] overflow-auto rounded-lg border border-ebony-100 outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+          >
             <table className="w-full min-w-[680px] text-sm">
               <thead className="sticky top-0 bg-ebony-50 text-left text-[11px] font-bold uppercase tracking-wide text-ebony-600">
                 <tr>
@@ -1343,18 +1455,17 @@ export function ReceiptForm({
                   return (
                     <tr
                       key={item.code}
-                      tabIndex={0}
+                      id={`subcategory-option-${item.code}`}
+                      ref={(el) => {
+                        subcategoryRowRefs.current[index] = el;
+                      }}
+                      role="option"
+                      aria-selected={isActive}
                       onClick={() => selectSubcategory(item.code)}
                       onMouseEnter={() => setSubcategoryPickerIndex(index)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          selectSubcategory(item.code);
-                        }
-                      }}
                       className={[
-                        "cursor-pointer bg-white outline-none hover:bg-cream-50",
-                        isActive ? "bg-gold-100/60" : ""
+                        "cursor-pointer outline-none hover:bg-cream-50",
+                        isActive ? "bg-gold-100 text-ebony-950 ring-1 ring-inset ring-gold-400" : "bg-white"
                       ].join(" ")}
                     >
                       <td className="px-4 py-3 font-bold text-ebony-900">{item.code}</td>
@@ -1382,7 +1493,7 @@ export function ReceiptForm({
         </div>
       </Modal>
 
-      <Modal open={systemModalOpen} onClose={() => setSystemModalOpen(false)} title="System Data">
+      <Modal open={systemModalOpen} onClose={closeSystemModal} title="System Data">
         <form onSubmit={saveSystemData} className="grid gap-5 md:grid-cols-2">
           <label className="space-y-2 text-sm">
             <div className="font-semibold text-ebony-700">VAT Rate</div>
@@ -1434,7 +1545,7 @@ export function ReceiptForm({
             )}
             <button
               type="button"
-              onClick={() => setSystemModalOpen(false)}
+              onClick={closeSystemModal}
               className="rounded-lg border border-ebony-300 bg-white px-5 py-2.5 text-sm font-semibold text-ebony-700 hover:bg-ebony-50 transition-all"
             >
               Cancel

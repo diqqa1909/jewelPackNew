@@ -120,7 +120,7 @@ export async function POST(req: Request) {
     const goldCost = goldWeight.div(new Prisma.Decimal("8")).mul(goldRatePer8g);
     const wastageEnabled = isWastageEnabled(body.wastageYN);
     const wastageCost = wastageEnabled
-      ? goldWeight.div(new Prisma.Decimal("8")).mul(goldRatePer8g)
+      ? wastageMg.div(new Prisma.Decimal("8")).mul(goldRatePer8g)
       : new Prisma.Decimal("0");
     const labourCharges = decimal(body.labourCharges ?? "0");
     const otherCosts = decimal(body.otherCosts ?? "0");
@@ -263,7 +263,7 @@ export async function PATCH(req: Request) {
     const goldCost = goldWeight.div(new Prisma.Decimal("8")).mul(goldRatePer8g);
     const wastageEnabled = isWastageEnabled(body.wastageYN);
     const wastageCost = wastageEnabled
-      ? goldWeight.div(new Prisma.Decimal("8")).mul(goldRatePer8g)
+      ? wastageMg.div(new Prisma.Decimal("8")).mul(goldRatePer8g)
       : new Prisma.Decimal("0");
     const labourCharges = decimal(body.labourCharges ?? "0");
     const otherCosts = decimal(body.otherCosts ?? "0");
