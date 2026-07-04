@@ -26,16 +26,6 @@ function formatDate(value: Date) {
   }).format(value);
 }
 
-function formatDateTime(value: Date) {
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit"
-  }).format(value);
-}
-
 function text(value: unknown) {
   if (value == null) return "-";
   const raw = String(value).trim();
@@ -50,11 +40,71 @@ export default async function PurchasesPage() {
       include: { supplier: true }
     })
   );
+  const purchaseGroups = Array.from(
+    purchases
+      .reduce((map, purchase) => {
+        const key = purchase.purchaseGroupNo ?? purchase.purchaseNo;
+        const current =
+          map.get(key) ??
+          ({
+            ...purchase,
+            purchaseNo: key,
+            qty: 0,
+            goldWeight: 0,
+            goldCost: 0,
+            wastageMg: 0,
+            wastage: 0,
+            labourCharges: 0,
+            otherCosts: 0,
+            totalCost: 0,
+            totalItems: 0,
+            totalWeight: 0,
+            subTotal: 0,
+            totalAmount: 0,
+            balanceDue: 0,
+            lineCount: 0,
+            subcategoryCode: "",
+            subcategoryName: ""
+          } as typeof purchase & {
+            goldWeight: number;
+            goldCost: number;
+            wastageMg: number;
+            wastage: number;
+            labourCharges: number;
+            otherCosts: number;
+            totalCost: number;
+            totalWeight: number;
+            subTotal: number;
+            totalAmount: number;
+            balanceDue: number;
+            lineCount: number;
+          });
+        current.qty += Number(purchase.qty ?? 0);
+        current.goldWeight += Number(purchase.goldWeight?.toString?.() ?? 0);
+        current.goldCost += Number(purchase.goldCost?.toString?.() ?? 0);
+        current.wastageMg += Number(purchase.wastageMg?.toString?.() ?? 0);
+        current.wastage += Number(purchase.wastage?.toString?.() ?? 0);
+        current.labourCharges += Number(purchase.labourCharges?.toString?.() ?? 0);
+        current.otherCosts += Number(purchase.otherCosts?.toString?.() ?? 0);
+        current.totalCost += Number(purchase.totalCost?.toString?.() ?? 0);
+        current.totalItems += Number(purchase.qty ?? 0);
+        current.totalWeight += Number(purchase.goldWeight?.toString?.() ?? 0);
+        current.subTotal += Number(purchase.totalCost?.toString?.() ?? 0);
+        current.totalAmount += Number(purchase.totalCost?.toString?.() ?? 0);
+        current.balanceDue += Number(purchase.totalCost?.toString?.() ?? 0);
+        current.lineCount += 1;
+        current.subcategoryCode = current.lineCount > 1 ? `${current.lineCount} items` : purchase.subcategoryCode ?? "";
+        current.subcategoryName = current.lineCount > 1 ? "Multiple items" : purchase.subcategoryName ?? "";
+        map.set(key, current);
+        return map;
+      }, new Map<string, any>())
+      .values()
+  );
 
-  const totalPurchases = purchases.length;
-  const totalQty = purchases.reduce((sum, purchase) => sum + Number(purchase.qty ?? 0), 0);
-  const totalWeight = purchases.reduce((sum, purchase) => sum + Number(purchase.goldWeight?.toString?.() ?? 0), 0);
-  const totalCost = purchases.reduce((sum, purchase) => sum + Number(purchase.totalCost?.toString?.() ?? 0), 0);
+  const totalPurchases = purchaseGroups.length;
+  const totalQty = purchaseGroups.reduce((sum, purchase) => sum + Number(purchase.qty ?? 0), 0);
+  const totalWeight = purchaseGroups.reduce((sum, purchase) => sum + Number(purchase.goldWeight ?? 0), 0);
+  const totalCost = purchaseGroups.reduce((sum, purchase) => sum + Number(purchase.totalCost ?? 0), 0);
 
   return (
     <div className="space-y-6">
@@ -79,97 +129,56 @@ export default async function PurchasesPage() {
         <CardContent className="min-w-0 overflow-hidden">
           <div className="max-w-full overflow-hidden rounded-lg border border-ebony-100 bg-white">
             <div className="max-w-full overflow-x-auto">
-              <table className="min-w-[2600px] table-fixed text-xs">
+              <table className="min-w-[1120px] table-fixed text-sm">
                 <thead className="bg-ebony-50 text-left text-[10px] font-bold uppercase tracking-wide text-ebony-700">
                   <tr>
-                    <th className="w-24 px-3 py-3">ID</th>
                     <th className="w-36 px-3 py-3">Purchase No</th>
                     <th className="w-28 px-3 py-3">Date</th>
-                    <th className="w-32 px-3 py-3">Location</th>
+                    <th className="w-24 px-3 py-3">Type</th>
                     <th className="w-24 px-3 py-3">GSM Code</th>
                     <th className="w-40 px-3 py-3">GSM Name</th>
-                    <th className="w-28 px-3 py-3">Category</th>
-                    <th className="w-40 px-3 py-3">Article</th>
-                    <th className="w-32 px-3 py-3">Subcategory</th>
-                    <th className="w-44 px-3 py-3">Subcategory Name</th>
-                    <th className="w-20 px-3 py-3 text-right">Qty</th>
-                    <th className="w-44 px-3 py-3">Description</th>
-                    <th className="w-20 px-3 py-3">Carat</th>
-                    <th className="w-24 px-3 py-3">Wastage</th>
-                    <th className="w-28 px-3 py-3 text-right">Gold Wt</th>
-                    <th className="w-28 px-3 py-3 text-right">Gold Cost</th>
-                    <th className="w-28 px-3 py-3 text-right">Wastage Mg</th>
-                    <th className="w-28 px-3 py-3 text-right">Wastage</th>
-                    <th className="w-32 px-3 py-3 text-right">Labour</th>
-                    <th className="w-32 px-3 py-3 text-right">Other Costs</th>
-                    <th className="w-32 px-3 py-3 text-right">Total Cost</th>
-                    <th className="w-44 px-3 py-3">Remarks</th>
                     <th className="w-40 px-3 py-3">Supplier</th>
-                    <th className="w-28 px-3 py-3">Purchase Gold</th>
-                    <th className="w-24 px-3 py-3 text-right">Total Items</th>
-                    <th className="w-28 px-3 py-3 text-right">Total Wt</th>
-                    <th className="w-32 px-3 py-3 text-right">Sub Total</th>
-                    <th className="w-32 px-3 py-3 text-right">Other Charges</th>
+                    <th className="w-28 px-3 py-3">Location</th>
+                    <th className="w-20 px-3 py-3 text-right">Rows</th>
+                    <th className="w-20 px-3 py-3 text-right">Qty</th>
+                    <th className="w-32 px-3 py-3 text-right">Gold Wt</th>
                     <th className="w-32 px-3 py-3 text-right">Total Amount</th>
-                    <th className="w-32 px-3 py-3 text-right">Paid</th>
                     <th className="w-32 px-3 py-3 text-right">Balance Due</th>
-                    <th className="w-44 px-3 py-3">Notes</th>
-                    <th className="w-36 px-3 py-3">Created</th>
-                    <th className="w-36 px-3 py-3">Updated</th>
-                    <th className="sticky right-0 w-24 bg-ebony-50 px-3 py-3">Action</th>
+                    <th className="sticky right-0 w-36 bg-ebony-50 px-3 py-3 text-center">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-ebony-100">
-                  {purchases.map((purchase) => (
+                  {purchaseGroups.map((purchase) => (
                     <tr key={purchase.id} className="bg-white hover:bg-cream-50/60 transition-colors">
-                    <td className="px-3 py-3 tabular-nums text-ebony-700">{purchase.id}</td>
                     <td className="px-3 py-3">
                       <Link href={`/purchases/${purchase.id}`} className="font-semibold text-indigo-900 hover:underline">
                         {purchase.purchaseNo}
                       </Link>
                     </td>
                     <td className="px-3 py-3 tabular-nums text-ebony-700">{formatDate(purchase.purchaseDate)}</td>
-                    <TextCell value={purchase.location} />
+                    <TextCell value={purchase.purchaseType} strong />
                     <TextCell value={purchase.gsmCode} strong />
                     <TextCell value={purchase.gsmName} />
-                    <TextCell value={purchase.categoryCode} strong />
-                    <TextCell value={purchase.articleName} />
-                    <TextCell value={purchase.subcategoryCode} strong />
-                    <TextCell value={purchase.subcategoryName} />
-                    <td className="px-3 py-3 text-right font-semibold tabular-nums text-ebony-800">{purchase.qty}</td>
-                    <TextCell value={purchase.description} />
-                    <TextCell value={purchase.carat} />
-                    <td className="px-3 py-3 font-semibold text-ebony-800">{purchase.wastageYN ? "Y" : "N"}</td>
-                    <td className="px-3 py-3 text-right tabular-nums text-ebony-700">{weight(purchase.goldWeight)} g</td>
-                    <td className="px-3 py-3 text-right tabular-nums text-ebony-700">{money(purchase.goldCost)}</td>
-                    <td className="px-3 py-3 text-right tabular-nums text-ebony-700">{weight(purchase.wastageMg)}</td>
-                    <td className="px-3 py-3 text-right tabular-nums text-ebony-700">{money(purchase.wastage)}</td>
-                    <td className="px-3 py-3 text-right tabular-nums text-ebony-700">{money(purchase.labourCharges)}</td>
-                    <td className="px-3 py-3 text-right tabular-nums text-ebony-700">{money(purchase.otherCosts)}</td>
-                    <td className="px-3 py-3 text-right font-semibold tabular-nums text-ebony-900">{money(purchase.totalCost)}</td>
-                    <TextCell value={purchase.remarks} />
                     <TextCell value={purchase.supplier?.name ?? purchase.supplierId} />
-                    <TextCell value={purchase.purchaseGold} />
-                    <td className="px-3 py-3 text-right tabular-nums text-ebony-700">{purchase.totalItems}</td>
-                    <td className="px-3 py-3 text-right tabular-nums text-ebony-700">{weight(purchase.totalWeight)} g</td>
-                    <td className="px-3 py-3 text-right tabular-nums text-ebony-700">{money(purchase.subTotal)}</td>
-                    <td className="px-3 py-3 text-right tabular-nums text-ebony-700">{money(purchase.otherCharges)}</td>
+                    <TextCell value={purchase.location} />
+                    <td className="px-3 py-3 text-right tabular-nums text-ebony-700">{purchase.lineCount}</td>
+                    <td className="px-3 py-3 text-right font-semibold tabular-nums text-ebony-800">{purchase.qty}</td>
+                    <td className="px-3 py-3 text-right tabular-nums text-ebony-700">{weight(purchase.goldWeight)} g</td>
                     <td className="px-3 py-3 text-right font-semibold tabular-nums text-ebony-900">{money(purchase.totalAmount)}</td>
-                    <td className="px-3 py-3 text-right tabular-nums text-ebony-700">{money(purchase.paidAmount)}</td>
                     <td className="px-3 py-3 text-right font-semibold tabular-nums text-red-600">{money(purchase.balanceDue)}</td>
-                    <TextCell value={purchase.notes} />
-                    <td className="px-3 py-3 tabular-nums text-ebony-700">{formatDateTime(purchase.createdAt)}</td>
-                    <td className="px-3 py-3 tabular-nums text-ebony-700">{formatDateTime(purchase.updatedAt)}</td>
-                    <td className="sticky right-0 bg-white px-3 py-3 shadow-[-8px_0_12px_-12px_rgba(0,0,0,0.35)]">
-                      <Link href={`/purchases/${purchase.id}`} className={buttonClassName("secondary", "px-4 py-2 text-xs")}>
+                    <td className="sticky right-0 bg-white px-3 py-3 text-center shadow-[-8px_0_12px_-12px_rgba(0,0,0,0.35)]">
+                      <Link href={`/purchases/${purchase.id}`} className={buttonClassName("secondary", "mr-2 px-3 py-2 text-xs")}>
                         View
+                      </Link>
+                      <Link href={`/purchases/${purchase.id}?edit=1`} className={buttonClassName("primary", "px-3 py-2 text-xs")}>
+                        Edit
                       </Link>
                     </td>
                     </tr>
                   ))}
-                  {purchases.length === 0 ? (
+                  {purchaseGroups.length === 0 ? (
                     <tr>
-                      <td className="px-5 py-8 text-center text-sm text-ebony-600" colSpan={35}>
+                      <td className="px-5 py-8 text-center text-sm text-ebony-600" colSpan={12}>
                         No purchases yet. Start by creating the first entry.
                       </td>
                     </tr>

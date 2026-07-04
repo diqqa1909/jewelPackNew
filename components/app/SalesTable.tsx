@@ -7,6 +7,7 @@ type Row = {
   id: number;
   saleNo: string;
   transactionDate: string;
+  customerCode: string;
   customerName: string;
   totalItems: number;
   totalQty: number;
@@ -54,7 +55,9 @@ export function SalesTable({ initial }: { initial: Row[] }) {
               <td className="truncate px-2 py-3 font-semibold text-ebony-900">{s.saleNo}</td>
               <td className="px-2 py-3 text-ebony-700">
                 <div className="font-semibold text-ebony-900">{s.transactionDate}</div>
-                <div className="truncate text-[10px] text-ebony-600">{s.customerName}</div>
+                <div className="truncate text-[10px] text-ebony-600">
+                  {s.customerCode} · {s.customerName}
+                </div>
               </td>
               <td className="px-2 py-3 text-right font-semibold text-ebony-900">{s.totalItems}</td>
               <td className="px-2 py-3 text-right tabular-nums text-ebony-700">{s.totalQty}</td>

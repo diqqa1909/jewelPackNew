@@ -1,6 +1,7 @@
 "use client";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { Modal } from "@/components/ui/Modal";
 import type { StockMaster } from "@/lib/generated/prisma";
 import { Search, Trash2 } from "lucide-react";
@@ -29,6 +30,7 @@ type ReceiptFormState = {
 };
 
 type ReceiptFormInitialValues = Partial<ReceiptFormState>;
+type ReceiptLineInitialValues = Partial<PurchaseLine>;
 type Errors = Partial<Record<keyof ReceiptFormState, string>> & { form?: string };
 type PurchaseLine = Pick<
   ReceiptFormState,
@@ -143,7 +145,8 @@ export function ReceiptForm({
   submitLabel,
   layout = "default",
   formId,
-  initialValues
+  initialValues,
+  initialLines
 }: {
   mode: "create" | "edit";
   receiptId?: number;
@@ -155,6 +158,7 @@ export function ReceiptForm({
   layout?: "default" | "table";
   formId?: string;
   initialValues?: ReceiptFormInitialValues;
+  initialLines?: ReceiptLineInitialValues[];
 }) {
   const router = useRouter();
   const purchaseDateRef = useRef<HTMLInputElement | null>(null);
@@ -165,6 +169,8 @@ export function ReceiptForm({
   const lineQtyRefs = useRef(new Map<string, HTMLInputElement | null>());
   const formRef = useRef<HTMLFormElement | null>(null);
   const lastActiveFormFieldRef = useRef<HTMLElement | null>(null);
+  const allowNavigationRef = useRef(false);
+  const historyGuardRef = useRef(false);
   const [form, setForm] = useState<ReceiptFormState>(emptyForm());
   const [lines, setLines] = useState<Array<PurchaseLine & { id: string }>>([emptyLine()]);
   const [pendingLineFocus, setPendingLineFocus] = useState<{ id: string; field: "subcategory" | "qty" } | null>(null);
@@ -200,7 +206,9 @@ export function ReceiptForm({
   const [subcategoryPickerLineId, setSubcategoryPickerLineId] = useState<string | null>(null);
   const [subcategorySearch, setSubcategorySearch] = useState("");
   const [subcategoryPickerIndex, setSubcategoryPickerIndex] = useState(0);
+  const [pendingCancelAction, setPendingCancelAction] = useState<"cancel" | "back" | null>(null);
   const useTableLayout = layout === "table";
+  const hasEnteredData = hasEnteredReceiptData();
 
   useEffect(() => {
     return () => {
@@ -237,6 +245,33 @@ export function ReceiptForm({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [saveState, useTableLayout]);
+
+  useEffect(() => {
+    if (!hasEnteredData || loading || allowNavigationRef.current) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [hasEnteredData, loading]);
+
+  useEffect(() => {
+    if (!hasEnteredData || loading || allowNavigationRef.current) return;
+    if (!historyGuardRef.current) {
+      window.history.pushState({ receiptFormGuard: true }, "", window.location.href);
+      historyGuardRef.current = true;
+    }
+
+    const onPopState = () => {
+      if (allowNavigationRef.current) return;
+      setPendingCancelAction("back");
+      window.history.pushState({ receiptFormGuard: true }, "", window.location.href);
+    };
+
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [hasEnteredData, loading]);
 
   function update<K extends keyof ReceiptFormState>(key: K, value: ReceiptFormState[K]) {
     if (key === "goldWeight" || key === "wastageYN") {
@@ -303,6 +338,27 @@ export function ReceiptForm({
     };
     setLines((prev) => [...prev, nextLine]);
     if (focusSubcategory) setPendingLineFocus({ id: nextLine.id, field: "subcategory" });
+  }
+
+  function initialLineToLine(initial: ReceiptLineInitialValues): PurchaseLine & { id: string } {
+    return {
+      ...emptyLine(),
+      ...initial,
+      id: uid(),
+      categoryCode: initial.categoryCode ?? "",
+      articleName: initial.articleName ?? "",
+      subcategoryCode: initial.subcategoryCode ?? "",
+      qty: String(initial.qty ?? "0"),
+      description: initial.description ?? "",
+      carat: normalizeCarat(initial.carat),
+      wastageYN: initial.wastageYN === "Y" ? "Y" : "N",
+      goldWeight: String(initial.goldWeight ?? "0"),
+      wastageMg: String(initial.wastageMg ?? "0"),
+      labourCharges: String(initial.labourCharges ?? "0"),
+      otherCosts: String(initial.otherCosts ?? "0"),
+      goldCostRatePer8g: String(initial.goldCostRatePer8g ?? system?.goldCostRatePer8g ?? 0),
+      wastageRateMgPer8g: String(initial.wastageRateMgPer8g ?? system?.wastageRateMgPer8g ?? 0)
+    };
   }
 
   function rememberActiveFormField(e: React.FocusEvent<HTMLFormElement>) {
@@ -553,6 +609,7 @@ export function ReceiptForm({
   useEffect(() => {
     if (mode === "edit" && initialValues) {
       setForm({ ...emptyForm(), ...initialValues });
+      if (initialLines?.length) setLines(initialLines.map(initialLineToLine));
       setLoading(false);
       return;
     }
@@ -591,7 +648,8 @@ export function ReceiptForm({
     return () => {
       active = false;
     };
-  }, [initialValues, mode, receiptId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialValues, initialLines, mode, receiptId]);
 
   const goldCostCalculated = useMemo(() => {
     const weight = toNumber(form.goldWeight);
@@ -622,13 +680,24 @@ export function ReceiptForm({
     return generated > 0 ? generated.toFixed(3) : "";
   }
 
+  function lineWastageWeightGrams(line: PurchaseLine) {
+    const wastageMg = toNumber(lineGeneratedWastage(line));
+    return form.purchaseType === "Gold" ? wastageMg / 1000 : wastageMg;
+  }
+
   function lineGoldCost(line: PurchaseLine) {
     return (toNumber(line.goldWeight) / 8) * toNumber(line.goldCostRatePer8g);
   }
 
+  function lineRealWeight(line: PurchaseLine) {
+    const totalGoldWeight = toNumber(line.goldWeight) + lineWastageWeightGrams(line);
+    const karat = Number.parseFloat(normalizeCarat(line.carat)) || 0;
+    return (totalGoldWeight / 24) * karat;
+  }
+
   function lineWastageCost(line: PurchaseLine) {
     if (line.wastageYN !== "Y") return 0;
-    return (toNumber(lineGeneratedWastage(line)) / 8) * toNumber(line.goldCostRatePer8g);
+    return (lineWastageWeightGrams(line) / 8) * toNumber(line.goldCostRatePer8g);
   }
 
   function lineTotalCost(line: PurchaseLine) {
@@ -655,6 +724,61 @@ export function ReceiptForm({
     let end = lines.length;
     while (end > 1 && isBlankTableLine(lines[end - 1])) end -= 1;
     return lines.slice(0, end);
+  }
+
+  function hasEnteredReceiptData() {
+    const baseForm = emptyForm();
+    const formHasEntry =
+      form.location.trim() !== "" ||
+      form.gsmCode.trim() !== "" ||
+      form.gsmName.trim() !== "" ||
+      form.purchaseType !== baseForm.purchaseType ||
+      form.categoryCode.trim() !== "" ||
+      form.articleName.trim() !== "" ||
+      form.subcategoryCode.trim() !== "" ||
+      form.qty !== baseForm.qty ||
+      form.description.trim() !== "" ||
+      form.carat.trim() !== "" ||
+      form.wastageYN !== baseForm.wastageYN ||
+      form.goldWeight !== baseForm.goldWeight ||
+      form.wastageMg !== baseForm.wastageMg ||
+      form.labourCharges !== baseForm.labourCharges ||
+      form.otherCosts !== baseForm.otherCosts ||
+      form.remarks.trim() !== "";
+
+    if (!useTableLayout) return formHasEntry;
+    return (
+      form.location.trim() !== "" ||
+      form.gsmCode.trim() !== "" ||
+      form.gsmName.trim() !== "" ||
+      form.purchaseType !== baseForm.purchaseType ||
+      form.remarks.trim() !== "" ||
+      lines.some((line) => !isBlankTableLine(line))
+    );
+  }
+
+  function cancelEntry() {
+    if (hasEnteredData) {
+      setPendingCancelAction("cancel");
+      return;
+    }
+    allowNavigationRef.current = true;
+    router.push(redirectPath);
+  }
+
+  function closeCancelConfirm() {
+    setPendingCancelAction(null);
+  }
+
+  function confirmCancelEntry() {
+    const action = pendingCancelAction;
+    setPendingCancelAction(null);
+    allowNavigationRef.current = true;
+    if (action === "back") {
+      window.history.back();
+      return;
+    }
+    router.push(redirectPath);
   }
 
   const tableTotals = useMemo(() => {
@@ -717,29 +841,29 @@ export function ReceiptForm({
     if (!validate()) return;
     setSaveState("saving");
     try {
-      if (useTableLayout && mode === "create") {
-        for (const line of getSavableTableLines()) {
-          const payload = {
-            ...form,
+      if (useTableLayout) {
+        const payload = {
+          ...form,
+          items: getSavableTableLines().map((line) => ({
             ...line,
             wastageMg: lineGeneratedWastage(line),
-            remarks: form.remarks,
             goldCost: lineGoldCost(line).toFixed(2),
             wastage: lineWastageCost(line).toFixed(2)
-          };
-          const res = await fetch(submitPath, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(payload)
-          });
-          if (!res.ok) {
-            const json = (await res.json().catch(() => null)) as { error?: string } | null;
-            throw new Error(json?.error ?? "Save failed");
-          }
+          }))
+        };
+        const res = await fetch(submitPath, {
+          method: mode === "edit" ? "PATCH" : "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(mode === "edit" && receiptId ? { id: receiptId, ...payload } : payload)
+        });
+        if (!res.ok) {
+          const json = (await res.json().catch(() => null)) as { error?: string } | null;
+          throw new Error(json?.error ?? "Save failed");
         }
         setSaveState("saved");
         setForm(emptyForm());
         setLines([emptyLine()]);
+        allowNavigationRef.current = true;
         router.push(redirectPath);
         return;
       }
@@ -764,6 +888,7 @@ export function ReceiptForm({
       }
       setSaveState("saved");
       setForm(emptyForm());
+      allowNavigationRef.current = true;
       router.push(redirectPath);
     } catch (e) {
       setSaveState("error");
@@ -1001,7 +1126,8 @@ export function ReceiptForm({
                           <th className="w-[5%] border border-ebony-100 px-1 py-1.5 text-right">Qty *</th>
                           <th className="w-[6%] border border-ebony-100 px-1 py-1.5">Wtg</th>
                           <th className="w-[7%] border border-ebony-100 px-1 py-1.5 text-right">Gold Wt *</th>
-                          <th className="w-[7%] border border-ebony-100 px-1 py-1.5 text-right">Wtg Wt</th>
+                          <th className="w-[7%] border border-ebony-100 px-1 py-1.5 text-right">Wtg Wt (g)</th>
+                          <th className="w-[7%] border border-ebony-100 px-1 py-1.5 text-right">Real Wt</th>
                           <th className="w-[7%] border border-ebony-100 px-1 py-1.5 text-right">Labour</th>
                           <th className="w-[8%] border border-ebony-100 px-1 py-1.5 text-right">Gold Cost</th>
                           <th className="w-[9%] border border-ebony-100 px-1 py-1.5 text-right">Wtg Cost</th>
@@ -1013,6 +1139,10 @@ export function ReceiptForm({
                         {lines.map((line, index) => {
                           const rowErrors = lineErrors[line.id] ?? {};
                           const generatedWastage = lineGeneratedWastage(line);
+                          const displayedWastage =
+                            form.purchaseType === "Gold" && generatedWastage
+                              ? lineWastageWeightGrams(line).toFixed(3)
+                              : generatedWastage;
                           return (
                             <tr key={line.id} className="bg-white">
                               <td className="border border-ebony-100 px-1 py-1 text-center font-semibold text-ebony-700">
@@ -1085,12 +1215,15 @@ export function ReceiptForm({
                                   inputMode="decimal"
                                   readOnly={form.purchaseType === "Gold"}
                                   disabled={line.wastageYN !== "Y"}
-                                  value={generatedWastage}
+                                  value={displayedWastage}
                                   onFocus={selectOnFocus}
                                   onChange={(e) => updateLine(line.id, "wastageMg", sanitizeDecimal(e.target.value))}
                                   className="h-8 w-full border-0 bg-transparent px-1 text-right text-[11px] outline-none focus:bg-gold-50 disabled:bg-ebony-50 read-only:bg-ebony-50"
                                 />
                                 {rowErrors.wastageMg && <FieldError>{rowErrors.wastageMg}</FieldError>}
+                              </td>
+                              <td className="border border-ebony-100 px-1 py-1 text-right font-semibold tabular-nums text-ebony-800">
+                                {lineRealWeight(line).toFixed(3)}
                               </td>
                               <td className="border border-ebony-100 p-0 focus-within:bg-gold-50 focus-within:ring-2 focus-within:ring-inset focus-within:ring-gold-500">
                                 <input
@@ -1147,7 +1280,7 @@ export function ReceiptForm({
                     </button>
                     <button
                       type="button"
-                      onClick={() => router.push(redirectPath)}
+                      onClick={cancelEntry}
                       disabled={saveState === "saving"}
                       className="rounded-md bg-ebony-100 px-6 py-3 text-sm font-bold text-ebony-800 hover:bg-ebony-200 disabled:cursor-not-allowed disabled:opacity-60"
                     >
@@ -1492,6 +1625,18 @@ export function ReceiptForm({
           </div>
         </div>
       </Modal>
+
+      <ConfirmModal
+        open={pendingCancelAction !== null}
+        title="Cancel Entry?"
+        message="You have entered purchase details."
+        details="Are you sure you want to cancel this entry? Unsaved details will be lost."
+        confirmLabel="Yes, cancel"
+        cancelLabel="Keep editing"
+        tone="warning"
+        onCancel={closeCancelConfirm}
+        onConfirm={confirmCancelEntry}
+      />
 
       <Modal open={systemModalOpen} onClose={closeSystemModal} title="System Data">
         <form onSubmit={saveSystemData} className="grid gap-5 md:grid-cols-2">

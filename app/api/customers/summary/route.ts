@@ -16,7 +16,7 @@ export async function GET(req: Request) {
   if (!accountNumber) {
     return NextResponse.json({
       customer,
-      summary: { debit: "0.00", credit: "0.00", balance: "0.00" },
+      summary: { debit: "0.00", credit: "0.00", balance: "0.00", creditLimit: customer.creditLimit.toFixed(2), availableCredit: customer.creditLimit.toFixed(2) },
       transactions: []
     });
   }
@@ -42,7 +42,9 @@ export async function GET(req: Request) {
     summary: {
       debit: (agg._sum.debit?.toString() ?? "0.00"),
       credit: (agg._sum.credit?.toString() ?? "0.00"),
-      balance: balance.toFixed(2)
+      balance: balance.toFixed(2),
+      creditLimit: customer.creditLimit.toFixed(2),
+      availableCredit: Prisma.Decimal.max(new Prisma.Decimal("0"), customer.creditLimit.minus(balance)).toFixed(2)
     },
     transactions: txs.map((t) => ({
       id: t.id,

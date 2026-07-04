@@ -9,12 +9,21 @@ import { Edit3, Hammer, Plus, Search, Trash2, Users, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
-type Props = { initial: Goldsmith[] };
+type GoldsmithRow = Goldsmith & {
+  goldDr: number;
+  goldCr: number;
+  goldBl: number;
+  cashDr: number;
+  cashCr: number;
+  cashBl: number;
+};
+
+type Props = { initial: GoldsmithRow[] };
 
 export function GoldsmithsTable({ initial }: Props) {
   const router = useRouter();
   const toast = useToast();
-  const [rows, setRows] = useState<Goldsmith[]>(initial);
+  const [rows, setRows] = useState<GoldsmithRow[]>(initial);
   const [editingCode, setEditingCode] = useState<string | null>(null);
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
@@ -84,22 +93,48 @@ export function GoldsmithsTable({ initial }: Props) {
     return initials || "G";
   }
 
+  function formatBalance(value: number, fractionDigits: number) {
+    return value.toLocaleString("en-US", {
+      minimumFractionDigits: fractionDigits,
+      maximumFractionDigits: fractionDigits
+    });
+  }
+
   async function save() {
     if (!canSave) return;
+    const normalizedCode = code.trim().toUpperCase();
+    if (!editingCode && rows.some((row) => row.code.trim().toUpperCase() === normalizedCode)) {
+      const message = `Goldsmith code ${normalizedCode} already exists`;
+      setError(message);
+      toast.error("Unable to add goldsmith", message);
+      return;
+    }
     setBusy(true);
     setError("");
     try {
       const res = await fetch("/api/goldsmiths", {
         method: editingCode ? "PATCH" : "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ code: editingCode ?? code, name })
+        body: JSON.stringify({ code: editingCode ?? normalizedCode, name })
       });
       const json = (await res.json().catch(() => null)) as { error?: string; goldsmith?: Goldsmith } | null;
       if (!res.ok) throw new Error(json?.error ?? "Save failed");
       const saved = json?.goldsmith;
       if (!saved) throw new Error("Save failed");
 
-      setRows((prev) => [...prev.filter((r) => r.code !== saved.code), saved].sort((a, b) => a.code.localeCompare(b.code)));
+      setRows((prev) => {
+        const existing = prev.find((row) => row.code === saved.code);
+        const savedRow: GoldsmithRow = {
+          ...saved,
+          goldDr: existing?.goldDr ?? 0,
+          goldCr: existing?.goldCr ?? 0,
+          goldBl: existing?.goldBl ?? 0,
+          cashDr: existing?.cashDr ?? 0,
+          cashCr: existing?.cashCr ?? 0,
+          cashBl: existing?.cashBl ?? 0
+        };
+        return [...prev.filter((row) => row.code !== saved.code), savedRow].sort((a, b) => a.code.localeCompare(b.code));
+      });
       toast.success(editingCode ? "Goldsmith updated" : "Goldsmith added");
       reset();
       setIsModalOpen(false);
@@ -207,12 +242,17 @@ export function GoldsmithsTable({ initial }: Props) {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-[760px] w-full text-sm">
+            <table className="min-w-[1180px] w-full text-sm">
               <thead className="bg-ebony-50 text-left text-[11px] font-bold uppercase tracking-wide text-ebony-600">
                 <tr>
                   <th className="px-5 py-3">Goldsmith</th>
                   <th className="px-5 py-3">GSM Code</th>
-                  <th className="px-5 py-3">Status</th>
+                  <th className="px-3 py-3 text-right">Gold Dr</th>
+                  <th className="px-3 py-3 text-right">Gold Cr</th>
+                  <th className="px-3 py-3 text-right">Gold Bl</th>
+                  <th className="px-3 py-3 text-right">Cash Dr</th>
+                  <th className="px-3 py-3 text-right">Cash Cr</th>
+                  <th className="px-3 py-3 text-right">Cash Bl</th>
                   <th className="px-5 py-3 text-right">Actions</th>
                 </tr>
               </thead>
@@ -236,11 +276,12 @@ export function GoldsmithsTable({ initial }: Props) {
                       </div>
                     </td>
                     <td className="px-5 py-4 font-bold tabular-nums text-ebony-900">{row.code}</td>
-                    <td className="px-5 py-4">
-                      <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700">
-                        Active
-                      </span>
-                    </td>
+                    <td className="px-3 py-4 text-right font-semibold tabular-nums text-ebony-800">{formatBalance(row.goldDr, 3)}</td>
+                    <td className="px-3 py-4 text-right font-semibold tabular-nums text-ebony-800">{formatBalance(row.goldCr, 3)}</td>
+                    <td className="px-3 py-4 text-right font-bold tabular-nums text-ebony-950">{formatBalance(row.goldBl, 3)}</td>
+                    <td className="px-3 py-4 text-right font-semibold tabular-nums text-ebony-800">{formatBalance(row.cashDr, 2)}</td>
+                    <td className="px-3 py-4 text-right font-semibold tabular-nums text-ebony-800">{formatBalance(row.cashCr, 2)}</td>
+                    <td className="px-3 py-4 text-right font-bold tabular-nums text-ebony-950">{formatBalance(row.cashBl, 2)}</td>
                     <td className="px-5 py-4 text-right">
                       <div className="inline-flex items-center gap-2">
                         <button
@@ -275,7 +316,7 @@ export function GoldsmithsTable({ initial }: Props) {
                 ))}
                 {filteredRows.length === 0 && (
                   <tr>
-                    <td className="px-5 py-10 text-center text-sm font-medium text-ebony-600" colSpan={4}>
+                    <td className="px-5 py-10 text-center text-sm font-medium text-ebony-600" colSpan={10}>
                       No goldsmiths match your search.
                     </td>
                   </tr>

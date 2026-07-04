@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { type FocusEvent, useEffect, useMemo, useState } from "react";
 import { CalendarDays, Plus, Search, Save, Send, Trash2 } from "lucide-react";
 
-type CustomerRow = { id: number; name: string; phone?: string | null };
+type CustomerRow = { id: number; name: string; accountNumber?: string | null; phone?: string | null; creditLimit?: string };
 type SalesmanRow = { id: number; code: string; name: string };
 type SubcategoryRow = { code: string; name: string; categoryCode: string; carat?: string | null };
 
@@ -93,6 +93,15 @@ export function SalesForm() {
   ]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [customerModalOpen, setCustomerModalOpen] = useState(false);
+  const [newCustomerName, setNewCustomerName] = useState("");
+  const [newCustomerPhone, setNewCustomerPhone] = useState("");
+  const [newCustomerEmail, setNewCustomerEmail] = useState("");
+  const [newCustomerAddress, setNewCustomerAddress] = useState("");
+  const [newCustomerCreditLimit, setNewCustomerCreditLimit] = useState("0");
+  const [customerBusy, setCustomerBusy] = useState(false);
+  const [customerError, setCustomerError] = useState("");
+  const [customerCredit, setCustomerCredit] = useState<{ balance: number; limit: number; available: number } | null>(null);
   const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
   const [barcodePickerRowId, setBarcodePickerRowId] = useState<string | null>(null);
   const [pickerIndex, setPickerIndex] = useState(0);
@@ -112,6 +121,31 @@ export function SalesForm() {
       setPendingFocusId(null);
     }
   }, [pendingFocusId, lines.length, cellRefs]);
+
+  useEffect(() => {
+    if (typeof customerId !== "number") {
+      setCustomerCredit(null);
+      return;
+    }
+    const controller = new AbortController();
+    void fetch(`/api/customers/summary?customerId=${customerId}`, { cache: "no-store", signal: controller.signal })
+      .then(async (res) => {
+        if (!res.ok) throw new Error("Unable to load customer credit");
+        return res.json() as Promise<{ summary: { balance: string; creditLimit: string; availableCredit: string } }>;
+      })
+      .then(({ summary }) => {
+        setCustomerCredit({
+          balance: Number(summary.balance),
+          limit: Number(summary.creditLimit),
+          available: Number(summary.availableCredit)
+        });
+      })
+      .catch((e) => {
+        if (e instanceof DOMException && e.name === "AbortError") return;
+        setCustomerCredit(null);
+      });
+    return () => controller.abort();
+  }, [customerId]);
 
   const navCols = ["subcategory", "qty", "goldWeight", "stoneWeight", "sellRate"] as const;
   type NavCol = (typeof navCols)[number];
@@ -389,6 +423,50 @@ export function SalesForm() {
     setLines((prev) => (prev.length === 1 ? prev : prev.filter((l) => l.id !== id)));
   }
 
+  function openCustomerModal() {
+    setNewCustomerName("");
+    setNewCustomerPhone("");
+    setNewCustomerEmail("");
+    setNewCustomerAddress("");
+    setNewCustomerCreditLimit("0");
+    setCustomerError("");
+    setCustomerModalOpen(true);
+  }
+
+  async function addCustomer() {
+    const name = newCustomerName.trim();
+    if (!name || customerBusy) return;
+    const limit = Number(newCustomerCreditLimit);
+    if (!newCustomerCreditLimit.trim() || !Number.isFinite(limit) || limit < 0) {
+      setCustomerError("Enter a valid non-negative credit limit.");
+      return;
+    }
+    setCustomerBusy(true);
+    setCustomerError("");
+    try {
+      const res = await fetch("/api/customers", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name, phone: newCustomerPhone, email: newCustomerEmail, address: newCustomerAddress, creditLimit: newCustomerCreditLimit })
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? "Unable to add customer");
+      }
+      const body = (await res.json()) as { customer: CustomerRow };
+      setCustomers((current) => [body.customer, ...current.filter((customer) => customer.id !== body.customer.id)]);
+      setCustomerId(body.customer.id);
+      setCustomerModalOpen(false);
+      toast.success("Customer added", `${body.customer.name} is selected for this invoice.`);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Unable to add customer";
+      setCustomerError(message);
+      toast.error("Unable to add customer", message);
+    } finally {
+      setCustomerBusy(false);
+    }
+  }
+
   async function submit(destination: "list" | "invoice" = "list") {
     setError("");
     const sid = typeof salesmanId === "number" ? salesmanId : Number(salesmanId);
@@ -396,6 +474,10 @@ export function SalesForm() {
     if (!transactionDate) return setError("Transaction date is required.");
     if (!Number.isFinite(sid)) return setError("Salesman is required.");
     if (!Number.isFinite(cid)) return setError("Customer is required.");
+    if (paidValue > grandTotal) return setError("Paid amount cannot exceed the invoice total.");
+    if (salesType.toLowerCase() === "rate" && customerCredit && balanceDue > customerCredit.available) {
+      return setError(`Credit limit exceeded. Available credit is ${customerCredit.available.toFixed(2)}.`);
+    }
 
     const selectedLines = lines.filter((l) => l.subcategoryCode.trim() !== "");
     const items = selectedLines.map((l) => ({
@@ -427,6 +509,7 @@ export function SalesForm() {
           transactionDate,
           salesmanId: sid,
           customerId: cid,
+          salesType,
           remarks,
           paymentType,
           discount,
@@ -497,18 +580,28 @@ export function SalesForm() {
 
           <label className="space-y-1.5 text-sm xl:col-span-2">
             <div className="text-xs font-bold text-ebony-800">Customer *</div>
+            <div className="flex items-stretch gap-2">
             <select
               value={customerId}
               onChange={(e) => setCustomerId(e.target.value ? Number(e.target.value) : "")}
-              className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+              className="h-10 min-w-0 flex-1 rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
             >
               <option value="">Select customer...</option>
               {customers.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.name}
+                  {c.accountNumber ?? `CUST-${String(c.id).padStart(6, "0")}`} · {c.name}
                 </option>
               ))}
             </select>
+              <button type="button" onClick={openCustomerModal} className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-gold-500 text-white hover:bg-gold-600" aria-label="Add new customer" title="Add new customer">
+                <Plus className="h-4 w-4" />
+              </button>
+            </div>
+            {customerCredit ? (
+              <div className={`text-[11px] font-semibold ${salesType.toLowerCase() === "rate" && balanceDue > customerCredit.available ? "text-red-600" : "text-ebony-500"}`}>
+                Outstanding: {customerCredit.balance.toFixed(2)} · Limit: {customerCredit.limit.toFixed(2)} · Available: {customerCredit.available.toFixed(2)}
+              </div>
+            ) : null}
           </label>
 
           <label className="space-y-1.5 text-sm">
@@ -569,7 +662,7 @@ export function SalesForm() {
           <div className="px-4 py-6 text-sm font-semibold text-ebony-500">Loading...</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1080px] text-sm">
+            <table className="w-full min-w-[1160px] text-sm">
               <thead className="bg-ebony-50 text-left text-[11px] font-bold uppercase tracking-wide text-ebony-600">
                 <tr>
                   <th className="border border-ebony-100 px-3 py-2 text-center">#</th>
@@ -578,6 +671,7 @@ export function SalesForm() {
                   <th className="border border-ebony-100 px-3 py-2">Karat</th>
                   <th className="border border-ebony-100 px-3 py-2 text-right">Qty</th>
                   <th className="border border-ebony-100 px-3 py-2 text-right">Gold Wt</th>
+                  <th className="border border-ebony-100 px-3 py-2 text-right">Real Wt</th>
                   <th className="border border-ebony-100 px-3 py-2 text-right">Stone Wt</th>
                   <th className="border border-ebony-100 px-3 py-2 text-right">Net Wt</th>
                   <th className="border border-ebony-100 px-3 py-2 text-right">Rate/8g</th>
@@ -592,6 +686,8 @@ export function SalesForm() {
                   const subAvail = l.subcategoryCode ? availabilityBySubcategory.get(l.subcategoryCode) : undefined;
                   const sellRate = Math.max(0, toNumber(l.sellRatePer8g));
                   const goldWeight = Math.max(0, toNumber(l.goldWeight));
+                  const karat = Math.max(0, toNumber(normalizeCarat(l.carat)));
+                  const realWeight = (goldWeight / 24) * karat;
                   const stoneWeight = Math.max(0, toNumber(l.stoneWeight));
                   const netWeight = goldWeight + stoneWeight;
                   const amount = (goldWeight / 8) * sellRate;
@@ -661,6 +757,9 @@ export function SalesForm() {
                         {weightErrors.get(l.id) ? (
                           <div className="px-2 pb-1 text-xs font-semibold text-red-600">{weightErrors.get(l.id)}</div>
                         ) : null}
+                      </td>
+                      <td className="border border-ebony-100 px-3 py-2 text-right font-semibold tabular-nums text-ebony-800">
+                        {realWeight.toFixed(3)}
                       </td>
                       <td className="border border-ebony-100 p-0 focus-within:bg-gold-50 focus-within:ring-2 focus-within:ring-inset focus-within:ring-gold-500">
                         <input
@@ -810,6 +909,41 @@ export function SalesForm() {
         </button>
       </div>
 
+      <Modal open={customerModalOpen} onClose={() => !customerBusy && setCustomerModalOpen(false)} title="Add Customer">
+        <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); void addCustomer(); }}>
+          <p className="text-sm text-ebony-600">Create a customer and continue this invoice with them selected.</p>
+          {customerError ? <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{customerError}</div> : null}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="space-y-1.5 text-sm">
+              <span className="font-semibold text-ebony-700">Customer Name *</span>
+              <input autoFocus required value={newCustomerName} onChange={(e) => setNewCustomerName(e.target.value)} className="w-full rounded-md border border-ebony-200 px-3 py-2.5 outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20" />
+            </label>
+            <label className="space-y-1.5 text-sm">
+              <span className="font-semibold text-ebony-700">Phone</span>
+              <input value={newCustomerPhone} onChange={(e) => setNewCustomerPhone(e.target.value)} className="w-full rounded-md border border-ebony-200 px-3 py-2.5 outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20" />
+            </label>
+            <label className="space-y-1.5 text-sm">
+              <span className="font-semibold text-ebony-700">Email</span>
+              <input type="email" value={newCustomerEmail} onChange={(e) => setNewCustomerEmail(e.target.value)} className="w-full rounded-md border border-ebony-200 px-3 py-2.5 outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20" />
+            </label>
+            <label className="space-y-1.5 text-sm">
+              <span className="font-semibold text-ebony-700">Address</span>
+              <input value={newCustomerAddress} onChange={(e) => setNewCustomerAddress(e.target.value)} className="w-full rounded-md border border-ebony-200 px-3 py-2.5 outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20" />
+            </label>
+            <label className="space-y-1.5 text-sm">
+              <span className="font-semibold text-ebony-700">Credit Limit *</span>
+              <input type="number" min="0" step="0.01" required value={newCustomerCreditLimit} onChange={(e) => setNewCustomerCreditLimit(e.target.value)} className="w-full rounded-md border border-ebony-200 px-3 py-2.5 outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20" />
+            </label>
+          </div>
+          <div className="flex justify-end gap-2 border-t border-ebony-100 pt-4">
+            <button type="button" disabled={customerBusy} onClick={() => setCustomerModalOpen(false)} className="rounded-md border border-ebony-200 px-4 py-2.5 text-sm font-semibold text-ebony-700 hover:bg-ebony-50 disabled:opacity-60">Cancel</button>
+            <button type="submit" disabled={customerBusy || !newCustomerName.trim() || !newCustomerCreditLimit.trim() || !Number.isFinite(Number(newCustomerCreditLimit)) || Number(newCustomerCreditLimit) < 0} className="rounded-md bg-gold-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-gold-700 disabled:cursor-not-allowed disabled:opacity-60">
+              {customerBusy ? "Saving..." : "Save Customer"}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
       <Modal
         open={barcodePickerRowId !== null}
         onClose={closeBarcodePicker}
@@ -940,18 +1074,28 @@ export function SalesForm() {
 
           <label className="space-y-2 text-sm">
             <div className="font-semibold text-ebony-700">Customer</div>
+            <div className="flex items-stretch gap-2">
             <select
               value={customerId}
               onChange={(e) => setCustomerId(e.target.value ? Number(e.target.value) : "")}
-              className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
+              className="min-w-0 flex-1 rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
             >
               <option value="">Select customer...</option>
               {customers.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.name}
+                  {c.accountNumber ?? `CUST-${String(c.id).padStart(6, "0")}`} · {c.name}
                 </option>
               ))}
             </select>
+              <button type="button" onClick={openCustomerModal} className="inline-flex w-11 shrink-0 items-center justify-center rounded-lg bg-gold-500 text-white hover:bg-gold-600" aria-label="Add new customer" title="Add new customer">
+                <Plus className="h-4 w-4" />
+              </button>
+            </div>
+            {customerCredit ? (
+              <div className={`text-xs font-semibold ${salesType.toLowerCase() === "rate" && balanceDue > customerCredit!.available ? "text-red-600" : "text-ebony-500"}`}>
+                Outstanding: {customerCredit!.balance.toFixed(2)} · Limit: {customerCredit!.limit.toFixed(2)} · Available: {customerCredit!.available.toFixed(2)}
+              </div>
+            ) : null}
           </label>
         </div>
 

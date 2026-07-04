@@ -70,6 +70,7 @@ export default async function SalesPage() {
                 id: s.id,
                 saleNo: s.saleNo,
                 transactionDate: new Date(s.transactionDate).toISOString().slice(0, 10),
+                customerCode: s.customer.accountNumber ?? `CUST-${String(s.customerId).padStart(6, "0")}`,
                 customerName: s.customer.name,
                 totalItems: s.totalItems,
                 totalQty: s.totalQty,

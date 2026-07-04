@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@/lib/generated/prisma";
 import { NextResponse } from "next/server";
 
 export async function GET() {
@@ -12,12 +13,24 @@ export async function POST(req: Request) {
   const name = (body.name ?? "").trim();
   if (!code || !name) return NextResponse.json({ error: "Missing code/name" }, { status: 400 });
 
-  const goldsmith = await prisma.goldsmith.upsert({
-    where: { code },
-    create: { code, name },
-    update: { name }
+  const existing = await prisma.goldsmith.findFirst({
+    where: { code: { equals: code, mode: "insensitive" } },
+    select: { code: true }
   });
-  return NextResponse.json({ goldsmith });
+  if (existing) {
+    return NextResponse.json({ error: `Goldsmith code ${code} already exists` }, { status: 409 });
+  }
+
+  try {
+    const goldsmith = await prisma.goldsmith.create({ data: { code, name } });
+    return NextResponse.json({ goldsmith }, { status: 201 });
+  } catch (error) {
+    // Keep the database constraint as the final guard against concurrent requests.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return NextResponse.json({ error: `Goldsmith code ${code} already exists` }, { status: 409 });
+    }
+    throw error;
+  }
 }
 
 export async function PATCH(req: Request) {
@@ -40,4 +53,3 @@ export async function DELETE(req: Request) {
   await prisma.goldsmith.delete({ where: { code } });
   return NextResponse.json({ ok: true });
 }
-

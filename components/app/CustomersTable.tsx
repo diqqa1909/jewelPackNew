@@ -19,13 +19,17 @@ export function CustomersTable({ initial }: Props) {
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [address, setAddress] = useState("");
+  const [creditLimit, setCreditLimit] = useState("0");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
 
-  const canSave = useMemo(() => name.trim() !== "" && !busy, [busy, name]);
+  const canSave = useMemo(() => {
+    const limit = Number(creditLimit);
+    return name.trim() !== "" && creditLimit.trim() !== "" && Number.isFinite(limit) && limit >= 0 && !busy;
+  }, [busy, creditLimit, name]);
 
   const filteredCustomers = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
@@ -59,6 +63,7 @@ export function CustomersTable({ initial }: Props) {
     setPhone("");
     setEmail("");
     setAddress("");
+    setCreditLimit("0");
   }
 
   function openCreateForm() {
@@ -79,6 +84,7 @@ export function CustomersTable({ initial }: Props) {
     setPhone(customer.phone ?? "");
     setEmail(customer.email ?? "");
     setAddress(customer.address ?? "");
+    setCreditLimit(customer.creditLimit.toString());
     setError("");
     setIsCustomerModalOpen(true);
   }
@@ -100,7 +106,7 @@ export function CustomersTable({ initial }: Props) {
       const res = await fetch("/api/customers", {
         method: editingId ? "PATCH" : "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: editingId, name, phone, email, address })
+        body: JSON.stringify({ id: editingId, name, phone, email, address, creditLimit })
       });
       if (!res.ok) {
         const msg = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -171,10 +177,12 @@ export function CustomersTable({ initial }: Props) {
         phone={phone}
         email={email}
         address={address}
+        creditLimit={creditLimit}
         onNameChange={setName}
         onPhoneChange={setPhone}
         onEmailChange={setEmail}
         onAddressChange={setAddress}
+        onCreditLimitChange={setCreditLimit}
         onClose={cancelForm}
         onSave={() => void save()}
       />
@@ -226,6 +234,7 @@ export function CustomersTable({ initial }: Props) {
                   <th className="px-5 py-4">Phone</th>
                   <th className="px-5 py-4">Email</th>
                   <th className="px-5 py-4">Address</th>
+                  <th className="px-5 py-4 text-right">Credit Limit</th>
                   <th className="px-5 py-4">Status</th>
                   <th className="px-5 py-4 text-right">Actions</th>
                 </tr>
@@ -255,6 +264,9 @@ export function CustomersTable({ initial }: Props) {
                     <td className="px-5 py-4 text-ebony-700">{r.email ?? "-"}</td>
                     <td className="max-w-[260px] px-5 py-4 text-ebony-700">
                       <span className="line-clamp-2">{r.address ?? "-"}</span>
+                    </td>
+                    <td className="px-5 py-4 text-right font-semibold tabular-nums text-ebony-800">
+                      {Number(r.creditLimit).toFixed(2)}
                     </td>
                     <td className="px-5 py-4">
                       <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
@@ -295,7 +307,7 @@ export function CustomersTable({ initial }: Props) {
                 ))}
                 {filteredCustomers.length === 0 && (
                   <tr>
-                    <td className="px-5 py-10 text-center text-sm text-ebony-600" colSpan={6}>
+                    <td className="px-5 py-10 text-center text-sm text-ebony-600" colSpan={7}>
                       No customers match your search.
                     </td>
                   </tr>
@@ -328,10 +340,12 @@ function CustomerModal({
   phone,
   email,
   address,
+  creditLimit,
   onNameChange,
   onPhoneChange,
   onEmailChange,
   onAddressChange,
+  onCreditLimitChange,
   onClose,
   onSave
 }: {
@@ -343,10 +357,12 @@ function CustomerModal({
   phone: string;
   email: string;
   address: string;
+  creditLimit: string;
   onNameChange: (value: string) => void;
   onPhoneChange: (value: string) => void;
   onEmailChange: (value: string) => void;
   onAddressChange: (value: string) => void;
+  onCreditLimitChange: (value: string) => void;
   onClose: () => void;
   onSave: () => void;
 }) {
@@ -441,6 +457,18 @@ function CustomerModal({
                 <input
                   value={address}
                   onChange={(event) => onAddressChange(event.target.value)}
+                  className="w-full rounded-md border border-ebony-200 bg-white px-3.5 py-2.5 text-sm text-ebony-900 outline-none transition focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+                />
+              </label>
+              <label className="space-y-1.5">
+                <span className="text-xs font-semibold uppercase tracking-wide text-ebony-600">Credit Limit *</span>
+                <input
+                  value={creditLimit}
+                  onChange={(event) => onCreditLimitChange(event.target.value)}
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  required
                   className="w-full rounded-md border border-ebony-200 bg-white px-3.5 py-2.5 text-sm text-ebony-900 outline-none transition focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
                 />
               </label>

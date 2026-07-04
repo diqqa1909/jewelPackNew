@@ -7,7 +7,9 @@ type PurchasePayload = {
   transactionDate: string;
   location?: string;
   gsmCode: string;
+  supplierId?: number | null;
   categoryCode: string;
+  articleName?: string;
   subcategoryCode: string;
   qty: string;
   description?: string;
@@ -17,6 +19,28 @@ type PurchasePayload = {
   labourCharges: string;
   otherCosts: string;
   remarks?: string;
+  items?: PurchaseLinePayload[];
+};
+
+type PurchaseLinePayload = Omit<
+  PurchasePayload,
+  "transactionDate" | "location" | "gsmCode" | "supplierId" | "purchaseType" | "remarks" | "items"
+>;
+
+type NormalizedPurchaseLine = {
+  line: PurchaseLinePayload;
+  category: { name: string };
+  subcategory: { name: string };
+  caratLabel: string;
+  qty: number;
+  goldWeight: Prisma.Decimal;
+  goldCost: Prisma.Decimal;
+  wastageEnabled: boolean;
+  wastageMg: Prisma.Decimal;
+  wastageCost: Prisma.Decimal;
+  labourCharges: Prisma.Decimal;
+  otherCosts: Prisma.Decimal;
+  totalCost: Prisma.Decimal;
 };
 
 const CARAT_VALUES = new Set(["18", "19", "20", "21", "22", "24"]);
@@ -42,11 +66,60 @@ function normalizePurchaseType(value: unknown) {
   return value === "Rate" ? "Rate" : "Gold";
 }
 
+function purchaseAccount({
+  supplierId,
+  supplierName,
+  goldsmithCode,
+  goldsmithName
+}: {
+  supplierId?: number | null;
+  supplierName?: string | null;
+  goldsmithCode?: string | null;
+  goldsmithName?: string | null;
+}) {
+  if (supplierId) {
+    return {
+      account: supplierName?.trim() || `Supplier #${supplierId}`,
+      accountNumber: `SUP-${String(supplierId).padStart(6, "0")}`
+    };
+  }
+  const code = (goldsmithCode ?? "").trim();
+  return {
+    account: goldsmithName?.trim() || code || "Goldsmith",
+    accountNumber: code ? `GSM-${code}` : null
+  };
+}
+
 function nextPurchaseNo(date: Date) {
   const yy = String(date.getFullYear()).slice(-2);
   const mm = String(date.getMonth() + 1).padStart(2, "0");
   const dd = String(date.getDate()).padStart(2, "0");
   return `PUR-${yy}${mm}${dd}-`;
+}
+
+function purchaseSeq(purchaseNo: string | null | undefined, prefix: string) {
+  const match = (purchaseNo ?? "").slice(prefix.length).match(/^\d+/);
+  const seq = match ? Number(match[0]) : 0;
+  return Number.isFinite(seq) ? seq : 0;
+}
+
+function linePayloads(body: Partial<Omit<PurchasePayload, "wastageYN"> & { wastageYN?: "Y" | "N" | boolean }>) {
+  return Array.isArray(body.items) && body.items.length > 0
+    ? body.items
+    : [
+        {
+          categoryCode: body.categoryCode ?? "",
+          articleName: body.articleName,
+          subcategoryCode: body.subcategoryCode ?? "",
+          qty: body.qty ?? "0",
+          description: body.description,
+          wastageYN: (body.wastageYN ?? "N") as "Y" | "N",
+          goldWeight: body.goldWeight ?? "0",
+          wastageMg: body.wastageMg,
+          labourCharges: body.labourCharges ?? "0",
+          otherCosts: body.otherCosts ?? "0"
+        }
+      ];
 }
 
 export async function GET(req: Request) {
@@ -63,7 +136,7 @@ export async function GET(req: Request) {
       where: { purchaseNo: { startsWith: prefix } },
       orderBy: { purchaseNo: "desc" }
     });
-    const lastSeq = last?.purchaseNo ? Number(last.purchaseNo.slice(prefix.length)) : 0;
+    const lastSeq = purchaseSeq(last?.purchaseNo, prefix);
     const nextSeq = Number.isFinite(lastSeq) ? lastSeq + 1 : 1;
     const purchaseNo = `${prefix}${String(nextSeq).padStart(4, "0")}`;
     return NextResponse.json({ purchaseNo });
@@ -84,14 +157,6 @@ export async function POST(req: Request) {
 
     if (!body.transactionDate) return NextResponse.json({ error: "Missing date" }, { status: 400 });
     if (!body.gsmCode) return NextResponse.json({ error: "Missing goldsmith" }, { status: 400 });
-    if (!body.categoryCode) return NextResponse.json({ error: "Missing category" }, { status: 400 });
-    if (!body.subcategoryCode) return NextResponse.json({ error: "Missing subcategory" }, { status: 400 });
-
-    const qty = Number(body.qty);
-    if (!Number.isFinite(qty) || qty < 0) {
-      return NextResponse.json({ error: "Invalid qty" }, { status: 400 });
-    }
-
     const purchaseDate = new Date(body.transactionDate);
     if (Number.isNaN(purchaseDate.getTime())) {
       return NextResponse.json({ error: "Invalid date" }, { status: 400 });
@@ -101,30 +166,38 @@ export async function POST(req: Request) {
     const goldRatePer8g = system?.goldCostRatePer8g ?? new Prisma.Decimal("0");
 
     const goldsmith = await prisma.goldsmith.findUnique({ where: { code: body.gsmCode } });
+    const supplierId = body.supplierId == null ? null : Number(body.supplierId);
+    const supplier = supplierId ? await prisma.supplier.findUnique({ where: { id: supplierId } }) : null;
     const purchaseType = normalizePurchaseType(body.purchaseType);
-    const category = await prisma.category.findUnique({ where: { code: body.categoryCode } });
-    const subcategory = await prisma.subcategory.findUnique({ where: { code: body.subcategoryCode } });
-    if (!category) return NextResponse.json({ error: "Invalid category" }, { status: 400 });
-    if (!subcategory) return NextResponse.json({ error: "Invalid subcategory" }, { status: 400 });
-    const carat = normalizeCarat(subcategory.carat);
-    if (!CARAT_VALUES.has(carat)) {
-      return NextResponse.json(
-        { error: `Carat is not set for subcategory ${subcategory.code}.` },
-        { status: 400 }
-      );
+    const lines: NormalizedPurchaseLine[] = [];
+    for (const line of linePayloads(body)) {
+      if (!line.categoryCode) return NextResponse.json({ error: "Missing category" }, { status: 400 });
+      if (!line.subcategoryCode) return NextResponse.json({ error: "Missing subcategory" }, { status: 400 });
+      const qty = Number(line.qty);
+      if (!Number.isFinite(qty) || qty < 0) return NextResponse.json({ error: "Invalid qty" }, { status: 400 });
+      const category = await prisma.category.findUnique({ where: { code: line.categoryCode } });
+      const subcategory = await prisma.subcategory.findUnique({ where: { code: line.subcategoryCode } });
+      if (!category) return NextResponse.json({ error: "Invalid category" }, { status: 400 });
+      if (!subcategory) return NextResponse.json({ error: "Invalid subcategory" }, { status: 400 });
+      const carat = normalizeCarat(subcategory.carat);
+      if (!CARAT_VALUES.has(carat)) {
+        return NextResponse.json({ error: `Carat is not set for subcategory ${subcategory.code}.` }, { status: 400 });
+      }
+      const caratLabel = formatCarat(carat);
+      const goldWeight = decimal(line.goldWeight ?? "0");
+      const wastageMg = decimal(line.wastageMg ?? "0");
+      const goldCost = goldWeight.div(new Prisma.Decimal("8")).mul(goldRatePer8g);
+      const wastageEnabled = isWastageEnabled(line.wastageYN);
+      const wastageCost = wastageEnabled ? wastageMg.div(new Prisma.Decimal("8")).mul(goldRatePer8g) : new Prisma.Decimal("0");
+      const labourCharges = decimal(line.labourCharges ?? "0");
+      const otherCosts = decimal(line.otherCosts ?? "0");
+      const totalCost = goldCost.plus(wastageCost).plus(labourCharges).plus(otherCosts);
+      lines.push({ line, category, subcategory, caratLabel, qty, goldWeight, goldCost, wastageEnabled, wastageMg, wastageCost, labourCharges, otherCosts, totalCost });
     }
-    const caratLabel = formatCarat(carat);
-
-    const goldWeight = decimal(body.goldWeight ?? "0");
-    const wastageMg = decimal(body.wastageMg ?? "0");
-    const goldCost = goldWeight.div(new Prisma.Decimal("8")).mul(goldRatePer8g);
-    const wastageEnabled = isWastageEnabled(body.wastageYN);
-    const wastageCost = wastageEnabled
-      ? wastageMg.div(new Prisma.Decimal("8")).mul(goldRatePer8g)
-      : new Prisma.Decimal("0");
-    const labourCharges = decimal(body.labourCharges ?? "0");
-    const otherCosts = decimal(body.otherCosts ?? "0");
-    const totalCost = goldCost.plus(wastageCost).plus(labourCharges).plus(otherCosts);
+    if (lines.length === 0) return NextResponse.json({ error: "Add at least one item" }, { status: 400 });
+    const groupTotalCost = lines.reduce((sum, row) => sum.plus(row.totalCost), new Prisma.Decimal("0"));
+    const groupQty = lines.reduce((sum, row) => sum + row.qty, 0);
+    const groupGoldWeight = lines.reduce((sum, row) => sum.plus(row.goldWeight), new Prisma.Decimal("0"));
 
     const result = await prisma.$transaction(async (tx) => {
       const prefix = nextPurchaseNo(purchaseDate);
@@ -132,49 +205,80 @@ export async function POST(req: Request) {
         where: { purchaseNo: { startsWith: prefix } },
         orderBy: { purchaseNo: "desc" }
       });
-      const lastSeq = last?.purchaseNo ? Number(last.purchaseNo.slice(prefix.length)) : 0;
+      const lastSeq = purchaseSeq(last?.purchaseNo, prefix);
       const nextSeq = Number.isFinite(lastSeq) ? lastSeq + 1 : 1;
-      const purchaseNo = `${prefix}${String(nextSeq).padStart(4, "0")}`;
+      const purchaseGroupNo = `${prefix}${String(nextSeq).padStart(4, "0")}`;
+      let firstPurchase: any = null;
 
-      const header = await tx.purchase.create({
-        data: {
+      for (const [index, row] of lines.entries()) {
+        const purchaseNo = lines.length === 1 ? purchaseGroupNo : `${purchaseGroupNo}-${String(index + 1).padStart(2, "0")}`;
+        const created = await tx.purchase.create({
+          data: {
           purchaseNo,
+          purchaseGroupNo,
           purchaseDate,
           purchaseType,
           location: (body.location ?? "").trim() || null,
           gsmCode: body.gsmCode,
           gsmName: goldsmith?.name ?? "",
-          categoryCode: body.categoryCode,
-          articleName: category.name,
-          subcategoryCode: body.subcategoryCode,
-          subcategoryName: subcategory.name,
-          qty,
-          description: (body.description ?? "").trim() || null,
-          carat: caratLabel,
-          wastageYN: wastageEnabled,
-          goldWeight,
-          goldCost,
-          wastageMg,
-          wastage: wastageCost,
-          labourCharges,
-          otherCosts,
-          totalCost,
+          categoryCode: row.line.categoryCode,
+          articleName: row.category.name,
+          subcategoryCode: row.line.subcategoryCode,
+          subcategoryName: row.subcategory.name,
+          qty: row.qty,
+          description: (row.line.description ?? "").trim() || null,
+          carat: row.caratLabel,
+          wastageYN: row.wastageEnabled,
+          goldWeight: row.goldWeight,
+          goldCost: row.goldCost,
+          wastageMg: row.wastageMg,
+          wastage: row.wastageCost,
+          labourCharges: row.labourCharges,
+          otherCosts: row.otherCosts,
+          totalCost: row.totalCost,
           remarks: (body.remarks ?? "").trim() || null,
-          supplierId: body.supplierId == null ? null : Number(body.supplierId),
-          purchaseGold: caratLabel,
-          totalItems: qty,
-          totalWeight: goldWeight,
-          subTotal: totalCost,
+          supplierId,
+          purchaseGold: row.caratLabel,
+          totalItems: groupQty,
+          totalWeight: groupGoldWeight,
+          subTotal: groupTotalCost,
           otherCharges: new Prisma.Decimal("0"),
-          totalAmount: totalCost,
+          totalAmount: groupTotalCost,
           paidAmount: new Prisma.Decimal("0"),
-          balanceDue: totalCost,
+          balanceDue: groupTotalCost,
           notes: (body.remarks ?? "").trim() || null
         },
         include: { supplier: true, items: true }
       });
+        if (!firstPurchase) firstPurchase = created;
+      }
 
-      return header;
+      if (purchaseType === "Rate") {
+        const account = purchaseAccount({
+          supplierId,
+          supplierName: supplier?.name,
+          goldsmithCode: body.gsmCode,
+          goldsmithName: goldsmith?.name
+        });
+        await tx.transaction.create({
+          data: {
+            date: purchaseDate,
+            source: "PUR",
+            account: account.account,
+            memo: purchaseGroupNo,
+            debit: new Prisma.Decimal("0"),
+            credit: groupTotalCost,
+            goldIssued: new Prisma.Decimal("0"),
+            goldReceived: new Prisma.Decimal("0"),
+            accountNumber: account.accountNumber,
+            type: "PURCHASE",
+            referenceNumber: purchaseGroupNo,
+            remarks: (body.remarks ?? "").trim() || null
+          }
+        });
+      }
+
+      return firstPurchase;
     });
 
     return NextResponse.json({ ok: true, purchase: result });
@@ -194,15 +298,20 @@ export async function PATCH(req: Request) {
 
     if (!body.transactionDate) return NextResponse.json({ error: "Missing date" }, { status: 400 });
     if (!body.gsmCode) return NextResponse.json({ error: "Missing goldsmith" }, { status: 400 });
-    if (!body.categoryCode) return NextResponse.json({ error: "Missing category" }, { status: 400 });
-    if (!body.subcategoryCode) return NextResponse.json({ error: "Missing subcategory" }, { status: 400 });
-
     const existing = await prisma.purchase.findUnique({ where: { id } });
     if (!existing) return NextResponse.json({ error: "Purchase not found" }, { status: 404 });
-
-    const qty = Number(body.qty);
-    if (!Number.isFinite(qty) || qty < 0) {
-      return NextResponse.json({ error: "Invalid qty" }, { status: 400 });
+    const purchaseGroupNo = existing.purchaseGroupNo ?? existing.purchaseNo;
+    const existingRows = await prisma.purchase.findMany({
+      where: { OR: [{ purchaseGroupNo }, { purchaseNo: purchaseGroupNo }] },
+      orderBy: [{ id: "asc" }]
+    });
+    const existingIds = existingRows.map((row) => row.id);
+    const linkedSales = await prisma.sale.count({ where: { purchaseId: { in: existingIds } } });
+    if (linkedSales > 0) {
+      return NextResponse.json(
+        { error: "This purchase has sales linked to it, so grouped purchase rows cannot be edited." },
+        { status: 409 }
+      );
     }
 
     const purchaseDate = new Date(body.transactionDate);
@@ -214,95 +323,113 @@ export async function PATCH(req: Request) {
     const goldRatePer8g = system?.goldCostRatePer8g ?? new Prisma.Decimal("0");
 
     const goldsmith = await prisma.goldsmith.findUnique({ where: { code: body.gsmCode } });
+    const supplierId = body.supplierId === undefined ? existing.supplierId : body.supplierId == null ? null : Number(body.supplierId);
+    const supplier = supplierId ? await prisma.supplier.findUnique({ where: { id: supplierId } }) : null;
     const purchaseType = normalizePurchaseType(body.purchaseType);
-    const category = await prisma.category.findUnique({ where: { code: body.categoryCode } });
-    const subcategory = await prisma.subcategory.findUnique({ where: { code: body.subcategoryCode } });
-    if (!category) return NextResponse.json({ error: "Invalid category" }, { status: 400 });
-    if (!subcategory) return NextResponse.json({ error: "Invalid subcategory" }, { status: 400 });
-
-    const carat = normalizeCarat(subcategory.carat);
-    if (!CARAT_VALUES.has(carat)) {
-      return NextResponse.json(
-        { error: `Carat is not set for subcategory ${subcategory.code}.` },
-        { status: 400 }
-      );
+    const lines: NormalizedPurchaseLine[] = [];
+    for (const line of linePayloads(body)) {
+      if (!line.categoryCode) return NextResponse.json({ error: "Missing category" }, { status: 400 });
+      if (!line.subcategoryCode) return NextResponse.json({ error: "Missing subcategory" }, { status: 400 });
+      const qty = Number(line.qty);
+      if (!Number.isFinite(qty) || qty < 0) return NextResponse.json({ error: "Invalid qty" }, { status: 400 });
+      const category = await prisma.category.findUnique({ where: { code: line.categoryCode } });
+      const subcategory = await prisma.subcategory.findUnique({ where: { code: line.subcategoryCode } });
+      if (!category) return NextResponse.json({ error: "Invalid category" }, { status: 400 });
+      if (!subcategory) return NextResponse.json({ error: "Invalid subcategory" }, { status: 400 });
+      const carat = normalizeCarat(subcategory.carat);
+      if (!CARAT_VALUES.has(carat)) {
+        return NextResponse.json({ error: `Carat is not set for subcategory ${subcategory.code}.` }, { status: 400 });
+      }
+      const caratLabel = formatCarat(carat);
+      const goldWeight = decimal(line.goldWeight ?? "0");
+      const wastageMg = decimal(line.wastageMg ?? "0");
+      const goldCost = goldWeight.div(new Prisma.Decimal("8")).mul(goldRatePer8g);
+      const wastageEnabled = isWastageEnabled(line.wastageYN);
+      const wastageCost = wastageEnabled ? wastageMg.div(new Prisma.Decimal("8")).mul(goldRatePer8g) : new Prisma.Decimal("0");
+      const labourCharges = decimal(line.labourCharges ?? "0");
+      const otherCosts = decimal(line.otherCosts ?? "0");
+      const totalCost = goldCost.plus(wastageCost).plus(labourCharges).plus(otherCosts);
+      lines.push({ line, category, subcategory, caratLabel, qty, goldWeight, goldCost, wastageEnabled, wastageMg, wastageCost, labourCharges, otherCosts, totalCost });
     }
-    const caratLabel = formatCarat(carat);
+    if (lines.length === 0) return NextResponse.json({ error: "Add at least one item" }, { status: 400 });
+    const groupTotalCost = lines.reduce((sum, row) => sum.plus(row.totalCost), new Prisma.Decimal("0"));
+    const groupQty = lines.reduce((sum, row) => sum + row.qty, 0);
+    const groupGoldWeight = lines.reduce((sum, row) => sum.plus(row.goldWeight), new Prisma.Decimal("0"));
 
-    const sales = await prisma.sale.findMany({
-      where: { purchaseId: id },
-      select: { qty: true, goldWeight: true }
-    });
-    const soldQty = sales.reduce((sum, sale) => sum + (sale.qty ?? 0), 0);
-    const soldWeight = sales.reduce(
-      (sum, sale) => sum.plus(sale.goldWeight ?? new Prisma.Decimal("0")),
-      new Prisma.Decimal("0")
-    );
-    if (sales.length > 0 && existing.subcategoryCode !== body.subcategoryCode) {
-      return NextResponse.json(
-        { error: "This purchase has sales linked to it, so its subcategory cannot be changed." },
-        { status: 409 }
-      );
-    }
-
-    const goldWeight = decimal(body.goldWeight ?? "0");
-    if (qty < soldQty) {
-      return NextResponse.json(
-        { error: `Quantity cannot be less than already sold quantity (${soldQty}).` },
-        { status: 409 }
-      );
-    }
-    if (goldWeight.lessThan(soldWeight)) {
-      return NextResponse.json(
-        { error: `Gold weight cannot be less than already sold weight (${soldWeight.toString()}g).` },
-        { status: 409 }
-      );
-    }
-
-    const wastageMg = decimal(body.wastageMg ?? "0");
-    const goldCost = goldWeight.div(new Prisma.Decimal("8")).mul(goldRatePer8g);
-    const wastageEnabled = isWastageEnabled(body.wastageYN);
-    const wastageCost = wastageEnabled
-      ? wastageMg.div(new Prisma.Decimal("8")).mul(goldRatePer8g)
-      : new Prisma.Decimal("0");
-    const labourCharges = decimal(body.labourCharges ?? "0");
-    const otherCosts = decimal(body.otherCosts ?? "0");
-    const totalCost = goldCost.plus(wastageCost).plus(labourCharges).plus(otherCosts);
-
-    const purchase = await prisma.purchase.update({
-      where: { id },
-      data: {
-        purchaseDate,
-        purchaseType,
-        location: (body.location ?? "").trim() || null,
-        gsmCode: body.gsmCode,
-        gsmName: goldsmith?.name ?? "",
-        categoryCode: body.categoryCode,
-        articleName: category.name,
-        subcategoryCode: body.subcategoryCode,
-        subcategoryName: subcategory.name,
-        qty,
-        description: (body.description ?? "").trim() || null,
-        carat: caratLabel,
-        wastageYN: wastageEnabled,
-        goldWeight,
-        goldCost,
-        wastageMg,
-        wastage: wastageCost,
-        labourCharges,
-        otherCosts,
-        totalCost,
-        remarks: (body.remarks ?? "").trim() || null,
-        supplierId: body.supplierId === undefined ? existing.supplierId : body.supplierId == null ? null : Number(body.supplierId),
-        purchaseGold: caratLabel,
-        totalItems: qty,
-        totalWeight: goldWeight,
-        subTotal: totalCost,
-        totalAmount: totalCost,
-        balanceDue: totalCost.minus(existing.paidAmount ?? new Prisma.Decimal("0")),
-        notes: (body.remarks ?? "").trim() || null
-      },
-      include: { supplier: true, items: true }
+    const purchase = await prisma.$transaction(async (tx) => {
+      await tx.purchase.deleteMany({ where: { id: { in: existingIds } } });
+      let firstPurchase: any = null;
+      for (const [index, row] of lines.entries()) {
+        const purchaseNo = lines.length === 1 ? purchaseGroupNo : `${purchaseGroupNo}-${String(index + 1).padStart(2, "0")}`;
+        const created = await tx.purchase.create({
+          data: {
+            purchaseNo,
+            purchaseGroupNo,
+            purchaseDate,
+            purchaseType,
+            location: (body.location ?? "").trim() || null,
+            gsmCode: body.gsmCode,
+            gsmName: goldsmith?.name ?? "",
+            categoryCode: row.line.categoryCode,
+            articleName: row.category.name,
+            subcategoryCode: row.line.subcategoryCode,
+            subcategoryName: row.subcategory.name,
+            qty: row.qty,
+            description: (row.line.description ?? "").trim() || null,
+            carat: row.caratLabel,
+            wastageYN: row.wastageEnabled,
+            goldWeight: row.goldWeight,
+            goldCost: row.goldCost,
+            wastageMg: row.wastageMg,
+            wastage: row.wastageCost,
+            labourCharges: row.labourCharges,
+            otherCosts: row.otherCosts,
+            totalCost: row.totalCost,
+            remarks: (body.remarks ?? "").trim() || null,
+            supplierId,
+            purchaseGold: row.caratLabel,
+            totalItems: groupQty,
+            totalWeight: groupGoldWeight,
+            subTotal: groupTotalCost,
+            otherCharges: new Prisma.Decimal("0"),
+            totalAmount: groupTotalCost,
+            balanceDue: groupTotalCost.minus(existing.paidAmount ?? new Prisma.Decimal("0")),
+            notes: (body.remarks ?? "").trim() || null
+          },
+          include: { supplier: true, items: true }
+        });
+        if (!firstPurchase) firstPurchase = created;
+      }
+      await tx.transaction.deleteMany({
+        where: {
+          referenceNumber: purchaseGroupNo,
+          type: "PURCHASE"
+        }
+      });
+      if (purchaseType !== "Rate") return firstPurchase;
+      const account = purchaseAccount({
+        supplierId,
+        supplierName: supplier?.name,
+        goldsmithCode: body.gsmCode,
+        goldsmithName: goldsmith?.name
+      });
+      await tx.transaction.create({
+        data: {
+          date: purchaseDate,
+          source: "PUR",
+          account: account.account,
+          memo: purchaseGroupNo,
+          debit: new Prisma.Decimal("0"),
+          credit: groupTotalCost,
+          goldIssued: new Prisma.Decimal("0"),
+          goldReceived: new Prisma.Decimal("0"),
+          accountNumber: account.accountNumber,
+          type: "PURCHASE",
+          referenceNumber: purchaseGroupNo,
+          remarks: (body.remarks ?? "").trim() || null
+        }
+      });
+      return firstPurchase;
     });
 
     return NextResponse.json({ ok: true, purchase });

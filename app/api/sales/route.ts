@@ -57,6 +57,7 @@ export async function POST(req: Request) {
       transactionDate: string;
       customerId: number;
       salesmanId?: number | null;
+      salesType?: string;
       remarks?: string;
       paymentType?: string;
       discount?: string;
@@ -69,6 +70,8 @@ export async function POST(req: Request) {
     if (!Number.isFinite(customerId)) return NextResponse.json({ error: "Missing customer" }, { status: 400 });
     const items = Array.isArray(body.items) ? body.items : [];
     if (items.length === 0) return NextResponse.json({ error: "Add at least one item" }, { status: 400 });
+    const salesType = (body.salesType ?? "Gold").trim();
+    const isRateSale = salesType.toLowerCase() === "rate";
 
     const txDate = new Date(body.transactionDate);
     if (Number.isNaN(txDate.getTime())) return NextResponse.json({ error: "Invalid date" }, { status: 400 });
@@ -309,6 +312,34 @@ export async function POST(req: Request) {
     }
 
     const grandTotal = clampDecimalNonNegative(headerSellSubTotal.minus(discount));
+    if (paidAmount.greaterThan(grandTotal)) {
+      throw new Error(`Paid amount cannot exceed invoice total (${grandTotal.toFixed(2)})`);
+    }
+
+    // Serialize credit checks per customer so simultaneous invoices cannot both
+    // consume the same available credit.
+    if (isRateSale) {
+      await tx.$queryRaw`SELECT "id" FROM "Customer" WHERE "id" = ${customerId} FOR UPDATE`;
+      const acct = (customer.accountNumber ?? "").trim();
+      if (!acct) throw new Error("Customer account not found");
+      const totals = await tx.transaction.aggregate({
+        where: { accountNumber: acct },
+        _sum: { debit: true, credit: true }
+      });
+      const outstanding = Prisma.Decimal.max(
+        new Prisma.Decimal("0"),
+        (totals._sum.debit ?? new Prisma.Decimal("0")).minus(totals._sum.credit ?? new Prisma.Decimal("0"))
+      );
+      const invoiceCredit = grandTotal.minus(paidAmount);
+      const resultingBalance = outstanding.plus(invoiceCredit);
+      if (resultingBalance.greaterThan(customer.creditLimit)) {
+        const available = Prisma.Decimal.max(new Prisma.Decimal("0"), customer.creditLimit.minus(outstanding));
+        throw new Error(
+          `Credit limit exceeded. Available credit is ${available.toFixed(2)}; this invoice requires ${invoiceCredit.toFixed(2)}.`
+        );
+      }
+    }
+
     const updatedHeader = await tx.salesNTX.update({
       where: { id: createdHeader.id },
       data: {
@@ -322,9 +353,9 @@ export async function POST(req: Request) {
       }
     });
 
-    // Post invoice amount to customer account (debit)
+    // Rate sales are posted to customer money accounts. Gold movement stays in stock only.
     const acct = (customer.accountNumber ?? "").trim();
-    if (acct) {
+    if (isRateSale && acct) {
       await tx.transaction.create({
         data: {
           date: txDate,
@@ -333,7 +364,7 @@ export async function POST(req: Request) {
           memo: updatedHeader.saleNo,
           debit: grandTotal,
           credit: new Prisma.Decimal("0"),
-          goldIssued: headerTotalWeight,
+          goldIssued: new Prisma.Decimal("0"),
           goldReceived: new Prisma.Decimal("0"),
           accountNumber: acct,
           type: "INVOICE",

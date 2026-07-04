@@ -1,5 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { Prisma } from "@/lib/generated/prisma";
+
+function creditLimit(value: unknown) {
+  const amount = new Prisma.Decimal(String(value ?? "0").trim() || "0");
+  if (amount.isNegative()) throw new Error("Credit limit cannot be negative");
+  return amount;
+}
 
 export async function GET() {
   const customers = await prisma.customer.findMany({ orderBy: { createdAt: "desc" } });
@@ -12,6 +19,7 @@ export async function POST(req: Request) {
     phone?: string | null;
     email?: string | null;
     address?: string | null;
+    creditLimit?: string | number;
   }>;
 
   const name = (body.name ?? "").trim();
@@ -23,7 +31,8 @@ export async function POST(req: Request) {
         name,
         phone: (body.phone ?? "").trim() || null,
         email: (body.email ?? "").trim() || null,
-        address: (body.address ?? "").trim() || null
+        address: (body.address ?? "").trim() || null,
+        creditLimit: creditLimit(body.creditLimit)
       }
     });
     const accountNumber = `CUST-${String(created.id).padStart(6, "0")}`;
@@ -40,6 +49,7 @@ export async function PATCH(req: Request) {
     phone?: string | null;
     email?: string | null;
     address?: string | null;
+    creditLimit?: string | number;
   }>;
   const id = Number(body.id);
   if (!Number.isFinite(id)) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
@@ -53,7 +63,8 @@ export async function PATCH(req: Request) {
       name,
       phone: body.phone === undefined ? undefined : (String(body.phone ?? "").trim() || null),
       email: body.email === undefined ? undefined : (String(body.email ?? "").trim() || null),
-      address: body.address === undefined ? undefined : (String(body.address ?? "").trim() || null)
+      address: body.address === undefined ? undefined : (String(body.address ?? "").trim() || null),
+      creditLimit: body.creditLimit === undefined ? undefined : creditLimit(body.creditLimit)
     }
   });
   return NextResponse.json({ customer });

@@ -125,6 +125,7 @@ export default async function CustomerAccountPage({
   const totalSales = toDecimal(agg?._sum?.debit);
   const totalPayments = toDecimal(agg?._sum?.credit);
   const pendingAmount = totalSales.minus(totalPayments);
+  const availableCredit = Prisma.Decimal.max(new Prisma.Decimal("0"), customer.creditLimit.minus(pendingAmount));
   const totalGoldIssued = toDecimal(agg?._sum?.goldIssued);
   const totalGoldReceived = toDecimal(agg?._sum?.goldReceived);
   const pendingGold = totalGoldIssued.minus(totalGoldReceived);
@@ -152,7 +153,8 @@ export default async function CustomerAccountPage({
           </div>
           <div className="mt-2 space-y-1 text-sm font-semibold text-ebony-700">
             <div>Phone: {customer.phone || "-"}</div>
-            <div>Credit Limit: 2,000,000.00</div>
+            <div>Credit Limit: {formatMoney(customer.creditLimit)}</div>
+            <div>Available Credit: {formatMoney(availableCredit)}</div>
           </div>
         </div>
 

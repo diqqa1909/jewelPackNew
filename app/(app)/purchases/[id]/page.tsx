@@ -52,6 +52,22 @@ export default async function PurchaseViewPage({
   if (!purchase) {
     return <div className="rounded-lg border border-ebony-200 bg-white p-5 text-sm font-semibold text-ebony-700">Purchase not found.</div>;
   }
+  const purchaseGroupNo = purchase.purchaseGroupNo ?? purchase.purchaseNo;
+  const purchaseRows = await prismaWithRetry((p) =>
+    p.purchase.findMany({
+      where: { OR: [{ purchaseGroupNo }, { purchaseNo: purchaseGroupNo }] },
+      orderBy: [{ id: "asc" }],
+      include: { supplier: true }
+    })
+  );
+  const groupedRows = purchaseRows.length ? purchaseRows : [purchase];
+  const totalQty = groupedRows.reduce((sum, row) => sum + Number(row.qty ?? 0), 0);
+  const totalGoldWeight = groupedRows.reduce((sum, row) => sum + Number(row.goldWeight?.toString?.() ?? 0), 0);
+  const totalGoldCost = groupedRows.reduce((sum, row) => sum + Number(row.goldCost?.toString?.() ?? 0), 0);
+  const totalWastageMg = groupedRows.reduce((sum, row) => sum + Number(row.wastageMg?.toString?.() ?? 0), 0);
+  const totalLabour = groupedRows.reduce((sum, row) => sum + Number(row.labourCharges?.toString?.() ?? 0), 0);
+  const totalOtherCosts = groupedRows.reduce((sum, row) => sum + Number(row.otherCosts?.toString?.() ?? 0), 0);
+  const totalCost = groupedRows.reduce((sum, row) => sum + Number(row.totalCost?.toString?.() ?? 0), 0);
 
   const isEditing = searchParams?.edit === "1";
   const formId = "purchase-edit-form";
@@ -88,19 +104,32 @@ export default async function PurchaseViewPage({
             location: purchase.location ?? "",
             gsmCode: purchase.gsmCode ?? "",
             gsmName: purchase.gsmName ?? "",
-            categoryCode: purchase.categoryCode ?? "",
-            articleName: purchase.articleName ?? "",
-            subcategoryCode: purchase.subcategoryCode ?? "",
-            qty: String(purchase.qty ?? ""),
-            description: purchase.description ?? "",
-            carat: purchase.carat ? String(purchase.carat) : "",
-            wastageYN: purchase.wastageYN ? "Y" : "N",
-            goldWeight: purchase.goldWeight.toString(),
-            wastageMg: purchase.wastageMg.toString(),
-            labourCharges: purchase.labourCharges.toString(),
-            otherCosts: purchase.otherCosts.toString(),
+            categoryCode: "",
+            articleName: "",
+            subcategoryCode: "",
+            qty: "0",
+            description: "",
+            carat: "",
+            wastageYN: "N",
+            goldWeight: "0",
+            wastageMg: "0",
+            labourCharges: "0",
+            otherCosts: "0",
             remarks: purchase.remarks ?? ""
           }}
+          initialLines={groupedRows.map((row) => ({
+            categoryCode: row.categoryCode ?? "",
+            articleName: row.articleName ?? "",
+            subcategoryCode: row.subcategoryCode ?? "",
+            qty: String(row.qty ?? "0"),
+            description: row.description ?? row.subcategoryName ?? "",
+            carat: row.carat ? String(row.carat) : "",
+            wastageYN: row.wastageYN ? "Y" : "N",
+            goldWeight: row.goldWeight.toString(),
+            wastageMg: row.wastageMg.toString(),
+            labourCharges: row.labourCharges.toString(),
+            otherCosts: row.otherCosts.toString()
+          }))}
         />
       </div>
     );
@@ -123,27 +152,25 @@ export default async function PurchaseViewPage({
           <CardHeader>
             <div className="flex items-start justify-between">
               <div>
-                <CardTitle>Purchase #{purchase.purchaseNo}</CardTitle>
+                <CardTitle>Purchase #{purchaseGroupNo}</CardTitle>
                 <CardDescription>Purchase dated {dateText(purchase.purchaseDate)}</CardDescription>
               </div>
               <div className="text-right text-sm">
                 <div className="font-semibold text-ebony-700">Total Amount</div>
-                <div className="text-xl font-bold text-gold-700">{money(purchase.totalAmount)}</div>
+                <div className="text-xl font-bold text-gold-700">{money(totalCost)}</div>
               </div>
             </div>
           </CardHeader>
           <CardContent>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              <DetailItem label="Purchase No" value={purchase.purchaseNo} />
+              <DetailItem label="Purchase No" value={purchaseGroupNo} />
               <DetailItem label="Purchase Type" value={purchase.purchaseType === "Rate" ? "Rate" : "Gold"} />
               <DetailItem label="Date" value={dateText(purchase.purchaseDate)} />
               <DetailItem label="Supplier" value={purchase.supplier?.name ?? "-"} />
               <DetailItem label="GSM Code" value={purchase.gsmCode ?? "-"} />
               <DetailItem label="GSM Name" value={purchase.gsmName ?? "-"} />
-              <DetailItem label="Category" value={purchase.categoryCode ? `${purchase.categoryCode} - ${purchase.articleName}` : "-"} />
-              <DetailItem label="Subcategory" value={purchase.subcategoryCode ? `${purchase.subcategoryCode} - ${purchase.subcategoryName}` : "-"} />
+              <DetailItem label="Rows" value={String(groupedRows.length)} />
               <DetailItem label="Location" value={purchase.location ?? "-"} />
-              <DetailItem label="Carat" value={purchase.carat ? String(purchase.carat) : "-"} />
             </div>
           </CardContent>
         </Card>
@@ -154,18 +181,31 @@ export default async function PurchaseViewPage({
             <CardTitle>Item Details</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                <DetailItem label="Quantity" value={String(purchase.qty)} />
-                <DetailItem label="Gold Weight (g)" value={weight(purchase.goldWeight)} />
-                <DetailItem label="Gold Cost (Rs)" value={money(purchase.goldCost)} />
-              </div>
-              {purchase.description && (
-                <div className="rounded-md border border-ebony-200 bg-ebony-50 p-3">
-                  <div className="text-xs font-semibold text-ebony-700">Description</div>
-                  <div className="text-sm text-ebony-800">{purchase.description}</div>
-                </div>
-              )}
+            <div className="overflow-x-auto rounded-lg border border-ebony-100">
+              <table className="w-full min-w-[760px] text-sm">
+                <thead className="bg-ebony-50 text-left text-xs font-bold uppercase tracking-wide text-ebony-600">
+                  <tr>
+                    <th className="px-3 py-3">Subcategory</th>
+                    <th className="px-3 py-3">Carat</th>
+                    <th className="px-3 py-3 text-right">Qty</th>
+                    <th className="px-3 py-3 text-right">Gold Wt</th>
+                    <th className="px-3 py-3 text-right">Gold Cost</th>
+                    <th className="px-3 py-3 text-right">Total</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-ebony-100">
+                  {groupedRows.map((row) => (
+                    <tr key={row.id}>
+                      <td className="px-3 py-3 font-semibold text-ebony-900">{row.subcategoryCode} - {row.subcategoryName}</td>
+                      <td className="px-3 py-3 text-ebony-700">{row.carat ?? "-"}</td>
+                      <td className="px-3 py-3 text-right tabular-nums">{row.qty}</td>
+                      <td className="px-3 py-3 text-right tabular-nums">{weight(row.goldWeight)} g</td>
+                      <td className="px-3 py-3 text-right tabular-nums">{money(row.goldCost)}</td>
+                      <td className="px-3 py-3 text-right font-bold tabular-nums">{money(row.totalCost)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </CardContent>
         </Card>
@@ -179,23 +219,23 @@ export default async function PurchaseViewPage({
             <div className="space-y-3">
               <div className="flex items-center justify-between border-b border-ebony-100 pb-3">
                 <span className="text-ebony-700">Gold Cost</span>
-                <span className="font-semibold text-ebony-900 tabular-nums">{money(purchase.goldCost)}</span>
+                <span className="font-semibold text-ebony-900 tabular-nums">{money(totalGoldCost)}</span>
               </div>
               <div className="flex items-center justify-between border-b border-ebony-100 pb-3">
                 <span className="text-ebony-700">Wastage (mg)</span>
-                <span className="font-semibold text-ebony-900 tabular-nums">{weight(purchase.wastageMg)}</span>
+                <span className="font-semibold text-ebony-900 tabular-nums">{weight(totalWastageMg)}</span>
               </div>
               <div className="flex items-center justify-between border-b border-ebony-100 pb-3">
                 <span className="text-ebony-700">Labour Charges</span>
-                <span className="font-semibold text-ebony-900 tabular-nums">{money(purchase.labourCharges)}</span>
+                <span className="font-semibold text-ebony-900 tabular-nums">{money(totalLabour)}</span>
               </div>
               <div className="flex items-center justify-between border-b border-ebony-100 pb-3">
                 <span className="text-ebony-700">Other Costs</span>
-                <span className="font-semibold text-ebony-900 tabular-nums">{money(purchase.otherCosts)}</span>
+                <span className="font-semibold text-ebony-900 tabular-nums">{money(totalOtherCosts)}</span>
               </div>
               <div className="flex items-center justify-between bg-ebony-50 px-3 py-2 rounded-md">
                 <span className="font-semibold text-ebony-900">Total Cost</span>
-                <span className="text-lg font-bold text-ebony-900 tabular-nums">{money(purchase.totalCost)}</span>
+                <span className="text-lg font-bold text-ebony-900 tabular-nums">{money(totalCost)}</span>
               </div>
             </div>
           </CardContent>
@@ -210,7 +250,7 @@ export default async function PurchaseViewPage({
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-ebony-700">Total Amount</span>
-                <span className="font-semibold text-ebony-900 tabular-nums">{money(purchase.totalAmount)}</span>
+                <span className="font-semibold text-ebony-900 tabular-nums">{money(totalCost)}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-ebony-700">Paid Amount</span>
