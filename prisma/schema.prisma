@@ -69,8 +69,10 @@ model GoldIssue {
   issueDate       DateTime @db.Date
   goldsmithCode   String
   goldsmith       Goldsmith @relation(fields: [goldsmithCode], references: [code], onDelete: Restrict)
+  issueType       String   @default("GOLD")
   carat           String
   goldWeight      Decimal  @default(0) @db.Decimal(12, 3)
+  cashAmount      Decimal  @default(0) @db.Decimal(12, 2)
   referenceNumber String?
   remarks         String?
   createdAt       DateTime @default(now())
@@ -186,15 +188,31 @@ model SalesNTX {
   totalCost     Decimal
   sellRatePer8g Decimal @default(0)
   sellSubTotal  Decimal @default(0)
+  goldTransactionType String?
   remarks       String?
 
   items         Sale[]
+  goldReceipts  GoldReceipt[]
   createdAt     DateTime @default(now())
 
   @@map("salesNTX")
   @@index([transactionDate])
   @@index([customerId])
   @@index([salesmanId])
+}
+
+model GoldReceipt {
+  id             Int      @id @default(autoincrement())
+  salesNTXId     Int
+  salesNTX       SalesNTX @relation(fields: [salesNTXId], references: [id], onDelete: Restrict)
+  description    String
+  carat          String
+  goldWeight     Decimal  @db.Decimal(12, 3)
+  pureGoldWeight Decimal  @map("pure_gold_weight") @db.Decimal(12, 3)
+  createdAt      DateTime @default(now())
+
+  @@map("GoldReceipts")
+  @@index([salesNTXId])
 }
 
 model Sale {

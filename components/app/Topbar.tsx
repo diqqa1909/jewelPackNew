@@ -36,14 +36,14 @@ export function Topbar({ sidebarToggle }: { sidebarToggle?: ReactNode }) {
   }
 
   return (
-    <header className="flex items-center justify-between gap-4 border-b border-ebony-100 bg-white px-4 py-4 md:gap-6 md:px-8 md:py-5">
-      <div className="flex items-center gap-3">
+    <header className="flex min-h-11 items-center justify-between gap-3 border-b border-ebony-100 bg-white px-3 py-2 md:gap-4 md:px-4 md:py-2">
+      <div className="flex items-center gap-2">
         {sidebarToggle}
         {showBack && (
           <button
             type="button"
             onClick={() => router.back()}
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-ebony-200 bg-white text-ebony-700 shadow-sm transition-colors hover:bg-ebony-50"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-ebony-200 bg-white text-ebony-700 shadow-sm transition-colors hover:bg-ebony-50"
             aria-label="Back"
             title="Back"
           >
@@ -51,16 +51,16 @@ export function Topbar({ sidebarToggle }: { sidebarToggle?: ReactNode }) {
           </button>
         )}
         <div>
-          <h1 className="text-lg items-center justify-center font-semibold tracking-tight text-ebony-900 md:text-xl">
+          <h1 className="items-center justify-center text-sm font-semibold tracking-tight text-ebony-900 md:text-base">
             {title}
           </h1>
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2">
         <button
           type="button"
-          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-ebony-200 bg-white text-ebony-700 shadow-sm transition-colors hover:bg-ebony-50"
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-ebony-200 bg-white text-ebony-700 shadow-sm transition-colors hover:bg-ebony-50"
           aria-label="Notifications"
           title="Notifications"
         >
@@ -68,20 +68,20 @@ export function Topbar({ sidebarToggle }: { sidebarToggle?: ReactNode }) {
         </button>
       </div>
 
-      <div className="hidden items-center gap-3 md:flex">
+      <div className="hidden items-center gap-2 md:flex">
         <form onSubmit={submitSearch} className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ebony-500" />
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search customers, stock, invoices..."
-            className="w-[320px] rounded-lg border border-ebony-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+            className="w-[260px] rounded-md border border-ebony-200 bg-white py-1.5 pl-9 pr-3 text-xs outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
           />
         </form>
-        <div className="text-xs font-semibold text-ebony-600 tabular-nums">{todayLabel}</div>
+        <div className="text-[10px] font-semibold text-ebony-600 tabular-nums">{todayLabel}</div>
         <button
           type="button"
-          className={buttonClassName("secondary", "px-3 py-2 shadow-sm")}
+          className={buttonClassName("secondary", "px-2.5 py-1.5 text-xs shadow-sm")}
           aria-label="User menu"
           title="User menu"
         >

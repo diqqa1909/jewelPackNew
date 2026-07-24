@@ -11,7 +11,7 @@ function realGoldWeight(goldWeight: unknown, wastageMg: unknown, carat: string |
 export default async function GoldsmithsPage() {
   const [goldsmiths, goldIssues, purchases] = await Promise.all([
     prismaWithRetry((p) => p.goldsmith.findMany({ orderBy: { code: "asc" } })),
-    prismaWithRetry((p) => p.goldIssue.findMany({ select: { goldsmithCode: true, goldWeight: true } })),
+    prismaWithRetry((p) => p.goldIssue.findMany({ select: { goldsmithCode: true, issueType: true, goldWeight: true, cashAmount: true } })),
     prismaWithRetry((p) =>
       p.purchase.findMany({
         where: { gsmCode: { not: null } },
@@ -32,7 +32,11 @@ export default async function GoldsmithsPage() {
   const balances = new Map<string, { goldDr: number; goldCr: number; cashDr: number; cashCr: number }>();
   for (const issue of goldIssues) {
     const current = balances.get(issue.goldsmithCode) ?? { goldDr: 0, goldCr: 0, cashDr: 0, cashCr: 0 };
-    current.goldDr += Number(issue.goldWeight);
+    if ((issue.issueType ?? "GOLD") === "CASH") {
+      current.cashDr += Number(issue.cashAmount);
+    } else {
+      current.goldDr += Number(issue.goldWeight);
+    }
     balances.set(issue.goldsmithCode, current);
   }
   for (const purchase of purchases) {

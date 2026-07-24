@@ -11,6 +11,10 @@ body {
   height: 100%;
 }
 
+html {
+  font-size: 13px;
+}
+
 body {
   @apply bg-white text-ebony-900 antialiased;
 }
@@ -36,6 +40,62 @@ body {
   h3 {
     @apply tracking-normal text-ebony-800 font-medium;
   }
+}
+
+@media (min-width: 1280px) {
+  html {
+    font-size: 12.5px;
+  }
+}
+
+@media (max-width: 767px) {
+  html {
+    font-size: 12px;
+  }
+}
+
+.app-compact {
+  font-size: 0.92rem;
+}
+
+.app-compact :where(input, select, textarea) {
+  font-size: 0.88rem !important;
+}
+
+.app-compact :where(input:not([type="checkbox"]):not([type="radio"]), select) {
+  min-height: 2rem !important;
+  height: 2.25rem !important;
+  padding-top: 0.25rem !important;
+  padding-bottom: 0.25rem !important;
+}
+
+.app-compact textarea {
+  min-height: 4.5rem !important;
+}
+
+.app-compact :where(table) {
+  font-size: 0.82rem !important;
+}
+
+.app-compact :where(th, td) {
+  padding-top: 0.42rem !important;
+  padding-bottom: 0.42rem !important;
+}
+
+.app-compact :where(button) {
+  font-size: 0.86rem;
+}
+
+.app-compact :where(.space-y-6 > :not([hidden]) ~ :not([hidden])) {
+  margin-top: 1rem !important;
+}
+
+.app-compact :where(.space-y-5 > :not([hidden]) ~ :not([hidden])) {
+  margin-top: 0.85rem !important;
+}
+
+.app-compact :where(.space-y-4 > :not([hidden]) ~ :not([hidden])) {
+  margin-top: 0.7rem !important;
 }
 
 /* Simple button utilities */

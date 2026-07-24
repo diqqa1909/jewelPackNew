@@ -24,21 +24,28 @@ export default async function SalesPage() {
     })
   );
   const saleNos = sales.map((sale) => sale.saleNo);
-  const payments = saleNos.length
+  const accountTransactions = saleNos.length
     ? await prismaWithRetry((p) =>
         p.transaction.findMany({
           where: {
             referenceNumber: { in: saleNos },
-            type: "PAYMENT"
+            type: { in: ["INVOICE", "PAYMENT"] }
           },
           select: {
             referenceNumber: true,
+            type: true,
             credit: true
           }
         })
       )
     : [];
-  const paidBySaleNo = payments.reduce((map, payment) => {
+  const rateSaleNos = new Set(
+    accountTransactions
+      .filter((tx) => tx.type === "INVOICE" && tx.referenceNumber)
+      .map((tx) => tx.referenceNumber as string)
+  );
+  const paidBySaleNo = accountTransactions.reduce((map, payment) => {
+    if (payment.type !== "PAYMENT") return map;
     const key = payment.referenceNumber ?? "";
     if (!key) return map;
     map.set(key, (map.get(key) ?? 0) + toNumber(payment.credit));
@@ -65,10 +72,12 @@ export default async function SalesPage() {
           <SalesTable
             initial={sales.map((s) => {
               const grandTotal = toNumber(s.sellSubTotal);
+              const isRateSale = rateSaleNos.has(s.saleNo);
               const paidAmount = paidBySaleNo.get(s.saleNo) ?? 0;
               return {
                 id: s.id,
                 saleNo: s.saleNo,
+                salesType: isRateSale ? "Rate" : "Gold",
                 transactionDate: new Date(s.transactionDate).toISOString().slice(0, 10),
                 customerCode: s.customer.accountNumber ?? `CUST-${String(s.customerId).padStart(6, "0")}`,
                 customerName: s.customer.name,
@@ -76,8 +85,8 @@ export default async function SalesPage() {
                 totalQty: s.totalQty,
                 totalGoldWeight: s.totalGoldWeight.toString(),
                 grandTotal: grandTotal.toString(),
-                paidAmount: paidAmount.toString(),
-                balanceDue: Math.max(0, grandTotal - paidAmount).toString()
+                paidAmount: isRateSale ? paidAmount.toString() : "0",
+                balanceDue: isRateSale ? Math.max(0, grandTotal - paidAmount).toString() : "0"
               };
             })}
           />

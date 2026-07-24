@@ -2,6 +2,7 @@
 
 import { buttonClassName } from "@/components/ui/Button";
 import { DeleteConfirmModal } from "@/components/ui/DeleteConfirmModal";
+import { GoldIssueButton } from "@/components/app/GoldIssueActions";
 import { useToast } from "@/components/ui/ToastProvider";
 import type { Goldsmith } from "@/lib/generated/prisma";
 import { cn } from "@/lib/utils";
@@ -284,6 +285,12 @@ export function GoldsmithsTable({ initial }: Props) {
                     <td className="px-3 py-4 text-right font-bold tabular-nums text-ebony-950">{formatBalance(row.cashBl, 2)}</td>
                     <td className="px-5 py-4 text-right">
                       <div className="inline-flex items-center gap-2">
+                        <div onClick={(e) => e.stopPropagation()}>
+                          <GoldIssueButton
+                            goldsmith={{ code: row.code, name: row.name }}
+                            className="inline-flex h-9 items-center justify-center gap-1 rounded-lg border border-gold-200 bg-white px-3 text-xs font-bold text-gold-700 hover:bg-gold-50"
+                          />
+                        </div>
                         <button
                           type="button"
                           onClick={(e) => {

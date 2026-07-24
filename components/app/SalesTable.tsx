@@ -6,6 +6,7 @@ import { useMemo } from "react";
 type Row = {
   id: number;
   saleNo: string;
+  salesType: "Gold" | "Rate";
   transactionDate: string;
   customerCode: string;
   customerName: string;
@@ -68,10 +69,10 @@ export function SalesTable({ initial }: { initial: Row[] }) {
                 {Number(s.grandTotal).toFixed(2)}
               </td>
               <td className="px-2 py-3 text-right font-semibold tabular-nums text-emerald-700">
-                {Number(s.paidAmount).toFixed(2)}
+                {s.salesType === "Rate" ? Number(s.paidAmount).toFixed(2) : "-"}
               </td>
               <td className="px-2 py-3 text-right font-semibold tabular-nums text-red-600">
-                {Number(s.balanceDue).toFixed(2)}
+                {s.salesType === "Rate" ? Number(s.balanceDue).toFixed(2) : "-"}
               </td>
             </tr>
           ))}

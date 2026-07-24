@@ -30,18 +30,22 @@ export function GoldIssueButton({
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [issueType, setIssueType] = useState<"GOLD" | "CASH">("GOLD");
   const [issueDate, setIssueDate] = useState(todayISO());
   const [carat, setCarat] = useState("22K");
   const [goldWeight, setGoldWeight] = useState("0");
+  const [cashAmount, setCashAmount] = useState("0");
   const [referenceNumber, setReferenceNumber] = useState("");
   const [remarks, setRemarks] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
   function reset() {
+    setIssueType("GOLD");
     setIssueDate(todayISO());
     setCarat("22K");
     setGoldWeight("0");
+    setCashAmount("0");
     setReferenceNumber("");
     setRemarks("");
     setError("");
@@ -58,8 +62,10 @@ export function GoldIssueButton({
         body: JSON.stringify({
           issueDate,
           goldsmithCode: goldsmith.code,
+          issueType,
           carat,
           goldWeight,
+          cashAmount,
           referenceNumber,
           remarks
         })
@@ -90,7 +96,7 @@ export function GoldIssueButton({
         Issue
       </button>
 
-      <Modal open={open} onClose={() => setOpen(false)} title={`Issue Gold - ${goldsmith.name}`} panelClassName="max-w-xl">
+      <Modal open={open} onClose={() => setOpen(false)} title={`Issue - ${goldsmith.name}`} panelClassName="max-w-xl">
         <form onSubmit={submit} className="space-y-4">
           {error ? <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{error}</div> : null}
 
@@ -115,30 +121,57 @@ export function GoldIssueButton({
             </label>
 
             <label className="space-y-1.5 text-sm">
-              <span className="font-semibold text-ebony-700">Carat</span>
+              <span className="font-semibold text-ebony-700">Issue Type</span>
               <select
-                value={carat}
-                onChange={(e) => setCarat(e.target.value)}
+                value={issueType}
+                onChange={(e) => setIssueType(e.target.value === "CASH" ? "CASH" : "GOLD")}
                 className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
               >
-                {["18K", "19K", "20K", "21K", "22K", "24K"].map((value) => (
-                  <option key={value} value={value}>
-                    {value}
-                  </option>
-                ))}
+                <option value="GOLD">Gold</option>
+                <option value="CASH">Cash</option>
               </select>
             </label>
 
-            <label className="space-y-1.5 text-sm">
-              <span className="font-semibold text-ebony-700">Weight (g)</span>
-              <input
-                inputMode="decimal"
-                value={goldWeight}
-                onFocus={(e) => e.currentTarget.select()}
-                onChange={(e) => setGoldWeight(sanitizeDecimal(e.target.value))}
-                className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-right text-sm font-bold tabular-nums outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
-              />
-            </label>
+            {issueType === "GOLD" ? (
+              <>
+                <label className="space-y-1.5 text-sm">
+                  <span className="font-semibold text-ebony-700">Carat</span>
+                  <select
+                    value={carat}
+                    onChange={(e) => setCarat(e.target.value)}
+                    className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+                  >
+                    {["18K", "19K", "20K", "21K", "22K", "24K"].map((value) => (
+                      <option key={value} value={value}>
+                        {value}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="space-y-1.5 text-sm">
+                  <span className="font-semibold text-ebony-700">Weight (g)</span>
+                  <input
+                    inputMode="decimal"
+                    value={goldWeight}
+                    onFocus={(e) => e.currentTarget.select()}
+                    onChange={(e) => setGoldWeight(sanitizeDecimal(e.target.value))}
+                    className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-right text-sm font-bold tabular-nums outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+                  />
+                </label>
+              </>
+            ) : (
+              <label className="space-y-1.5 text-sm">
+                <span className="font-semibold text-ebony-700">Cash Amount</span>
+                <input
+                  inputMode="decimal"
+                  value={cashAmount}
+                  onFocus={(e) => e.currentTarget.select()}
+                  onChange={(e) => setCashAmount(sanitizeDecimal(e.target.value))}
+                  className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-right text-sm font-bold tabular-nums outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+                />
+              </label>
+            )}
           </div>
 
           <label className="block space-y-1.5 text-sm">
@@ -174,7 +207,7 @@ export function GoldIssueButton({
               disabled={busy}
               className="rounded-md bg-gold-600 px-5 py-2 text-sm font-bold text-white hover:bg-gold-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {busy ? "Issuing..." : "Issue Gold"}
+              {busy ? "Issuing..." : issueType === "GOLD" ? "Issue Gold" : "Issue Cash"}
             </button>
           </div>
         </form>

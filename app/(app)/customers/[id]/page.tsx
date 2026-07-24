@@ -122,22 +122,44 @@ export default async function CustomerAccountPage({
         []
       ];
 
+  const saleRefs = Array.from(
+    new Set(
+      txsAsc
+        .filter((tx) => (tx.type === "GOLD_ISSUED" || tx.type === "GOLD_RECEIVED") && tx.referenceNumber)
+        .map((tx) => tx.referenceNumber as string)
+    )
+  );
+  const saleWeights = saleRefs.length
+    ? await prismaWithRetry((p) =>
+        p.salesNTX.findMany({
+          where: { saleNo: { in: saleRefs } },
+          select: { saleNo: true, totalNetWeight: true }
+        })
+      )
+    : [];
+  const saleWeightByNo = new Map(saleWeights.map((sale) => [sale.saleNo, sale.totalNetWeight] as const));
+
   const totalSales = toDecimal(agg?._sum?.debit);
   const totalPayments = toDecimal(agg?._sum?.credit);
   const pendingAmount = totalSales.minus(totalPayments);
   const availableCredit = Prisma.Decimal.max(new Prisma.Decimal("0"), customer.creditLimit.minus(pendingAmount));
-  const totalGoldIssued = toDecimal(agg?._sum?.goldIssued);
-  const totalGoldReceived = toDecimal(agg?._sum?.goldReceived);
-  const pendingGold = totalGoldIssued.minus(totalGoldReceived);
   let running = new Prisma.Decimal("0");
   let runningGold = new Prisma.Decimal("0");
-  const ledgerRows = txsAsc
+  const ledgerRowsAsc = txsAsc
     .map((tx) => {
+      const saleWeight = tx.referenceNumber ? saleWeightByNo.get(tx.referenceNumber) : null;
+      const goldIssued =
+        tx.type === "GOLD_ISSUED" && saleWeight ? saleWeight : tx.goldIssued;
+      const goldReceived =
+        tx.type === "GOLD_RECEIVED" && saleWeight ? saleWeight : tx.goldReceived;
       running = running.plus(tx.debit).minus(tx.credit);
-      runningGold = runningGold.plus(tx.goldIssued).minus(tx.goldReceived);
-      return { ...tx, balance: running, goldBalance: runningGold };
-    })
-    .reverse();
+      runningGold = runningGold.plus(goldIssued).minus(goldReceived);
+      return { ...tx, goldIssued, goldReceived, balance: running, goldBalance: runningGold };
+    });
+  const ledgerRows = [...ledgerRowsAsc].reverse();
+  const totalGoldIssued = ledgerRowsAsc.reduce((sum, tx) => sum.plus(tx.goldIssued), new Prisma.Decimal("0"));
+  const totalGoldReceived = ledgerRowsAsc.reduce((sum, tx) => sum.plus(tx.goldReceived), new Prisma.Decimal("0"));
+  const pendingGold = totalGoldIssued.minus(totalGoldReceived);
   const runningBalance = ledgerRows[0]?.balance ?? pendingAmount;
   const runningGoldBalance = ledgerRows[0]?.goldBalance ?? pendingGold;
 

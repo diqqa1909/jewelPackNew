@@ -21,6 +21,7 @@ type AvailabilityRow = {
 
 type Line = {
   id: string;
+  description: string;
   subcategoryCode: string;
   carat: string;
   qty: string;
@@ -28,6 +29,8 @@ type Line = {
   stoneWeight: string;
   sellRatePer8g: string;
 };
+
+const RECEIPT_CARATS = ["18", "19", "20", "21", "22", "24"] as const;
 
 function normalizeCarat(value: string | null | undefined) {
   return (value ?? "").trim().toUpperCase().replace(/\s+/g, "").replace(/K(T)?$/, "");
@@ -75,6 +78,7 @@ export function SalesForm() {
   const [customerId, setCustomerId] = useState<number | "">("");
   const [remarks, setRemarks] = useState("");
   const [salesType, setSalesType] = useState("Gold");
+  const [goldTransactionType, setGoldTransactionType] = useState<"RECEIVED" | "ISSUED">("RECEIVED");
   const [paymentType, setPaymentType] = useState("Credit");
   const [discount, setDiscount] = useState("0");
   const [paidAmount, setPaidAmount] = useState("0");
@@ -83,6 +87,7 @@ export function SalesForm() {
   const [lines, setLines] = useState<Line[]>([
     {
       id: uid(),
+      description: "",
       subcategoryCode: "",
       carat: "",
       qty: "0",
@@ -166,17 +171,20 @@ export function SalesForm() {
     const rowIndex = lines.findIndex((l) => l.id === rowId);
     if (rowIndex < 0) return;
 
-    const colIndex = navCols.indexOf(col);
+    const visibleNavCols: readonly NavCol[] = isRateSale
+      ? navCols
+      : navCols.filter((navCol): navCol is NavCol => navCol !== "sellRate");
+    const colIndex = visibleNavCols.indexOf(col);
     const dir = e.shiftKey ? -1 : 1;
     let nextRowIndex = rowIndex;
     let nextColIndex = colIndex + dir;
 
-    if (nextColIndex >= navCols.length) {
+    if (nextColIndex >= visibleNavCols.length) {
       nextRowIndex = rowIndex + 1;
       nextColIndex = 0;
     } else if (nextColIndex < 0) {
       nextRowIndex = rowIndex - 1;
-      nextColIndex = navCols.length - 1;
+      nextColIndex = visibleNavCols.length - 1;
     }
 
     if (nextRowIndex >= lines.length) {
@@ -187,7 +195,7 @@ export function SalesForm() {
     }
     if (nextRowIndex < 0) return;
 
-    focusCell(lines[nextRowIndex].id, navCols[nextColIndex]);
+    focusCell(lines[nextRowIndex].id, visibleNavCols[nextColIndex]);
   }
 
   useEffect(() => {
@@ -346,9 +354,10 @@ export function SalesForm() {
   const totalAmount = sellSubTotal;
   const discountValue = Math.max(0, toNumber(discount));
   const grandTotal = Math.max(0, totalAmount - discountValue);
-  const paidValue = Math.max(0, toNumber(paidAmount));
+  const isRateSale = salesType.toLowerCase() === "rate";
+  const isGoldReceipt = !isRateSale && goldTransactionType === "RECEIVED";
+  const paidValue = isRateSale ? Math.max(0, toNumber(paidAmount)) : 0;
   const balanceDue = Math.max(0, grandTotal - paidValue);
-
   function updateLine(id: string, patch: Partial<Line>) {
     setLines((prev) =>
       prev.map((l) => {
@@ -408,6 +417,7 @@ export function SalesForm() {
       ...prev,
       {
         id: nextId,
+        description: "",
         subcategoryCode: "",
         carat: "",
         qty: "0",
@@ -474,31 +484,36 @@ export function SalesForm() {
     if (!transactionDate) return setError("Transaction date is required.");
     if (!Number.isFinite(sid)) return setError("Salesman is required.");
     if (!Number.isFinite(cid)) return setError("Customer is required.");
-    if (paidValue > grandTotal) return setError("Paid amount cannot exceed the invoice total.");
-    if (salesType.toLowerCase() === "rate" && customerCredit && balanceDue > customerCredit.available) {
+    if (isRateSale && paidValue > grandTotal) return setError("Paid amount cannot exceed the invoice total.");
+    if (isRateSale && customerCredit && balanceDue > customerCredit.available) {
       return setError(`Credit limit exceeded. Available credit is ${customerCredit.available.toFixed(2)}.`);
     }
 
-    const selectedLines = lines.filter((l) => l.subcategoryCode.trim() !== "");
+    const selectedLines = isGoldReceipt
+      ? lines.filter((l) => l.description.trim() !== "" || toNumber(l.goldWeight) > 0)
+      : lines.filter((l) => l.subcategoryCode.trim() !== "");
     const items = selectedLines.map((l) => ({
+      description: l.description.trim(),
       subcategoryCode: l.subcategoryCode.trim(),
       qty: Math.floor(toNumber(l.qty)),
+      carat: normalizeCarat(l.carat),
       goldWeight: String(l.goldWeight ?? "").trim(),
       stoneWeight: String(l.stoneWeight ?? "").trim(),
-      sellRatePer8g: String(l.sellRatePer8g ?? "").trim()
+      sellRatePer8g: isRateSale ? String(l.sellRatePer8g ?? "").trim() : "0"
     }));
 
     if (items.length === 0) return setError("Add at least one item.");
     for (const [idx, it] of items.entries()) {
       const line = selectedLines[idx];
+      if (isGoldReceipt && !it.description) return setError("Enter description for all received gold rows.");
       if (!line?.carat) return setError("Carat cannot be determined for one or more items.");
-      if (!Number.isFinite(it.qty) || it.qty <= 0) return setError("Enter valid qty for all items.");
+      if (!isGoldReceipt && (!Number.isFinite(it.qty) || it.qty <= 0)) return setError("Enter valid qty for all items.");
       if (!it.goldWeight || toNumber(it.goldWeight) <= 0) return setError("Enter valid weight for all items.");
-      if (!it.sellRatePer8g || toNumber(it.sellRatePer8g) <= 0)
+      if (isRateSale && (!it.sellRatePer8g || toNumber(it.sellRatePer8g) <= 0))
         return setError("Enter valid sell rate for all items.");
     }
-    if (qtyErrors.size > 0) return setError("Quantity exceeded. Please reduce qty.");
-    if (weightErrors.size > 0) return setError("Weight exceeded. Please reduce weight.");
+    if (!isGoldReceipt && qtyErrors.size > 0) return setError("Quantity exceeded. Please reduce qty.");
+    if (!isGoldReceipt && weightErrors.size > 0) return setError("Weight exceeded. Please reduce weight.");
 
     setBusy(true);
     try {
@@ -510,10 +525,11 @@ export function SalesForm() {
           salesmanId: sid,
           customerId: cid,
           salesType,
+          goldTransactionType: isRateSale ? undefined : goldTransactionType,
           remarks,
-          paymentType,
+          paymentType: isRateSale ? paymentType : "Credit",
           discount,
-          paidAmount,
+          paidAmount: isRateSale ? paidAmount : "0",
           items
         })
       });
@@ -524,6 +540,7 @@ export function SalesForm() {
       setLines([
         {
           id: uid(),
+          description: "",
           subcategoryCode: "",
           carat: "",
           qty: "0",
@@ -537,6 +554,7 @@ export function SalesForm() {
       setCustomerId("");
       setDiscount("0");
       setPaidAmount("0");
+      setGoldTransactionType("RECEIVED");
       setPaymentType("Credit");
       router.push(destination === "invoice" && Number.isFinite(savedSaleId) ? `/sales/${savedSaleId}` : "/sales");
     } catch (e) {
@@ -597,8 +615,8 @@ export function SalesForm() {
                 <Plus className="h-4 w-4" />
               </button>
             </div>
-            {customerCredit ? (
-              <div className={`text-[11px] font-semibold ${salesType.toLowerCase() === "rate" && balanceDue > customerCredit.available ? "text-red-600" : "text-ebony-500"}`}>
+            {customerCredit && isRateSale ? (
+              <div className={`text-[11px] font-semibold ${balanceDue > customerCredit.available ? "text-red-600" : "text-ebony-500"}`}>
                 Outstanding: {customerCredit.balance.toFixed(2)} · Limit: {customerCredit.limit.toFixed(2)} · Available: {customerCredit.available.toFixed(2)}
               </div>
             ) : null}
@@ -642,18 +660,34 @@ export function SalesForm() {
             </select>
           </label>
 
-          <label className="space-y-1.5 text-sm">
-            <div className="text-xs font-bold text-ebony-800">Payment Type</div>
-            <select
-              value={paymentType}
-              onChange={(e) => setPaymentType(e.target.value)}
-              className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
-            >
-              <option>Credit</option>
-              <option>Cash</option>
-              <option>Bank</option>
-            </select>
-          </label>
+          {!isRateSale ? (
+            <label className="space-y-1.5 text-sm">
+              <div className="text-xs font-bold text-ebony-800">Gold Transaction</div>
+              <select
+                value={goldTransactionType}
+                onChange={(e) => setGoldTransactionType(e.target.value === "ISSUED" ? "ISSUED" : "RECEIVED")}
+                className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+              >
+                <option value="RECEIVED">RECEIVED</option>
+                <option value="ISSUED">ISSUED</option>
+              </select>
+            </label>
+          ) : null}
+
+          {isRateSale ? (
+            <label className="space-y-1.5 text-sm">
+              <div className="text-xs font-bold text-ebony-800">Payment Type</div>
+              <select
+                value={paymentType}
+                onChange={(e) => setPaymentType(e.target.value)}
+                className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+              >
+                <option>Credit</option>
+                <option>Cash</option>
+                <option>Bank</option>
+              </select>
+            </label>
+          ) : null}
         </div>
       </div>
 
@@ -662,7 +696,80 @@ export function SalesForm() {
           <div className="px-4 py-6 text-sm font-semibold text-ebony-500">Loading...</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1160px] text-sm">
+            {isGoldReceipt ? (
+              <table className="w-full min-w-[760px] text-sm">
+                <thead className="bg-ebony-50 text-left text-[11px] font-bold uppercase tracking-wide text-ebony-600">
+                  <tr>
+                    <th className="border border-ebony-100 px-3 py-2 text-center">#</th>
+                    <th className="border border-ebony-100 px-3 py-2">Description</th>
+                    <th className="border border-ebony-100 px-3 py-2 text-center">Karat</th>
+                    <th className="border border-ebony-100 px-3 py-2 text-right">Gold Wt</th>
+                    <th className="border border-ebony-100 px-3 py-2 text-right">24KT Wt</th>
+                    <th className="border border-ebony-100 px-3 py-2 text-center">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-ebony-100">
+                  {lines.map((l, index) => {
+                    const goldWeight = Math.max(0, toNumber(l.goldWeight));
+                    const carat = Math.max(0, toNumber(normalizeCarat(l.carat)));
+                    const pureWeight = (goldWeight * carat) / 24;
+                    return (
+                      <tr key={l.id} className="bg-white">
+                        <td className="border border-ebony-100 px-3 py-2 text-center font-semibold text-ebony-700">
+                          {index + 1}
+                        </td>
+                        <td className="border border-ebony-100 p-0 focus-within:bg-gold-50 focus-within:ring-2 focus-within:ring-inset focus-within:ring-gold-500">
+                          <input
+                            value={l.description}
+                            onChange={(e) => updateLine(l.id, { description: e.target.value })}
+                            className="h-10 w-full border-0 bg-transparent px-2 outline-none focus:bg-gold-50"
+                            placeholder="Received gold description"
+                          />
+                        </td>
+                        <td className="border border-ebony-100 p-0 focus-within:bg-gold-50 focus-within:ring-2 focus-within:ring-inset focus-within:ring-gold-500">
+                          <select
+                            value={l.carat}
+                            onChange={(e) => updateLine(l.id, { carat: e.target.value })}
+                            className="h-10 w-full border-0 bg-transparent px-2 text-center outline-none focus:bg-gold-50"
+                          >
+                            <option value="">Select</option>
+                            {RECEIPT_CARATS.map((caratValue) => (
+                              <option key={caratValue} value={caratValue}>
+                                {caratValue}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="border border-ebony-100 p-0 focus-within:bg-gold-50 focus-within:ring-2 focus-within:ring-inset focus-within:ring-gold-500">
+                          <input
+                            inputMode="decimal"
+                            value={l.goldWeight}
+                            onFocus={selectOnFocus}
+                            onChange={(e) => updateLine(l.id, { goldWeight: sanitizeDecimal(e.target.value) })}
+                            className="h-10 w-full border-0 bg-transparent px-2 text-right outline-none focus:bg-gold-50"
+                          />
+                        </td>
+                        <td className="border border-ebony-100 px-3 py-2 text-right font-semibold tabular-nums text-ebony-900">
+                          {pureWeight.toFixed(3)}
+                        </td>
+                        <td className="border border-ebony-100 px-2 py-1 text-center">
+                          <button
+                            type="button"
+                            onClick={() => removeLine(l.id)}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-red-600 hover:bg-red-50"
+                            aria-label="Remove row"
+                            title="Remove row"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            ) : (
+            <table className={`w-full text-sm ${isRateSale ? "min-w-[1160px]" : "min-w-[940px]"}`}>
               <thead className="bg-ebony-50 text-left text-[11px] font-bold uppercase tracking-wide text-ebony-600">
                 <tr>
                   <th className="border border-ebony-100 px-3 py-2 text-center">#</th>
@@ -673,9 +780,13 @@ export function SalesForm() {
                   <th className="border border-ebony-100 px-3 py-2 text-right">Gold Wt</th>
                   <th className="border border-ebony-100 px-3 py-2 text-right">Real Wt</th>
                   <th className="border border-ebony-100 px-3 py-2 text-right">Stone Wt</th>
-                  <th className="border border-ebony-100 px-3 py-2 text-right">Net Wt</th>
-                  <th className="border border-ebony-100 px-3 py-2 text-right">Rate/8g</th>
-                  <th className="border border-ebony-100 px-3 py-2 text-right">Amount</th>
+                  <th className="border border-ebony-100 px-3 py-2 text-right">24KT Wt</th>
+                  {isRateSale ? (
+                    <>
+                      <th className="border border-ebony-100 px-3 py-2 text-right">Rate/8g</th>
+                      <th className="border border-ebony-100 px-3 py-2 text-right">Amount</th>
+                    </>
+                  ) : null}
                   <th className="border border-ebony-100 px-3 py-2 text-center">Action</th>
                 </tr>
               </thead>
@@ -689,7 +800,7 @@ export function SalesForm() {
                   const karat = Math.max(0, toNumber(normalizeCarat(l.carat)));
                   const realWeight = (goldWeight / 24) * karat;
                   const stoneWeight = Math.max(0, toNumber(l.stoneWeight));
-                  const netWeight = goldWeight + stoneWeight;
+                  const netWeight = realWeight;
                   const amount = (goldWeight / 8) * sellRate;
                   const availableQty = Math.max(0, Number(avail?.balanceQty ?? subAvail?.balanceQty ?? 0));
                   const availableWeight = Math.max(
@@ -775,25 +886,29 @@ export function SalesForm() {
                       <td className="border border-ebony-100 px-3 py-2 text-right tabular-nums text-ebony-700">
                         {netWeight.toFixed(3)}
                       </td>
-                      <td className="border border-ebony-100 p-0 focus-within:bg-gold-50 focus-within:ring-2 focus-within:ring-inset focus-within:ring-gold-500">
-                        <input
-                          inputMode="decimal"
-                          value={l.sellRatePer8g}
-                          onFocus={selectOnFocus}
-                          onChange={(e) => updateLine(l.id, { sellRatePer8g: sanitizeDecimal(e.target.value) })}
-                          onKeyDown={(e) => {
-                            if (e.key === "Tab") return handleTabNav(e, l.id, "sellRate");
-                            if (e.key !== "Enter") return;
-                            e.preventDefault();
-                            addLine();
-                          }}
-                          ref={(el) => setCellRef(l.id, "sellRate", el)}
-                          className="h-10 w-full border-0 bg-transparent px-2 text-right outline-none focus:bg-gold-50"
-                        />
-                      </td>
-                      <td className="border border-ebony-100 px-3 py-2 text-right font-bold tabular-nums text-ebony-900">
-                        {amount.toFixed(2)}
-                      </td>
+                      {isRateSale ? (
+                        <>
+                          <td className="border border-ebony-100 p-0 focus-within:bg-gold-50 focus-within:ring-2 focus-within:ring-inset focus-within:ring-gold-500">
+                            <input
+                              inputMode="decimal"
+                              value={l.sellRatePer8g}
+                              onFocus={selectOnFocus}
+                              onChange={(e) => updateLine(l.id, { sellRatePer8g: sanitizeDecimal(e.target.value) })}
+                              onKeyDown={(e) => {
+                                if (e.key === "Tab") return handleTabNav(e, l.id, "sellRate");
+                                if (e.key !== "Enter") return;
+                                e.preventDefault();
+                                addLine();
+                              }}
+                              ref={(el) => setCellRef(l.id, "sellRate", el)}
+                              className="h-10 w-full border-0 bg-transparent px-2 text-right outline-none focus:bg-gold-50"
+                            />
+                          </td>
+                          <td className="border border-ebony-100 px-3 py-2 text-right font-bold tabular-nums text-ebony-900">
+                            {amount.toFixed(2)}
+                          </td>
+                        </>
+                      ) : null}
                       <td className="border border-ebony-100 px-2 py-1 text-center">
                         <button
                           type="button"
@@ -810,6 +925,7 @@ export function SalesForm() {
                 })}
               </tbody>
             </table>
+            )}
           </div>
         )}
       </div>
@@ -835,11 +951,8 @@ export function SalesForm() {
         </label>
 
         <div className="rounded-lg border border-ebony-100 bg-white shadow-sm">
-          {[ 
-            ["Total Gold Weight", `${totals.totalGoldWeight.toFixed(3)} g`],
-            ["Total Stone Weight", `${totals.totalStoneWeight.toFixed(3)} g`],
-            ["Total Net Weight", `${totals.totalNetWeight.toFixed(3)} g`],
-            ["Total Amount", totalAmount.toFixed(2)]
+          {[
+            ["Total Gold Weight", `${totals.totalGoldWeight.toFixed(3)} g`]
           ].map(([label, value]) => (
             <div key={label} className="flex items-center justify-between border-b border-ebony-100 px-4 py-3 text-sm">
               <span className="font-semibold text-ebony-700">{label}</span>
@@ -847,36 +960,44 @@ export function SalesForm() {
             </div>
           ))}
 
-          <label className="flex items-center justify-between border-b border-ebony-100 px-4 py-2 text-sm">
-            <span className="font-semibold text-ebony-700">Discount</span>
-            <input
-              inputMode="decimal"
-              value={discount}
-              onFocus={selectOnFocus}
-              onChange={(e) => setDiscount(sanitizeDecimal(e.target.value))}
-              placeholder="0.00"
-              className="h-9 w-32 rounded-md border border-ebony-200 px-2 text-right font-bold tabular-nums outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
-            />
-          </label>
-          <div className="flex items-center justify-between border-b border-ebony-100 px-4 py-3 text-sm">
-            <span className="font-semibold text-ebony-700">Grand Total</span>
-            <span className="font-extrabold tabular-nums text-ebony-900">{grandTotal.toFixed(2)}</span>
-          </div>
-          <label className="flex items-center justify-between border-b border-ebony-100 px-4 py-2 text-sm">
-            <span className="font-semibold text-ebony-700">Paid Amount</span>
-            <input
-              inputMode="decimal"
-              value={paidAmount}
-              onFocus={selectOnFocus}
-              onChange={(e) => setPaidAmount(sanitizeDecimal(e.target.value))}
-              placeholder="0.00"
-              className="h-9 w-32 rounded-md border border-ebony-200 px-2 text-right font-bold tabular-nums outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
-            />
-          </label>
-          <div className="flex items-center justify-between px-4 py-4">
-            <span className="text-base font-extrabold text-red-600">Balance Due</span>
-            <span className="text-lg font-extrabold tabular-nums text-red-600">{balanceDue.toFixed(2)}</span>
-          </div>
+          {isRateSale ? (
+            <>
+              <div className="flex items-center justify-between border-b border-ebony-100 px-4 py-3 text-sm">
+                <span className="font-semibold text-ebony-700">Total Amount</span>
+                <span className="font-extrabold tabular-nums text-ebony-900">{totalAmount.toFixed(2)}</span>
+              </div>
+              <label className="flex items-center justify-between border-b border-ebony-100 px-4 py-2 text-sm">
+                <span className="font-semibold text-ebony-700">Discount</span>
+                <input
+                  inputMode="decimal"
+                  value={discount}
+                  onFocus={selectOnFocus}
+                  onChange={(e) => setDiscount(sanitizeDecimal(e.target.value))}
+                  placeholder="0.00"
+                  className="h-9 w-32 rounded-md border border-ebony-200 px-2 text-right font-bold tabular-nums outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+                />
+              </label>
+              <div className="flex items-center justify-between border-b border-ebony-100 px-4 py-3 text-sm">
+                <span className="font-semibold text-ebony-700">Grand Total</span>
+                <span className="font-extrabold tabular-nums text-ebony-900">{grandTotal.toFixed(2)}</span>
+              </div>
+              <label className="flex items-center justify-between border-b border-ebony-100 px-4 py-2 text-sm">
+                <span className="font-semibold text-ebony-700">Paid Amount</span>
+                <input
+                  inputMode="decimal"
+                  value={paidAmount}
+                  onFocus={selectOnFocus}
+                  onChange={(e) => setPaidAmount(sanitizeDecimal(e.target.value))}
+                  placeholder="0.00"
+                  className="h-9 w-32 rounded-md border border-ebony-200 px-2 text-right font-bold tabular-nums outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+                />
+              </label>
+              <div className="flex items-center justify-between px-4 py-4">
+                <span className="text-base font-extrabold text-red-600">Balance Due</span>
+                <span className="text-lg font-extrabold tabular-nums text-red-600">{balanceDue.toFixed(2)}</span>
+              </div>
+            </>
+          ) : null}
         </div>
       </div>
 

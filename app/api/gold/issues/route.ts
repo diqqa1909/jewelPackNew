@@ -19,8 +19,10 @@ export async function POST(req: Request) {
     const body = (await req.json()) as Partial<{
       issueDate: string;
       goldsmithCode: string;
+      issueType: string;
       carat: string;
       goldWeight: string;
+      cashAmount: string;
       referenceNumber: string;
       remarks: string;
     }>;
@@ -35,20 +37,27 @@ export async function POST(req: Request) {
     const goldsmith = await prisma.goldsmith.findUnique({ where: { code: goldsmithCode } });
     if (!goldsmith) return NextResponse.json({ error: "Invalid goldsmith" }, { status: 400 });
 
-    const carat = normalizeCarat(body.carat);
-    if (!CARATS.has(carat)) return NextResponse.json({ error: "Invalid carat" }, { status: 400 });
+    const issueType = (body.issueType ?? "GOLD").trim().toUpperCase() === "CASH" ? "CASH" : "GOLD";
+    const carat = issueType === "GOLD" ? normalizeCarat(body.carat) : "CASH";
+    if (issueType === "GOLD" && !CARATS.has(carat)) return NextResponse.json({ error: "Invalid carat" }, { status: 400 });
 
-    const goldWeight = decimal(body.goldWeight);
-    if (goldWeight.lessThanOrEqualTo(new Prisma.Decimal("0"))) {
+    const goldWeight = issueType === "GOLD" ? decimal(body.goldWeight) : new Prisma.Decimal("0");
+    if (issueType === "GOLD" && goldWeight.lessThanOrEqualTo(new Prisma.Decimal("0"))) {
       return NextResponse.json({ error: "Enter a valid gold weight" }, { status: 400 });
+    }
+    const cashAmount = issueType === "CASH" ? decimal(body.cashAmount) : new Prisma.Decimal("0");
+    if (issueType === "CASH" && cashAmount.lessThanOrEqualTo(new Prisma.Decimal("0"))) {
+      return NextResponse.json({ error: "Enter a valid cash amount" }, { status: 400 });
     }
 
     const issue = await prisma.goldIssue.create({
       data: {
         issueDate,
         goldsmithCode,
+        issueType,
         carat,
         goldWeight,
+        cashAmount,
         referenceNumber: (body.referenceNumber ?? "").trim() || null,
         remarks: (body.remarks ?? "").trim() || null
       },

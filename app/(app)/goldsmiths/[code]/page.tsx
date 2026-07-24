@@ -43,19 +43,22 @@ export default async function GoldsmithTrackingPage({ params }: { params: { code
     return <div className="rounded-lg border border-ebony-100 bg-white p-6 text-sm font-semibold text-ebony-700 shadow-sm">Goldsmith not found.</div>;
   }
 
-  const issueRows = goldIssues.map((issue) => ({
-    id: `ISS-${issue.id}`,
-    transactionDate: issue.issueDate,
-    subcategoryName: "Gold Issue",
-    carat: issue.carat ?? "-",
-    receivedGoldWeight: 0,
-    issuedGoldWeight: toNumber(issue.goldWeight),
-    labourCharges: 0,
-    labourChargePaid: 0,
-    labourChargeBalance: 0,
-    sourceHref: "/gold",
-    sourceLabel: issue.referenceNumber ?? `GI-${String(issue.id).padStart(5, "0")}`
-  }));
+  const issueRows = goldIssues.map((issue) => {
+    const isCashIssue = (issue.issueType ?? "GOLD") === "CASH";
+    return {
+      id: `ISS-${issue.id}`,
+      transactionDate: issue.issueDate,
+      subcategoryName: isCashIssue ? "Cash Issue" : "Gold Issue",
+      carat: isCashIssue ? "-" : issue.carat ?? "-",
+      receivedGoldWeight: 0,
+      issuedGoldWeight: isCashIssue ? 0 : toNumber(issue.goldWeight),
+      labourCharges: 0,
+      labourChargePaid: isCashIssue ? toNumber(issue.cashAmount) : 0,
+      labourChargeBalance: isCashIssue ? -toNumber(issue.cashAmount) : 0,
+      sourceHref: "/gold",
+      sourceLabel: issue.referenceNumber ?? `GI-${String(issue.id).padStart(5, "0")}`
+    };
+  });
 
   const purchaseRows = purchases.map((purchase) => {
     const isRatePurchase = purchase.purchaseType.trim().toLowerCase() === "rate";

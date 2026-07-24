@@ -29,6 +29,12 @@ function decimalKey(value: unknown) {
   return value && typeof (value as any).toString === "function" ? (value as any).toString() : String(value ?? "");
 }
 
+function caratNumber(value: string | null | undefined) {
+  const normalized = (value ?? "").trim().toUpperCase().replace(/\s+/g, "").replace(/K(T)?$/, "");
+  const n = Number(normalized);
+  return Number.isFinite(n) ? n : 0;
+}
+
 export default async function SaleViewPage({ params }: { params: { id: string } }) {
   const id = Number(params.id);
   if (!Number.isFinite(id)) {
@@ -51,7 +57,8 @@ export default async function SaleViewPage({ params }: { params: { id: string } 
         items: {
           orderBy: [{ id: "asc" }],
           include: { purchase: true, stockMaster: true }
-        }
+        },
+        goldReceipts: { orderBy: [{ id: "asc" }] }
       }
     })
   );
@@ -67,20 +74,26 @@ export default async function SaleViewPage({ params }: { params: { id: string } 
     );
   }
 
-  const paidAgg = await prismaWithRetry((p) =>
-    p.transaction.aggregate({
+  const accountTransactions = await prismaWithRetry((p) =>
+    p.transaction.findMany({
       where: {
         referenceNumber: sale.saleNo,
-        type: "PAYMENT",
+        type: { in: ["INVOICE", "PAYMENT"] },
         ...(sale.customer.accountNumber ? { accountNumber: sale.customer.accountNumber } : {})
       },
-      _sum: { credit: true }
+      select: { type: true, credit: true }
     })
   );
 
-  const totalNetWeight = sale.items.reduce((sum, item) => sum + Number(item.goldWeight.toString()), 0);
+  const total24KtWeight = Number(sale.totalNetWeight.toString());
   const grandTotal = Number(sale.sellSubTotal.toString());
-  const paidAmount = Number(paidAgg._sum.credit?.toString() ?? 0);
+  const isRateSale = accountTransactions.some((tx) => tx.type === "INVOICE");
+  const isGoldReceipt = !isRateSale && sale.goldTransactionType === "RECEIVED";
+  const paidAmount = isRateSale
+    ? accountTransactions
+        .filter((tx) => tx.type === "PAYMENT")
+        .reduce((sum, tx) => sum + Number(tx.credit.toString()), 0)
+    : 0;
   const balanceDue = Math.max(0, grandTotal - paidAmount);
   const invoiceItems = Array.from(
     sale.items
@@ -95,14 +108,16 @@ export default async function SaleViewPage({ params }: { params: { id: string } 
             carat: item.carat,
             goldWeight: Number(item.goldWeight.toString()),
             sellRatePer8g: Number(item.sellRatePer8g.toString()),
+            pureGoldWeight: (Number(item.goldWeight.toString()) * caratNumber(item.carat)) / 24,
             sellCost: Number(item.sellCost.toString())
           });
           return map;
         }
         current.goldWeight += Number(item.goldWeight.toString());
+        current.pureGoldWeight += (Number(item.goldWeight.toString()) * caratNumber(item.carat)) / 24;
         current.sellCost += Number(item.sellCost.toString());
         return map;
-      }, new Map<string, { id: number; description: string; subcategoryCode: string; carat: string | null; goldWeight: number; sellRatePer8g: number; sellCost: number }>())
+      }, new Map<string, { id: number; description: string; subcategoryCode: string; carat: string | null; goldWeight: number; pureGoldWeight: number; sellRatePer8g: number; sellCost: number }>())
       .values()
   );
 
@@ -166,20 +181,63 @@ export default async function SaleViewPage({ params }: { params: { id: string } 
                 <span>: {sale.customer.phone || "-"}</span>
                 <span>Salesman</span>
                 <span>: {sale.salesman?.name || "-"}</span>
+                {!isRateSale ? (
+                  <>
+                    <span>Gold Txn</span>
+                    <span>: {sale.goldTransactionType || "-"}</span>
+                  </>
+                ) : null}
               </div>
             </div>
           </header>
 
           <div className="mt-5 overflow-hidden border border-ebony-700">
-            <table className="w-full text-sm">
+            {isGoldReceipt ? (
+              <table className="w-full text-sm">
+                <thead className="bg-ebony-50 text-left text-xs font-extrabold text-ebony-900">
+                  <tr>
+                    <th className="border border-ebony-700 px-3 py-2 text-center">#</th>
+                    <th className="border border-ebony-700 px-3 py-2">Description</th>
+                    <th className="border border-ebony-700 px-3 py-2 text-center">Karat</th>
+                    <th className="border border-ebony-700 px-3 py-2 text-right">Gold Wt (g)</th>
+                    <th className="border border-ebony-700 px-3 py-2 text-right">24KT Wt (g)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sale.goldReceipts.map((item, index) => (
+                    <tr key={item.id}>
+                      <td className="border border-ebony-700 px-3 py-2 text-center font-semibold">{index + 1}</td>
+                      <td className="border border-ebony-700 px-3 py-2">{item.description}</td>
+                      <td className="border border-ebony-700 px-3 py-2 text-center">{item.carat}</td>
+                      <td className="border border-ebony-700 px-3 py-2 text-right tabular-nums">{weight(item.goldWeight)}</td>
+                      <td className="border border-ebony-700 px-3 py-2 text-right font-semibold tabular-nums">
+                        {weight(item.pureGoldWeight)}
+                      </td>
+                    </tr>
+                  ))}
+                  {sale.goldReceipts.length === 0 ? (
+                    <tr>
+                      <td className="border border-ebony-700 px-3 py-6 text-center text-ebony-600" colSpan={5}>
+                        No items.
+                      </td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            ) : (
+              <table className="w-full text-sm">
               <thead className="bg-ebony-50 text-left text-xs font-extrabold text-ebony-900">
                 <tr>
                   <th className="border border-ebony-700 px-3 py-2 text-center">#</th>
                   <th className="border border-ebony-700 px-3 py-2">Description</th>
                   <th className="border border-ebony-700 px-3 py-2 text-center">Karat</th>
-                  <th className="border border-ebony-700 px-3 py-2 text-right">Net Wt (g)</th>
-                  <th className="border border-ebony-700 px-3 py-2 text-right">Rate (/Per g)</th>
-                  <th className="border border-ebony-700 px-3 py-2 text-right">Amount (LKR)</th>
+                  <th className="border border-ebony-700 px-3 py-2 text-right">24KT Wt (g)</th>
+                  {isRateSale ? (
+                    <>
+                      <th className="border border-ebony-700 px-3 py-2 text-right">Rate (/Per g)</th>
+                      <th className="border border-ebony-700 px-3 py-2 text-right">Amount (LKR)</th>
+                    </>
+                  ) : null}
                 </tr>
               </thead>
               <tbody>
@@ -192,23 +250,28 @@ export default async function SaleViewPage({ params }: { params: { id: string } 
                         {item.description}
                       </td>
                       <td className="border border-ebony-700 px-3 py-2 text-center">{item.carat || "-"}</td>
-                      <td className="border border-ebony-700 px-3 py-2 text-right tabular-nums">{weight(item.goldWeight)}</td>
-                      <td className="border border-ebony-700 px-3 py-2 text-right tabular-nums">{money(ratePerGram)}</td>
-                      <td className="border border-ebony-700 px-3 py-2 text-right font-semibold tabular-nums">
-                        {money(item.sellCost)}
-                      </td>
+                      <td className="border border-ebony-700 px-3 py-2 text-right tabular-nums">{weight(item.pureGoldWeight)}</td>
+                      {isRateSale ? (
+                        <>
+                          <td className="border border-ebony-700 px-3 py-2 text-right tabular-nums">{money(ratePerGram)}</td>
+                          <td className="border border-ebony-700 px-3 py-2 text-right font-semibold tabular-nums">
+                            {money(item.sellCost)}
+                          </td>
+                        </>
+                      ) : null}
                     </tr>
                   );
                 })}
                 {invoiceItems.length === 0 ? (
                   <tr>
-                    <td className="border border-ebony-700 px-3 py-6 text-center text-ebony-600" colSpan={6}>
+                    <td className="border border-ebony-700 px-3 py-6 text-center text-ebony-600" colSpan={isRateSale ? 6 : 4}>
                       No items.
                     </td>
                   </tr>
                 ) : null}
               </tbody>
             </table>
+            )}
           </div>
 
           <div className="mt-4 grid gap-5 md:grid-cols-[1fr_20rem]">
@@ -217,10 +280,17 @@ export default async function SaleViewPage({ params }: { params: { id: string } 
             </div>
 
             <div className="overflow-hidden rounded-md border border-ebony-300 text-sm">
-              <SummaryRow label="Total Net Weight" value={`${weight(totalNetWeight)} g`} />
-              <SummaryRow label="Grand Total" value={money(grandTotal)} strong />
-              <SummaryRow label="Paid Amount" value={money(paidAmount)} />
-              <SummaryRow label="Balance Due" value={money(balanceDue)} danger />
+              <SummaryRow
+                label="Total 24KT Weight"
+                value={`${weight(total24KtWeight)} g`}
+              />
+              {isRateSale ? (
+                <>
+                  <SummaryRow label="Grand Total" value={money(grandTotal)} strong />
+                  <SummaryRow label="Paid Amount" value={money(paidAmount)} />
+                  <SummaryRow label="Balance Due" value={money(balanceDue)} danger />
+                </>
+              ) : null}
             </div>
           </div>
 

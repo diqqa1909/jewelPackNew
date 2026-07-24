@@ -82,7 +82,9 @@ export default async function GoldPage({
   ]);
 
   const movementRows: Omit<GoldLedgerRow, "balance">[] = [
-    ...goldIssues.map((issue) => ({
+    ...goldIssues
+      .filter((issue) => (issue.issueType ?? "GOLD") !== "CASH")
+      .map((issue) => ({
       id: `GOLD-${issue.id}`,
       date: issue.issueDate,
       type: "ISSUED" as const,

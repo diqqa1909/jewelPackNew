@@ -29,12 +29,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <ToastProvider>
-      <div className="jp-surface h-screen overflow-hidden">
-        <div className="mx-auto grid h-screen max-w-[1400px] grid-cols-1 md:grid-cols-[auto_1fr]">
+      <div className="jp-surface app-compact h-screen overflow-hidden">
+        <div className="grid h-screen grid-cols-1 md:grid-cols-[auto_1fr]">
         <div
           className={cn(
             "hidden h-screen overflow-hidden transition-[width] duration-200 md:block",
-            sidebarOpen ? "w-72" : "w-0"
+            sidebarOpen ? "w-56" : "w-0"
           )}
         >
           <Sidebar />
@@ -45,7 +45,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <button
               type="button"
               onClick={() => setOpen(true)}
-              className="inline-flex h-full min-h-14 w-14 items-center justify-center border-r border-ebony-100 bg-white text-ebony-700 transition-colors hover:bg-ebony-50 md:hidden"
+              className="inline-flex h-full min-h-11 w-11 items-center justify-center border-r border-ebony-100 bg-white text-ebony-700 transition-colors hover:bg-ebony-50 md:hidden"
               aria-label="Open menu"
               title="Open menu"
             >
@@ -57,7 +57,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <button
                     type="button"
                     onClick={() => setSidebarOpen((value) => !value)}
-                    className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-md border border-ebony-200 bg-white text-ebony-700 shadow-sm transition-colors hover:bg-ebony-50 md:inline-flex"
+                    className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-md border border-ebony-200 bg-white text-ebony-700 shadow-sm transition-colors hover:bg-ebony-50 md:inline-flex"
                     aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
                     title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
                   >
@@ -68,7 +68,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           </div>
 
-          <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain p-4 md:p-6">
+          <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain p-2 md:p-3">
             {children}
           </main>
         </div>
