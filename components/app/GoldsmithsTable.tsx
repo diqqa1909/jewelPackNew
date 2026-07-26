@@ -6,7 +6,7 @@ import { GoldIssueButton } from "@/components/app/GoldIssueActions";
 import { useToast } from "@/components/ui/ToastProvider";
 import type { Goldsmith } from "@/lib/generated/prisma";
 import { cn } from "@/lib/utils";
-import { Edit3, Hammer, Plus, Search, Trash2, Users, X } from "lucide-react";
+import { Hammer, Pencil, Plus, Search, Trash2, Users, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
@@ -298,11 +298,11 @@ export function GoldsmithsTable({ initial }: Props) {
                             openEditModal(row);
                           }}
                           disabled={busy}
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-ebony-200 bg-white text-ebony-700 hover:bg-ebony-50 disabled:cursor-not-allowed disabled:opacity-60"
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-ebony-200 bg-white text-ebony-700 transition hover:bg-ebony-50 disabled:cursor-not-allowed disabled:opacity-60"
                           aria-label={`Edit ${row.name}`}
                           title="Edit"
                         >
-                          <Edit3 className="h-4 w-4" />
+                          <Pencil className="h-4 w-4" />
                         </button>
                         <button
                           type="button"
@@ -311,7 +311,7 @@ export function GoldsmithsTable({ initial }: Props) {
                             setDeleteTarget(row);
                           }}
                           disabled={busy}
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-200 bg-white text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-red-200 bg-white text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
                           aria-label={`Delete ${row.name}`}
                           title="Delete"
                         >

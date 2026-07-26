@@ -2,6 +2,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
+import { DeleteConfirmModal } from "@/components/ui/DeleteConfirmModal";
 import { Modal } from "@/components/ui/Modal";
 import type { StockMaster } from "@/lib/generated/prisma";
 import { Search, Trash2 } from "lucide-react";
@@ -25,7 +26,7 @@ type ReceiptFormState = {
   goldWeight: string;
   wastageMg: string;
   labourCharges: string;
-  otherCosts: string;
+  supplierId: string;
   remarks: string;
 };
 
@@ -44,12 +45,13 @@ type PurchaseLine = Pick<
   | "goldWeight"
   | "wastageMg"
   | "labourCharges"
-  | "otherCosts"
 > & {
   goldCostRatePer8g: string;
   wastageRateMgPer8g: string;
 };
 const CARAT_VALUES = ["18K", "19K", "20K", "21K", "22K", "24K"];
+const PURCHASE_ROW_FIELDS = ["subcategory", "qty", "wastageYN", "goldWeight", "wastageMg", "labourCharges"] as const;
+type PurchaseRowField = (typeof PURCHASE_ROW_FIELDS)[number];
 
 function normalizeCarat(value: string | null | undefined) {
   const raw = (value ?? "").trim().toUpperCase().replace(/\s+/g, "").replace(/K(T)?$/, "");
@@ -107,7 +109,6 @@ function emptyLine(): PurchaseLine & { id: string } {
     goldWeight: "0",
     wastageMg: "0",
     labourCharges: "0",
-    otherCosts: "0",
     goldCostRatePer8g: "0",
     wastageRateMgPer8g: "0"
   };
@@ -130,7 +131,7 @@ function emptyForm(): ReceiptFormState {
     goldWeight: "0",
     wastageMg: "0",
     labourCharges: "0",
-    otherCosts: "0",
+    supplierId: "",
     remarks: ""
   };
 }
@@ -167,18 +168,23 @@ export function ReceiptForm({
   const subcategoryRowRefs = useRef<Array<HTMLTableRowElement | null>>([]);
   const lineSubcategoryRefs = useRef(new Map<string, HTMLButtonElement | null>());
   const lineQtyRefs = useRef(new Map<string, HTMLInputElement | null>());
+  const lineWastageYNRefs = useRef(new Map<string, HTMLSelectElement | null>());
+  const lineGoldWeightRefs = useRef(new Map<string, HTMLInputElement | null>());
+  const lineWastageMgRefs = useRef(new Map<string, HTMLInputElement | null>());
+  const lineLabourRefs = useRef(new Map<string, HTMLInputElement | null>());
   const formRef = useRef<HTMLFormElement | null>(null);
   const lastActiveFormFieldRef = useRef<HTMLElement | null>(null);
   const allowNavigationRef = useRef(false);
   const historyGuardRef = useRef(false);
   const [form, setForm] = useState<ReceiptFormState>(emptyForm());
   const [lines, setLines] = useState<Array<PurchaseLine & { id: string }>>([emptyLine()]);
-  const [pendingLineFocus, setPendingLineFocus] = useState<{ id: string; field: "subcategory" | "qty" } | null>(null);
+  const [pendingLineFocus, setPendingLineFocus] = useState<{ id: string; field: PurchaseRowField } | null>(null);
   const [errors, setErrors] = useState<Errors>({});
   const [lineErrors, setLineErrors] = useState<Record<string, Partial<Record<keyof PurchaseLine, string>>>>({});
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [loading, setLoading] = useState(mode === "edit");
   const [goldsmiths, setGoldsmiths] = useState<Array<{ code: string; name: string }>>([]);
+  const [suppliers, setSuppliers] = useState<Array<{ id: number; name: string }>>([]);
   const [categories, setCategories] = useState<Array<{ code: string; name: string }>>([]);
   const [subcategories, setSubcategories] = useState<
     Array<{ code: string; name: string; categoryCode: string; carat?: string | null }>
@@ -207,6 +213,7 @@ export function ReceiptForm({
   const [subcategorySearch, setSubcategorySearch] = useState("");
   const [subcategoryPickerIndex, setSubcategoryPickerIndex] = useState(0);
   const [pendingCancelAction, setPendingCancelAction] = useState<"cancel" | "back" | null>(null);
+  const [deleteLineTarget, setDeleteLineTarget] = useState<{ id: string; label: string } | null>(null);
   const useTableLayout = layout === "table";
   const hasEnteredData = hasEnteredReceiptData();
 
@@ -224,10 +231,7 @@ export function ReceiptForm({
 
   useEffect(() => {
     if (!pendingLineFocus) return;
-    const target =
-      pendingLineFocus.field === "subcategory"
-        ? lineSubcategoryRefs.current.get(pendingLineFocus.id)
-        : lineQtyRefs.current.get(pendingLineFocus.id);
+    const target = getLineFieldRef(pendingLineFocus.id, pendingLineFocus.field);
     if (target) {
       target.focus();
       setPendingLineFocus(null);
@@ -330,6 +334,65 @@ export function ReceiptForm({
     return key.length === 1 || key === "Backspace" || key === "Delete";
   }
 
+  function getLineFieldRef(id: string, field: PurchaseRowField) {
+    if (field === "subcategory") return lineSubcategoryRefs.current.get(id) ?? null;
+    if (field === "qty") return lineQtyRefs.current.get(id) ?? null;
+    if (field === "wastageYN") return lineWastageYNRefs.current.get(id) ?? null;
+    if (field === "goldWeight") return lineGoldWeightRefs.current.get(id) ?? null;
+    if (field === "wastageMg") return lineWastageMgRefs.current.get(id) ?? null;
+    return lineLabourRefs.current.get(id) ?? null;
+  }
+
+  function visiblePurchaseRowFields(line: PurchaseLine): readonly PurchaseRowField[] {
+    return PURCHASE_ROW_FIELDS.filter((field) => {
+      if (field !== "wastageMg") return true;
+      return line.wastageYN === "Y" && form.purchaseType !== "Gold";
+    });
+  }
+
+  function handleLineFieldNavigation(
+    e: React.KeyboardEvent,
+    lineId: string,
+    field: PurchaseRowField
+  ) {
+    const isForwardTab = e.key === "Tab" && !e.shiftKey;
+    const isBackwardTab = e.key === "Tab" && e.shiftKey;
+    const isEnter = e.key === "Enter";
+    if (!isForwardTab && !isBackwardTab && !isEnter) return;
+
+    const rowIndex = lines.findIndex((line) => line.id === lineId);
+    if (rowIndex < 0) return;
+    const currentLine = lines[rowIndex];
+    const fields = visiblePurchaseRowFields(currentLine);
+    const fieldIndex = fields.indexOf(field);
+    if (fieldIndex < 0) return;
+    if (isEnter && fieldIndex !== fields.length - 1) return;
+
+    e.preventDefault();
+    const dir = isBackwardTab ? -1 : 1;
+    let nextRowIndex = rowIndex;
+    let nextFieldIndex = fieldIndex + dir;
+
+    if (nextFieldIndex >= fields.length) {
+      nextRowIndex = rowIndex + 1;
+      nextFieldIndex = 0;
+    } else if (nextFieldIndex < 0) {
+      nextRowIndex = rowIndex - 1;
+      if (nextRowIndex < 0) return;
+      nextFieldIndex = visiblePurchaseRowFields(lines[nextRowIndex]).length - 1;
+    }
+
+    if (nextRowIndex >= lines.length) {
+      addLine(true);
+      return;
+    }
+
+    const nextLine = lines[nextRowIndex];
+    const nextFields = visiblePurchaseRowFields(nextLine);
+    const nextField = nextFields[Math.min(nextFieldIndex, nextFields.length - 1)];
+    getLineFieldRef(nextLine.id, nextField)?.focus();
+  }
+
   function addLine(focusSubcategory = false) {
     const nextLine = {
       ...emptyLine(),
@@ -355,7 +418,6 @@ export function ReceiptForm({
       goldWeight: String(initial.goldWeight ?? "0"),
       wastageMg: String(initial.wastageMg ?? "0"),
       labourCharges: String(initial.labourCharges ?? "0"),
-      otherCosts: String(initial.otherCosts ?? "0"),
       goldCostRatePer8g: String(initial.goldCostRatePer8g ?? system?.goldCostRatePer8g ?? 0),
       wastageRateMgPer8g: String(initial.wastageRateMgPer8g ?? system?.wastageRateMgPer8g ?? 0)
     };
@@ -438,14 +500,16 @@ export function ReceiptForm({
     let active = true;
     async function load() {
       try {
-        const [gs, cs, subs, sys] = await Promise.all([
+        const [gs, supplierData, cs, subs, sys] = await Promise.all([
           fetch("/api/goldsmiths", { cache: "no-store" }).then((r) => r.json()),
+          fetch("/api/suppliers", { cache: "no-store" }).then((r) => r.json()),
           fetch("/api/categories", { cache: "no-store" }).then((r) => r.json()),
           fetch("/api/subcategories", { cache: "no-store" }).then((r) => r.json()),
           fetch("/api/system", { cache: "no-store" }).then((r) => r.json())
         ]);
         if (!active) return;
         setGoldsmiths(gs.goldsmiths ?? []);
+        setSuppliers(supplierData.suppliers ?? []);
         setCategories(cs.categories ?? []);
         setSubcategories(subs.subcategories ?? []);
         const data = sys.data ?? null;
@@ -504,16 +568,15 @@ export function ReceiptForm({
     setSubcategoryPickerOpen(true);
   }
 
-  function focusLineField(lineId: string | null, field: "subcategory" | "qty") {
+  function focusLineField(lineId: string | null, field: PurchaseRowField) {
     if (!lineId) return;
     window.setTimeout(() => {
-      const target =
-        field === "subcategory" ? lineSubcategoryRefs.current.get(lineId) : lineQtyRefs.current.get(lineId);
+      const target = getLineFieldRef(lineId, field);
       target?.focus();
     }, 0);
   }
 
-  function closeSubcategoryPicker(focusField?: "subcategory" | "qty") {
+  function closeSubcategoryPicker(focusField?: PurchaseRowField) {
     const lineId = subcategoryPickerLineId;
     setSubcategoryPickerOpen(false);
     setSubcategoryPickerLineId(null);
@@ -638,7 +701,7 @@ export function ReceiptForm({
           goldWeight: row.goldWeight.toString(),
           wastageMg: row.wastageMg.toString(),
           labourCharges: row.labourCharges.toString(),
-          otherCosts: row.otherCosts.toString(),
+          supplierId: "",
           remarks: row.remarks ?? ""
         });
       } finally {
@@ -668,10 +731,9 @@ export function ReceiptForm({
     return (
       goldCostCalculated +
       wastageCostCalculated +
-      toNumber(form.labourCharges) +
-      toNumber(form.otherCosts)
+      toNumber(form.labourCharges)
     );
-  }, [form.labourCharges, form.otherCosts, goldCostCalculated, wastageCostCalculated]);
+  }, [form.labourCharges, goldCostCalculated, wastageCostCalculated]);
 
   function lineGeneratedWastage(line: PurchaseLine) {
     if (form.purchaseType !== "Gold" || line.wastageYN !== "Y") return line.wastageMg;
@@ -701,7 +763,7 @@ export function ReceiptForm({
   }
 
   function lineTotalCost(line: PurchaseLine) {
-    return lineGoldCost(line) + lineWastageCost(line) + toNumber(line.labourCharges) + toNumber(line.otherCosts);
+    return lineGoldCost(line) + lineWastageCost(line) + toNumber(line.labourCharges);
   }
 
   function isBlankTableLine(line: PurchaseLine) {
@@ -715,8 +777,7 @@ export function ReceiptForm({
       toNumber(line.qty) === 0 &&
       toNumber(line.goldWeight) === 0 &&
       toNumber(line.wastageMg) === 0 &&
-      toNumber(line.labourCharges) === 0 &&
-      toNumber(line.otherCosts) === 0
+      toNumber(line.labourCharges) === 0
     );
   }
 
@@ -743,7 +804,7 @@ export function ReceiptForm({
       form.goldWeight !== baseForm.goldWeight ||
       form.wastageMg !== baseForm.wastageMg ||
       form.labourCharges !== baseForm.labourCharges ||
-      form.otherCosts !== baseForm.otherCosts ||
+      form.supplierId !== baseForm.supplierId ||
       form.remarks.trim() !== "";
 
     if (!useTableLayout) return formHasEntry;
@@ -844,6 +905,7 @@ export function ReceiptForm({
       if (useTableLayout) {
         const payload = {
           ...form,
+          supplierId: form.supplierId ? Number(form.supplierId) : null,
           items: getSavableTableLines().map((line) => ({
             ...line,
             wastageMg: lineGeneratedWastage(line),
@@ -870,6 +932,7 @@ export function ReceiptForm({
 
       const payload = {
         ...form,
+        supplierId: form.supplierId ? Number(form.supplierId) : null,
         goldCost: goldCostCalculated.toFixed(2),
         wastage: wastageCostCalculated.toFixed(2)
       };
@@ -1111,6 +1174,22 @@ export function ReceiptForm({
                         <option value="Rate">Rate</option>
                       </select>
                     </label>
+
+                    <label className="space-y-1.5 text-sm">
+                      <div className="text-xs font-bold text-ebony-800">Supplier</div>
+                      <select
+                        value={form.supplierId}
+                        onChange={(e) => update("supplierId", e.target.value)}
+                        className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+                      >
+                        <option value="">No supplier</option>
+                        {suppliers.map((supplier) => (
+                          <option key={supplier.id} value={String(supplier.id)}>
+                            {supplier.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
                   </div>
                 </div>
 
@@ -1155,6 +1234,7 @@ export function ReceiptForm({
                                     lineSubcategoryRefs.current.set(line.id, el);
                                   }}
                                   onClick={() => openSubcategoryPicker(line.id)}
+                                  onKeyDown={(e) => handleLineFieldNavigation(e, line.id, "subcategory")}
                                   className="h-8 w-full truncate border-0 bg-transparent px-1 text-left text-[11px] outline-none focus:bg-gold-50"
                                 >
                                   {line.subcategoryCode || "Select item..."}
@@ -1182,14 +1262,19 @@ export function ReceiptForm({
                                   value={line.qty}
                                   onFocus={selectOnFocus}
                                   onChange={(e) => updateLine(line.id, "qty", sanitizeInt(e.target.value))}
+                                  onKeyDown={(e) => handleLineFieldNavigation(e, line.id, "qty")}
                                   className="h-8 w-full border-0 bg-transparent px-1 text-right text-[11px] outline-none focus:bg-gold-50"
                                 />
                                 {rowErrors.qty && <FieldError>{rowErrors.qty}</FieldError>}
                               </td>
                               <td className="border border-ebony-100 p-0 focus-within:bg-gold-50 focus-within:ring-2 focus-within:ring-inset focus-within:ring-gold-500">
                                 <select
+                                  ref={(el) => {
+                                    lineWastageYNRefs.current.set(line.id, el);
+                                  }}
                                   value={line.wastageYN}
                                   onChange={(e) => updateLine(line.id, "wastageYN", e.target.value as "Y" | "N")}
+                                  onKeyDown={(e) => handleLineFieldNavigation(e, line.id, "wastageYN")}
                                   className="h-8 w-full border-0 bg-transparent px-1 text-[11px] outline-none focus:bg-gold-50"
                                 >
                                   <option value="N">N</option>
@@ -1199,10 +1284,14 @@ export function ReceiptForm({
                               <td className="border border-ebony-100 p-0 focus-within:bg-gold-50 focus-within:ring-2 focus-within:ring-inset focus-within:ring-gold-500">
                                 <input
                                   inputMode="decimal"
+                                  ref={(el) => {
+                                    lineGoldWeightRefs.current.set(line.id, el);
+                                  }}
                                   value={line.goldWeight}
                                   onFocus={selectOnFocus}
                                   onKeyDown={(e) => {
                                     if (isWeightEditKey(e.key)) captureLatestRatesForLine(line.id);
+                                    handleLineFieldNavigation(e, line.id, "goldWeight");
                                   }}
                                   onPaste={() => captureLatestRatesForLine(line.id)}
                                   onChange={(e) => updateLine(line.id, "goldWeight", sanitizeDecimal(e.target.value))}
@@ -1213,11 +1302,15 @@ export function ReceiptForm({
                               <td className="border border-ebony-100 p-0 focus-within:bg-gold-50 focus-within:ring-2 focus-within:ring-inset focus-within:ring-gold-500">
                                 <input
                                   inputMode="decimal"
+                                  ref={(el) => {
+                                    lineWastageMgRefs.current.set(line.id, el);
+                                  }}
                                   readOnly={form.purchaseType === "Gold"}
                                   disabled={line.wastageYN !== "Y"}
                                   value={displayedWastage}
                                   onFocus={selectOnFocus}
                                   onChange={(e) => updateLine(line.id, "wastageMg", sanitizeDecimal(e.target.value))}
+                                  onKeyDown={(e) => handleLineFieldNavigation(e, line.id, "wastageMg")}
                                   className="h-8 w-full border-0 bg-transparent px-1 text-right text-[11px] outline-none focus:bg-gold-50 disabled:bg-ebony-50 read-only:bg-ebony-50"
                                 />
                                 {rowErrors.wastageMg && <FieldError>{rowErrors.wastageMg}</FieldError>}
@@ -1228,14 +1321,13 @@ export function ReceiptForm({
                               <td className="border border-ebony-100 p-0 focus-within:bg-gold-50 focus-within:ring-2 focus-within:ring-inset focus-within:ring-gold-500">
                                 <input
                                   inputMode="decimal"
+                                  ref={(el) => {
+                                    lineLabourRefs.current.set(line.id, el);
+                                  }}
                                   value={line.labourCharges}
                                   onFocus={selectOnFocus}
                                   onChange={(e) => updateLine(line.id, "labourCharges", sanitizeDecimal(e.target.value))}
-                                  onKeyDown={(e) => {
-                                    if (e.key !== "Enter") return;
-                                    e.preventDefault();
-                                    addLine(true);
-                                  }}
+                                  onKeyDown={(e) => handleLineFieldNavigation(e, line.id, "labourCharges")}
                                   className="h-8 w-full border-0 bg-transparent px-1 text-right text-[11px] outline-none focus:bg-gold-50"
                                 />
                                 {rowErrors.labourCharges && <FieldError>{rowErrors.labourCharges}</FieldError>}
@@ -1252,7 +1344,7 @@ export function ReceiptForm({
                               <td className="border border-ebony-100 px-1 py-1 text-center">
                                 <button
                                   type="button"
-                                  onClick={() => removeLine(line.id)}
+                                  onClick={() => setDeleteLineTarget({ id: line.id, label: `row ${index + 1}` })}
                                   disabled={lines.length === 1}
                                   className="inline-flex h-7 w-7 items-center justify-center rounded-md text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
                                   aria-label="Remove row"
@@ -1360,6 +1452,22 @@ export function ReceiptForm({
                     value={form.gsmName}
                     className="w-full cursor-not-allowed rounded-lg border-2 border-gold-300 bg-cream-50 px-4 py-2.5 text-ebony-800 outline-none"
                   />
+                </label>
+
+                <label className="space-y-2 text-sm">
+                  <div className="font-bold text-ebony-700">Supplier</div>
+                  <select
+                    value={form.supplierId}
+                    onChange={(e) => update("supplierId", e.target.value)}
+                    className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 text-sm outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
+                  >
+                    <option value="">No supplier</option>
+                    {suppliers.map((supplier) => (
+                      <option key={supplier.id} value={String(supplier.id)}>
+                        {supplier.name}
+                      </option>
+                    ))}
+                  </select>
                 </label>
 
                 <label className="space-y-2 text-sm">
@@ -1495,18 +1603,6 @@ export function ReceiptForm({
                     className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
                   />
                   {errors.labourCharges && <div className="text-xs text-red-600">{errors.labourCharges}</div>}
-                </label>
-
-                <label className="space-y-2 text-sm">
-                  <div className="font-bold text-ebony-700">Other Costs</div>
-                  <input
-                    inputMode="decimal"
-                    value={form.otherCosts}
-                    onFocus={selectOnFocus}
-                    onChange={(e) => update("otherCosts", sanitizeDecimal(e.target.value))}
-                    placeholder="0.00"
-                    className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
-                  />
                 </label>
 
                 <label className="space-y-2 text-sm">
@@ -1802,6 +1898,18 @@ export function ReceiptForm({
           </div>
         </form>
       </Modal>
+
+      <DeleteConfirmModal
+        open={deleteLineTarget !== null}
+        itemLabel={deleteLineTarget?.label ?? "this row"}
+        description="This will remove the row from the purchase form."
+        onCancel={() => setDeleteLineTarget(null)}
+        onConfirm={() => {
+          if (!deleteLineTarget) return;
+          removeLine(deleteLineTarget.id);
+          setDeleteLineTarget(null);
+        }}
+      />
     </Card>
   );
 }

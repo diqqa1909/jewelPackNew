@@ -1,6 +1,7 @@
 import { GoldIssueButton } from "@/components/app/GoldIssueActions";
+import { SalesForm } from "@/components/app/SalesForm";
 import { prismaWithRetry } from "@/lib/prisma";
-import { ArrowDownLeft, ArrowUpRight, Filter, Gem, Search } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Eye, Filter, Gem, Plus, Search } from "lucide-react";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +35,37 @@ function parseDate(value: unknown, endOfDay = false) {
   return date;
 }
 
+function GoldChildTabs({ activeTab }: { activeTab: "customer" | "goldsmith" }) {
+  const tabs = [
+    { key: "customer", label: "Customer", href: "/gold?tab=customer" },
+    { key: "goldsmith", label: "Goldsmith", href: "/gold?tab=goldsmith" }
+  ] as const;
+
+  return (
+    <div className="border-b border-ebony-100">
+      <div className="flex flex-wrap gap-2">
+        {tabs.map((tab) => {
+          const active = activeTab === tab.key;
+          return (
+            <Link
+              key={tab.key}
+              href={tab.href}
+              className={[
+                "inline-flex h-10 items-center justify-center rounded-t-md border px-5 text-sm font-bold transition",
+                active
+                  ? "border-ebony-200 border-b-white bg-white text-indigo-900"
+                  : "border-transparent bg-ebony-50 text-ebony-600 hover:bg-white hover:text-ebony-900"
+              ].join(" ")}
+            >
+              {tab.label}
+            </Link>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 type GoldLedgerRow = {
   id: string;
   date: Date;
@@ -61,6 +93,161 @@ export default async function GoldPage({
   const goldsmithParam = typeof searchParams?.goldsmith === "string" ? searchParams.goldsmith.trim() : "";
   const from = parseDate(fromParam);
   const to = parseDate(toParam, true);
+  const activeTab = searchParams?.tab === "customer" ? "customer" : "goldsmith";
+  const showNewCustomerGrnForm = searchParams?.new === "1";
+
+  if (activeTab === "customer") {
+    if (showNewCustomerGrnForm) {
+      return (
+        <div className="space-y-5">
+          <GoldChildTabs activeTab={activeTab} />
+          <div className="flex justify-end">
+            <Link
+              href="/gold?tab=customer"
+              className="inline-flex h-10 items-center justify-center rounded-md border border-ebony-200 bg-white px-4 text-sm font-bold text-ebony-700 hover:bg-ebony-50"
+            >
+              Back to GRN Summary
+            </Link>
+          </div>
+          <SalesForm mode="customerGoldReceipt" />
+        </div>
+      );
+    }
+
+    const grnRows = await prismaWithRetry((p) =>
+      p.goldReceipt.findMany({
+        where: { grnNo: { startsWith: "GRN-" } },
+        include: { customer: true, salesman: true },
+        orderBy: [{ transactionDate: "desc" }, { createdAt: "desc" }, { id: "desc" }]
+      })
+    );
+
+    const grnGroups = Array.from(
+      grnRows
+        .reduce((map, row) => {
+          const key = row.grnNo ?? `GRN-${row.id}`;
+          const current =
+            map.get(key) ??
+            ({
+              grnNo: key,
+              transactionDate: row.transactionDate,
+              customerName: row.customer?.name ?? "-",
+              customerPhone: row.customer?.phone ?? "-",
+              salesmanName: row.salesman?.name ?? "-",
+              lineCount: 0,
+              goldWeight: 0,
+              pureGoldWeight: 0,
+              remarks: row.remarks ?? ""
+            } as {
+              grnNo: string;
+              transactionDate: Date | null;
+              customerName: string;
+              customerPhone: string;
+              salesmanName: string;
+              lineCount: number;
+              goldWeight: number;
+              pureGoldWeight: number;
+              remarks: string;
+            });
+          current.lineCount += 1;
+          current.goldWeight += toNumber(row.goldWeight);
+          current.pureGoldWeight += toNumber(row.pureGoldWeight);
+          if (!current.remarks && row.remarks) current.remarks = row.remarks;
+          map.set(key, current);
+          return map;
+        }, new Map<string, { grnNo: string; transactionDate: Date | null; customerName: string; customerPhone: string; salesmanName: string; lineCount: number; goldWeight: number; pureGoldWeight: number; remarks: string }>())
+        .values()
+    );
+
+    const totalGrns = grnGroups.length;
+    const totalGoldWeight = grnGroups.reduce((sum, grn) => sum + grn.goldWeight, 0);
+    const total24KtWeight = grnGroups.reduce((sum, grn) => sum + grn.pureGoldWeight, 0);
+
+    return (
+      <div className="space-y-5">
+        <GoldChildTabs activeTab={activeTab} />
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <section className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-lg border border-ebony-100 bg-white px-4 py-3 shadow-sm">
+              <div className="text-xs font-bold uppercase tracking-widest text-ebony-600">GRNs</div>
+              <div className="mt-1 text-xl font-extrabold tabular-nums text-ebony-900">{totalGrns}</div>
+            </div>
+            <div className="rounded-lg border border-ebony-100 bg-white px-4 py-3 shadow-sm">
+              <div className="text-xs font-bold uppercase tracking-widest text-ebony-600">Gold Wt</div>
+              <div className="mt-1 text-xl font-extrabold tabular-nums text-ebony-900">{weight(totalGoldWeight)} g</div>
+            </div>
+            <div className="rounded-lg border border-ebony-100 bg-white px-4 py-3 shadow-sm">
+              <div className="text-xs font-bold uppercase tracking-widest text-ebony-600">24KT Wt</div>
+              <div className="mt-1 text-xl font-extrabold tabular-nums text-ebony-900">{weight(total24KtWeight)} g</div>
+            </div>
+          </section>
+          <Link
+            href="/gold?tab=customer&new=1"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-indigo-700 px-5 text-sm font-bold text-white hover:bg-indigo-800"
+          >
+            <Plus className="h-4 w-4" />
+            Add New GRN
+          </Link>
+        </div>
+
+        <section className="overflow-hidden rounded-lg border border-ebony-100 bg-white shadow-sm">
+          <div className="border-b border-ebony-100 px-5 py-4">
+            <h2 className="text-sm font-extrabold text-indigo-900">Customer Gold Received Notes</h2>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[940px] text-sm">
+              <thead className="bg-ebony-50 text-left text-xs font-bold uppercase tracking-wide text-ebony-600">
+                <tr>
+                  <th className="px-4 py-3">GRN No</th>
+                  <th className="px-4 py-3">Date</th>
+                  <th className="px-4 py-3">Customer</th>
+                  <th className="px-4 py-3">Mobile</th>
+                  <th className="px-4 py-3">Salesman</th>
+                  <th className="px-4 py-3 text-right">Rows</th>
+                  <th className="px-4 py-3 text-right">Gold Wt</th>
+                  <th className="px-4 py-3 text-right">24KT Wt</th>
+                  <th className="px-4 py-3 text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-ebony-100">
+                {grnGroups.map((grn) => (
+                  <tr key={grn.grnNo} className="bg-white hover:bg-ebony-50/70">
+                    <td className="px-4 py-3 font-bold text-indigo-800">{grn.grnNo}</td>
+                    <td className="px-4 py-3 tabular-nums text-ebony-700">
+                      {grn.transactionDate ? date(grn.transactionDate) : "-"}
+                    </td>
+                    <td className="px-4 py-3 font-semibold text-ebony-900">{grn.customerName}</td>
+                    <td className="px-4 py-3 text-ebony-700">{grn.customerPhone}</td>
+                    <td className="px-4 py-3 text-ebony-700">{grn.salesmanName}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-ebony-700">{grn.lineCount}</td>
+                    <td className="px-4 py-3 text-right font-semibold tabular-nums text-ebony-900">{weight(grn.goldWeight)} g</td>
+                    <td className="px-4 py-3 text-right font-semibold tabular-nums text-ebony-900">{weight(grn.pureGoldWeight)} g</td>
+                    <td className="px-4 py-3 text-center">
+                      <Link
+                        href={`/gold/receipts/${encodeURIComponent(grn.grnNo)}`}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-ebony-200 bg-white text-ebony-700 transition hover:bg-ebony-50"
+                        aria-label={`View GRN ${grn.grnNo}`}
+                        title="View"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+                {grnGroups.length === 0 ? (
+                  <tr>
+                    <td className="px-4 py-10 text-center text-sm text-ebony-600" colSpan={9}>
+                      No GRNs yet. Use Add New GRN to create the first one.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   const [goldsmiths, goldIssues, purchases] = await Promise.all([
     prismaWithRetry((p) => p.goldsmith.findMany({ orderBy: [{ name: "asc" }] })),
@@ -244,6 +431,8 @@ export default async function GoldPage({
 
   return (
     <div className="space-y-5">
+      <GoldChildTabs activeTab={activeTab} />
+
       <form className="rounded-lg border border-ebony-100 bg-white p-4 shadow-sm">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[10rem_10rem_minmax(14rem,1fr)_minmax(16rem,1.2fr)_auto_auto]">
           <label className="space-y-1.5 text-sm">

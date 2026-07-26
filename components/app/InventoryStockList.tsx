@@ -11,6 +11,8 @@ type StockRow = {
   purchasedQty: number;
   soldQty: number;
   availableQty: number;
+  availableGoldWeight: number;
+  totalCost: number;
 };
 
 type SubcategoryRow = {
@@ -25,12 +27,23 @@ type SubcategoryRow = {
   purchasedGoldWeight: number;
   soldGoldWeight: number;
   availableGoldWeight: number;
+  totalCost: number;
 };
 
 type Category = {
   code: string;
   name: string;
 };
+
+function money(value: number) {
+  if (!Number.isFinite(value)) return "0.00";
+  return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function weight(value: number) {
+  if (!Number.isFinite(value)) return "0.000";
+  return value.toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+}
 
 export function InventoryStockList({
   rows,
@@ -55,9 +68,9 @@ export function InventoryStockList({
     setExpandedCategories(newExpanded);
   };
 
-  const totalPurchased = useMemo(() => rows.reduce((sum, row) => sum + row.purchasedQty, 0), [rows]);
-  const totalSold = useMemo(() => rows.reduce((sum, row) => sum + row.soldQty, 0), [rows]);
   const totalAvailable = useMemo(() => rows.reduce((sum, row) => sum + row.availableQty, 0), [rows]);
+  const totalAvailableWeight = useMemo(() => rows.reduce((sum, row) => sum + row.availableGoldWeight, 0), [rows]);
+  const totalCost = useMemo(() => rows.reduce((sum, row) => sum + row.totalCost, 0), [rows]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -76,9 +89,9 @@ export function InventoryStockList({
   return (
     <div className="space-y-4">
       <section className="grid gap-3 sm:grid-cols-3">
-        <Stat label="Purchased Qty" value={totalPurchased} tone="blue" />
-        <Stat label="Sold Qty" value={totalSold} tone="amber" />
-        <Stat label="Available Qty" value={totalAvailable} tone="emerald" />
+        <Stat label="Available Qty" value={String(totalAvailable)} tone="emerald" />
+        <Stat label="Available Weight" value={`${weight(totalAvailableWeight)} g`} tone="blue" />
+        <Stat label="Total Cost" value={money(totalCost)} tone="amber" />
       </section>
 
       <section className="rounded-lg border border-ebony-100 bg-white p-4 shadow-sm">
@@ -126,9 +139,9 @@ export function InventoryStockList({
                 <th className="px-4 py-3 w-12"></th>
                 <th className="px-4 py-3">Category Code</th>
                 <th className="px-4 py-3">Category</th>
-                <th className="px-4 py-3 text-right">Purchased Qty</th>
-                <th className="px-4 py-3 text-right">Sold Qty</th>
                 <th className="px-4 py-3 text-right">Available Qty</th>
+                <th className="px-4 py-3 text-right">Available Weight</th>
+                <th className="px-4 py-3 text-right">Total Cost</th>
                 <th className="px-4 py-3">Status</th>
               </tr>
             </thead>
@@ -159,9 +172,9 @@ export function InventoryStockList({
                       </td>
                       <td className="px-4 py-3 font-semibold tabular-nums text-ebony-900">{row.categoryCode}</td>
                       <td className="px-4 py-3 text-ebony-700">{row.categoryName}</td>
-                      <td className="px-4 py-3 text-right font-semibold tabular-nums text-ebony-800">{row.purchasedQty}</td>
-                      <td className="px-4 py-3 text-right font-semibold tabular-nums text-ebony-800">{row.soldQty}</td>
                       <td className="px-4 py-3 text-right font-semibold tabular-nums text-ebony-900">{row.availableQty}</td>
+                      <td className="px-4 py-3 text-right font-semibold tabular-nums text-ebony-900">{weight(row.availableGoldWeight)} g</td>
+                      <td className="px-4 py-3 text-right font-semibold tabular-nums text-ebony-900">{money(row.totalCost)}</td>
                       <td className="px-4 py-3">
                         <span
                           className={
@@ -195,24 +208,19 @@ export function InventoryStockList({
                             <td className="px-4 py-3 font-semibold text-ebony-700 text-sm">
                               {subRow.carat || "-"}
                             </td>
-                            <td className="px-4 py-3 text-right font-semibold tabular-nums text-ebony-800">{subRow.purchasedQty}</td>
-                            <td className="px-4 py-3 text-right font-semibold tabular-nums text-ebony-800">{subRow.soldQty}</td>
                             <td className="px-4 py-3 text-right font-semibold tabular-nums text-ebony-900">{subRow.availableQty}</td>
+                            <td className="px-4 py-3 text-right font-semibold tabular-nums text-ebony-900">{weight(subRow.availableGoldWeight)} g</td>
+                            <td className="px-4 py-3 text-right font-semibold tabular-nums text-ebony-900">{money(subRow.totalCost)}</td>
                             <td className="px-4 py-3">
-                              <div className="flex flex-col gap-1">
-                                <span
-                                  className={
-                                    subAvailable
-                                      ? "rounded-md bg-emerald-50 px-2 py-1 text-[11px] font-bold text-emerald-700"
-                                      : "rounded-md bg-ebony-100 px-2 py-1 text-[11px] font-bold text-ebony-600"
-                                  }
-                                >
-                                  {subAvailable ? "Available" : "Sold Out"}
-                                </span>
-                                <span className="text-[10px] text-ebony-600">
-                                  Wt: {subRow.availableGoldWeight.toFixed(3)}g
-                                </span>
-                              </div>
+                              <span
+                                className={
+                                  subAvailable
+                                    ? "rounded-md bg-emerald-50 px-2 py-1 text-[11px] font-bold text-emerald-700"
+                                    : "rounded-md bg-ebony-100 px-2 py-1 text-[11px] font-bold text-ebony-600"
+                                }
+                              >
+                                {subAvailable ? "Available" : "Sold Out"}
+                              </span>
                             </td>
                           </tr>
                         );
@@ -247,7 +255,7 @@ export function InventoryStockList({
   );
 }
 
-function Stat({ label, value, tone }: { label: string; value: number; tone: "blue" | "amber" | "emerald" }) {
+function Stat({ label, value, tone }: { label: string; value: string; tone: "blue" | "amber" | "emerald" }) {
   const toneClasses = {
     blue: "border-sky-100 bg-sky-50 text-sky-700",
     amber: "border-amber-100 bg-amber-50 text-amber-700",

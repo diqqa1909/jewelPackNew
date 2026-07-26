@@ -17,7 +17,6 @@ type PurchasePayload = {
   goldWeight: string;
   wastageMg?: string;
   labourCharges: string;
-  otherCosts: string;
   remarks?: string;
   items?: PurchaseLinePayload[];
 };
@@ -39,7 +38,6 @@ type NormalizedPurchaseLine = {
   wastageMg: Prisma.Decimal;
   wastageCost: Prisma.Decimal;
   labourCharges: Prisma.Decimal;
-  otherCosts: Prisma.Decimal;
   totalCost: Prisma.Decimal;
 };
 
@@ -64,6 +62,10 @@ function isWastageEnabled(value: unknown) {
 
 function normalizePurchaseType(value: unknown) {
   return value === "Rate" ? "Rate" : "Gold";
+}
+
+function wastageWeightForCost(purchaseType: string, wastageMg: Prisma.Decimal) {
+  return purchaseType === "Gold" ? wastageMg.div(new Prisma.Decimal("1000")) : wastageMg;
 }
 
 function purchaseAccount({
@@ -117,7 +119,6 @@ function linePayloads(body: Partial<Omit<PurchasePayload, "wastageYN"> & { wasta
           goldWeight: body.goldWeight ?? "0",
           wastageMg: body.wastageMg,
           labourCharges: body.labourCharges ?? "0",
-          otherCosts: body.otherCosts ?? "0"
         }
       ];
 }
@@ -188,11 +189,12 @@ export async function POST(req: Request) {
       const wastageMg = decimal(line.wastageMg ?? "0");
       const goldCost = goldWeight.div(new Prisma.Decimal("8")).mul(goldRatePer8g);
       const wastageEnabled = isWastageEnabled(line.wastageYN);
-      const wastageCost = wastageEnabled ? wastageMg.div(new Prisma.Decimal("8")).mul(goldRatePer8g) : new Prisma.Decimal("0");
+      const wastageCost = wastageEnabled
+        ? wastageWeightForCost(purchaseType, wastageMg).div(new Prisma.Decimal("8")).mul(goldRatePer8g)
+        : new Prisma.Decimal("0");
       const labourCharges = decimal(line.labourCharges ?? "0");
-      const otherCosts = decimal(line.otherCosts ?? "0");
-      const totalCost = goldCost.plus(wastageCost).plus(labourCharges).plus(otherCosts);
-      lines.push({ line, category, subcategory, caratLabel, qty, goldWeight, goldCost, wastageEnabled, wastageMg, wastageCost, labourCharges, otherCosts, totalCost });
+      const totalCost = goldCost.plus(wastageCost).plus(labourCharges);
+      lines.push({ line, category, subcategory, caratLabel, qty, goldWeight, goldCost, wastageEnabled, wastageMg, wastageCost, labourCharges, totalCost });
     }
     if (lines.length === 0) return NextResponse.json({ error: "Add at least one item" }, { status: 400 });
     const groupTotalCost = lines.reduce((sum, row) => sum.plus(row.totalCost), new Prisma.Decimal("0"));
@@ -234,7 +236,7 @@ export async function POST(req: Request) {
           wastageMg: row.wastageMg,
           wastage: row.wastageCost,
           labourCharges: row.labourCharges,
-          otherCosts: row.otherCosts,
+          otherCosts: new Prisma.Decimal("0"),
           totalCost: row.totalCost,
           remarks: (body.remarks ?? "").trim() || null,
           supplierId,
@@ -345,11 +347,12 @@ export async function PATCH(req: Request) {
       const wastageMg = decimal(line.wastageMg ?? "0");
       const goldCost = goldWeight.div(new Prisma.Decimal("8")).mul(goldRatePer8g);
       const wastageEnabled = isWastageEnabled(line.wastageYN);
-      const wastageCost = wastageEnabled ? wastageMg.div(new Prisma.Decimal("8")).mul(goldRatePer8g) : new Prisma.Decimal("0");
+      const wastageCost = wastageEnabled
+        ? wastageWeightForCost(purchaseType, wastageMg).div(new Prisma.Decimal("8")).mul(goldRatePer8g)
+        : new Prisma.Decimal("0");
       const labourCharges = decimal(line.labourCharges ?? "0");
-      const otherCosts = decimal(line.otherCosts ?? "0");
-      const totalCost = goldCost.plus(wastageCost).plus(labourCharges).plus(otherCosts);
-      lines.push({ line, category, subcategory, caratLabel, qty, goldWeight, goldCost, wastageEnabled, wastageMg, wastageCost, labourCharges, otherCosts, totalCost });
+      const totalCost = goldCost.plus(wastageCost).plus(labourCharges);
+      lines.push({ line, category, subcategory, caratLabel, qty, goldWeight, goldCost, wastageEnabled, wastageMg, wastageCost, labourCharges, totalCost });
     }
     if (lines.length === 0) return NextResponse.json({ error: "Add at least one item" }, { status: 400 });
     const groupTotalCost = lines.reduce((sum, row) => sum.plus(row.totalCost), new Prisma.Decimal("0"));
@@ -383,7 +386,7 @@ export async function PATCH(req: Request) {
             wastageMg: row.wastageMg,
             wastage: row.wastageCost,
             labourCharges: row.labourCharges,
-            otherCosts: row.otherCosts,
+            otherCosts: new Prisma.Decimal("0"),
             totalCost: row.totalCost,
             remarks: (body.remarks ?? "").trim() || null,
             supplierId,
@@ -435,6 +438,48 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ ok: true, purchase });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unable to update purchase";
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    const url = new URL(req.url);
+    const id = Number(url.searchParams.get("id"));
+    if (!Number.isFinite(id)) return NextResponse.json({ error: "Invalid purchase id" }, { status: 400 });
+
+    const purchase = await prisma.purchase.findUnique({ where: { id } });
+    if (!purchase) return NextResponse.json({ error: "Purchase not found" }, { status: 404 });
+
+    const purchaseGroupNo = purchase.purchaseGroupNo ?? purchase.purchaseNo;
+    const rows = await prisma.purchase.findMany({
+      where: { OR: [{ purchaseGroupNo }, { purchaseNo: purchaseGroupNo }] },
+      select: { id: true }
+    });
+    const ids = rows.length ? rows.map((row) => row.id) : [purchase.id];
+
+    const linkedSales = await prisma.sale.count({ where: { purchaseId: { in: ids } } });
+    if (linkedSales > 0) {
+      return NextResponse.json(
+        { error: "Unable to delete. Sales are linked to this purchase." },
+        { status: 409 }
+      );
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.purchaseItem.deleteMany({ where: { purchaseId: { in: ids } } });
+      await tx.transaction.deleteMany({
+        where: {
+          referenceNumber: purchaseGroupNo,
+          type: "PURCHASE"
+        }
+      });
+      await tx.purchase.deleteMany({ where: { id: { in: ids } } });
+    });
+
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Unable to delete purchase";
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

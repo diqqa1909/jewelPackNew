@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { DeleteConfirmModal } from "@/components/ui/DeleteConfirmModal";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/ToastProvider";
+import { Pencil, Trash2 } from "lucide-react";
 
 interface User {
   id: string;
@@ -150,19 +151,25 @@ export function UsersClient() {
                           {user.isActive ? "Active" : "Inactive"}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right space-x-2">
-                        <button
-                          onClick={() => openModal(user)}
-                          className="text-blue-600 hover:text-blue-800 text-xs font-medium"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => setDeleteTarget(user)}
-                          className="text-red-600 hover:text-red-800 text-xs font-medium"
-                        >
-                          Delete
-                        </button>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex justify-end gap-2">
+                          <button
+                            onClick={() => openModal(user)}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-ebony-200 bg-white text-ebony-700 transition hover:bg-ebony-50"
+                            aria-label={`Edit ${user.email ?? user.name ?? "user"}`}
+                            title="Edit"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => setDeleteTarget(user)}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-red-200 bg-white text-red-700 transition hover:bg-red-50"
+                            aria-label={`Delete ${user.email ?? user.name ?? "user"}`}
+                            title="Delete"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}

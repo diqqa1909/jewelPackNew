@@ -1,10 +1,12 @@
 "use client";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
+import { DeleteConfirmModal } from "@/components/ui/DeleteConfirmModal";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/ToastProvider";
 import { useRouter } from "next/navigation";
-import { type FocusEvent, useEffect, useMemo, useState } from "react";
+import { type FocusEvent, useEffect, useMemo, useRef, useState } from "react";
 import { CalendarDays, Plus, Search, Save, Send, Trash2 } from "lucide-react";
 
 type CustomerRow = { id: number; name: string; accountNumber?: string | null; phone?: string | null; creditLimit?: string };
@@ -31,6 +33,27 @@ type Line = {
 };
 
 const RECEIPT_CARATS = ["18", "19", "20", "21", "22", "24"] as const;
+type SalesFormMode = "sales" | "customerGoldReceipt";
+export type InitialSaleFormData = {
+  id: number;
+  saleNo: string;
+  transactionDate: string;
+  salesmanId: number | null;
+  customerId: number;
+  salesType: "Gold" | "Rate";
+  paymentType?: string;
+  paidAmount?: string;
+  remarks?: string | null;
+  lines: Array<{
+    description?: string;
+    subcategoryCode: string;
+    carat: string;
+    qty: string;
+    goldWeight: string;
+    stoneWeight: string;
+    sellRatePer8g: string;
+  }>;
+};
 
 function normalizeCarat(value: string | null | undefined) {
   return (value ?? "").trim().toUpperCase().replace(/\s+/g, "").replace(/K(T)?$/, "");
@@ -64,41 +87,65 @@ function selectOnFocus(e: FocusEvent<HTMLInputElement>) {
   e.currentTarget.select();
 }
 
-export function SalesForm() {
+function normalizeLineForDirty(line: Omit<Line, "id">) {
+  return {
+    description: line.description.trim(),
+    subcategoryCode: line.subcategoryCode.trim(),
+    carat: normalizeCarat(line.carat),
+    qty: String(toNumber(line.qty)),
+    goldWeight: String(toNumber(line.goldWeight)),
+    stoneWeight: String(toNumber(line.stoneWeight)),
+    sellRatePer8g: String(toNumber(line.sellRatePer8g))
+  };
+}
+
+export function SalesForm({ mode = "sales", initialSale }: { mode?: SalesFormMode; initialSale?: InitialSaleFormData }) {
+  const isCustomerGoldReceiptMode = mode === "customerGoldReceipt";
+  const isEditMode = Boolean(initialSale);
   const router = useRouter();
   const toast = useToast();
+  const initialTransactionDateRef = useRef(initialSale?.transactionDate ?? todayISO());
+  const allowNavigationRef = useRef(false);
+  const historyGuardRef = useRef(false);
   const [loading, setLoading] = useState(true);
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [salesmen, setSalesmen] = useState<SalesmanRow[]>([]);
   const [subcategories, setSubcategories] = useState<SubcategoryRow[]>([]);
   const [availability, setAvailability] = useState<AvailabilityRow[]>([]);
 
-  const [transactionDate, setTransactionDate] = useState(todayISO());
-  const [salesmanId, setSalesmanId] = useState<number | "">("");
-  const [customerId, setCustomerId] = useState<number | "">("");
-  const [remarks, setRemarks] = useState("");
-  const [salesType, setSalesType] = useState("Gold");
-  const [goldTransactionType, setGoldTransactionType] = useState<"RECEIVED" | "ISSUED">("RECEIVED");
-  const [paymentType, setPaymentType] = useState("Credit");
+  const [transactionDate, setTransactionDate] = useState(initialSale?.transactionDate ?? todayISO());
+  const [salesmanId, setSalesmanId] = useState<number | "">(initialSale?.salesmanId ?? "");
+  const [customerId, setCustomerId] = useState<number | "">(initialSale?.customerId ?? "");
+  const [remarks, setRemarks] = useState(initialSale?.remarks ?? "");
+  const [salesType, setSalesType] = useState(initialSale?.salesType ?? "Gold");
+  const [, setGoldTransactionType] = useState<"RECEIVED" | "ISSUED">(
+    isCustomerGoldReceiptMode ? "RECEIVED" : "ISSUED"
+  );
+  const [paymentType, setPaymentType] = useState(initialSale?.paymentType ?? "Credit");
   const [discount, setDiscount] = useState("0");
-  const [paidAmount, setPaidAmount] = useState("0");
+  const [paidAmount, setPaidAmount] = useState(initialSale?.paidAmount ?? "0");
   const [itemSearch, setItemSearch] = useState("");
-  const [invoiceNo, setInvoiceNo] = useState("");
-  const [lines, setLines] = useState<Line[]>([
-    {
-      id: uid(),
-      description: "",
-      subcategoryCode: "",
-      carat: "",
-      qty: "0",
-      goldWeight: "0",
-      stoneWeight: "0",
-      sellRatePer8g: "0"
-    }
-  ]);
+  const [invoiceNo, setInvoiceNo] = useState(initialSale?.saleNo ?? "");
+  const [lines, setLines] = useState<Line[]>(
+    initialSale?.lines.length
+      ? initialSale.lines.map((line) => ({ id: uid(), ...line, description: line.description ?? "" }))
+      : [
+          {
+            id: uid(),
+            description: "",
+            subcategoryCode: "",
+            carat: "",
+            qty: "0",
+            goldWeight: "0",
+            stoneWeight: "0",
+            sellRatePer8g: "0"
+          }
+        ]
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [customerModalOpen, setCustomerModalOpen] = useState(false);
+  const [deleteLineTarget, setDeleteLineTarget] = useState<{ id: string; label: string } | null>(null);
   const [newCustomerName, setNewCustomerName] = useState("");
   const [newCustomerPhone, setNewCustomerPhone] = useState("");
   const [newCustomerEmail, setNewCustomerEmail] = useState("");
@@ -110,9 +157,42 @@ export function SalesForm() {
   const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
   const [barcodePickerRowId, setBarcodePickerRowId] = useState<string | null>(null);
   const [pickerIndex, setPickerIndex] = useState(0);
+  const [pendingCancelAction, setPendingCancelAction] = useState<"cancel" | "back" | null>(null);
+  const barcodeListRef = useRef<HTMLDivElement | null>(null);
+  const barcodeRowRefs = useRef<Array<HTMLTableRowElement | null>>([]);
   const [cellRefs] = useState(
     () => new Map<string, HTMLSelectElement | HTMLInputElement | HTMLButtonElement | null>()
   );
+  const hasEnteredData = hasEnteredSalesData();
+
+  useEffect(() => {
+    if (!initialSale) return;
+    setTransactionDate(initialSale.transactionDate);
+    setSalesmanId(initialSale.salesmanId ?? "");
+    setCustomerId(initialSale.customerId);
+    setRemarks(initialSale.remarks ?? "");
+    setSalesType(initialSale.salesType);
+    setPaymentType(initialSale.paymentType ?? "Credit");
+    setPaidAmount(initialSale.paidAmount ?? "0");
+    setInvoiceNo(initialSale.saleNo);
+    setLines(
+      initialSale.lines.length
+        ? initialSale.lines.map((line) => ({ id: uid(), ...line, description: line.description ?? "" }))
+        : [
+            {
+              id: uid(),
+              description: "",
+              subcategoryCode: "",
+              carat: "",
+              qty: "0",
+              goldWeight: "0",
+              stoneWeight: "0",
+              sellRatePer8g: "0"
+            }
+          ]
+    );
+    setError("");
+  }, [initialSale]);
 
   useEffect(() => {
     if (error) toast.error("Invoice notification", error);
@@ -151,6 +231,33 @@ export function SalesForm() {
       });
     return () => controller.abort();
   }, [customerId]);
+
+  useEffect(() => {
+    if (!hasEnteredData || loading || allowNavigationRef.current) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [hasEnteredData, loading]);
+
+  useEffect(() => {
+    if (!hasEnteredData || loading || allowNavigationRef.current) return;
+    if (!historyGuardRef.current) {
+      window.history.pushState({ salesFormGuard: true }, "", window.location.href);
+      historyGuardRef.current = true;
+    }
+
+    const onPopState = () => {
+      if (allowNavigationRef.current) return;
+      setPendingCancelAction("back");
+      window.history.pushState({ salesFormGuard: true }, "", window.location.href);
+    };
+
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [hasEnteredData, loading]);
 
   const navCols = ["subcategory", "qty", "goldWeight", "stoneWeight", "sellRate"] as const;
   type NavCol = (typeof navCols)[number];
@@ -207,16 +314,40 @@ export function SalesForm() {
           fetch("/api/salesmen", { cache: "no-store" }).then((r) => r.json()),
           fetch("/api/subcategories", { cache: "no-store" }).then((r) => r.json()),
           fetch("/api/stock/availability", { cache: "no-store" }).then((r) => r.json()),
-          fetch(`/api/sales?preview=1&transactionDate=${encodeURIComponent(todayISO())}`, {
+          fetch(
+            `${isCustomerGoldReceiptMode ? "/api/gold-receipts" : "/api/sales"}?preview=1&transactionDate=${encodeURIComponent(todayISO())}`,
+            {
             cache: "no-store"
-          }).then((r) => r.json())
+            }
+          ).then((r) => r.json())
         ]);
         if (!active) return;
         setCustomers(c1.customers ?? []);
         setSalesmen(c2.salesmen ?? []);
         setSubcategories(c3.subcategories ?? []);
-        setAvailability(c4.rows ?? []);
-        setInvoiceNo(inv.saleNo ?? "");
+        const loadedAvailability = [...(c4.rows ?? [])] as AvailabilityRow[];
+        if (initialSale && !isCustomerGoldReceiptMode) {
+          for (const line of initialSale.lines) {
+            const carat = normalizeCarat(line.carat);
+            const existing = loadedAvailability.find(
+              (row) => row.subcategoryCode === line.subcategoryCode && normalizeCarat(row.carat) === carat
+            );
+            if (existing) {
+              existing.balanceQty += Math.max(0, Math.floor(toNumber(line.qty)));
+              existing.balanceGoldWeight = String(toNumber(existing.balanceGoldWeight) + Math.max(0, toNumber(line.goldWeight)));
+            } else {
+              loadedAvailability.push({
+                subcategoryCode: line.subcategoryCode,
+                carat,
+                balanceQty: Math.max(0, Math.floor(toNumber(line.qty))),
+                balanceGoldWeight: String(Math.max(0, toNumber(line.goldWeight))),
+                balanceCost: "0"
+              });
+            }
+          }
+        }
+        setAvailability(loadedAvailability);
+        if (!isEditMode) setInvoiceNo(isCustomerGoldReceiptMode ? inv.grnNo ?? "" : inv.saleNo ?? "");
       } catch {
         // ignore
       } finally {
@@ -226,18 +357,19 @@ export function SalesForm() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [initialSale, isCustomerGoldReceiptMode, isEditMode]);
 
   useEffect(() => {
+    if (isEditMode) return;
     let cancelled = false;
     (async () => {
       try {
         const inv = await fetch(
-          `/api/sales?preview=1&transactionDate=${encodeURIComponent(transactionDate || todayISO())}`,
+          `${isCustomerGoldReceiptMode ? "/api/gold-receipts" : "/api/sales"}?preview=1&transactionDate=${encodeURIComponent(transactionDate || todayISO())}`,
           { cache: "no-store" }
         ).then((r) => r.json());
         if (cancelled) return;
-        setInvoiceNo(inv.saleNo ?? "");
+        setInvoiceNo(isCustomerGoldReceiptMode ? inv.grnNo ?? "" : inv.saleNo ?? "");
       } catch {
         // ignore
       }
@@ -245,7 +377,7 @@ export function SalesForm() {
     return () => {
       cancelled = true;
     };
-  }, [transactionDate]);
+  }, [isCustomerGoldReceiptMode, isEditMode, transactionDate]);
 
   const subcategoriesSorted = useMemo(() => {
     const term = itemSearch.trim().toLowerCase();
@@ -287,6 +419,15 @@ export function SalesForm() {
   useEffect(() => {
     setPickerIndex(0);
   }, [itemSearch, barcodePickerRowId]);
+
+  useEffect(() => {
+    setPickerIndex((prev) => Math.min(prev, Math.max(0, subcategoriesSorted.length - 1)));
+  }, [subcategoriesSorted.length]);
+
+  useEffect(() => {
+    if (barcodePickerRowId === null) return;
+    barcodeRowRefs.current[pickerIndex]?.scrollIntoView({ block: "nearest" });
+  }, [barcodePickerRowId, pickerIndex]);
 
   const totals = useMemo(() => {
     let totalQty = 0;
@@ -354,10 +495,13 @@ export function SalesForm() {
   const totalAmount = sellSubTotal;
   const discountValue = Math.max(0, toNumber(discount));
   const grandTotal = Math.max(0, totalAmount - discountValue);
-  const isRateSale = salesType.toLowerCase() === "rate";
-  const isGoldReceipt = !isRateSale && goldTransactionType === "RECEIVED";
+  const effectiveSalesType = isCustomerGoldReceiptMode ? "Gold" : salesType;
+  const isRateSale = !isCustomerGoldReceiptMode && effectiveSalesType.toLowerCase() === "rate";
+  const effectiveGoldTransactionType: "RECEIVED" | "ISSUED" = isCustomerGoldReceiptMode ? "RECEIVED" : "ISSUED";
+  const isGoldReceipt = !isRateSale && effectiveGoldTransactionType === "RECEIVED";
   const paidValue = isRateSale ? Math.max(0, toNumber(paidAmount)) : 0;
   const balanceDue = Math.max(0, grandTotal - paidValue);
+  const remainingAmount = Math.max(0, paidValue - grandTotal);
   function updateLine(id: string, patch: Partial<Line>) {
     setLines((prev) =>
       prev.map((l) => {
@@ -380,20 +524,28 @@ export function SalesForm() {
     setPickerIndex(0);
   }
 
-  function closeBarcodePicker() {
+  function closeBarcodePicker(focusField?: NavCol) {
+    const rowId = barcodePickerRowId;
     setBarcodePickerRowId(null);
     setItemSearch("");
     setPickerIndex(0);
+    if (focusField && rowId) {
+      window.setTimeout(() => focusCell(rowId, focusField), 0);
+    }
   }
 
   function selectBarcodeItem(code: string) {
     if (!barcodePickerRowId) return;
     updateLine(barcodePickerRowId, { subcategoryCode: code });
-    closeBarcodePicker();
-    window.setTimeout(() => focusCell(barcodePickerRowId, "qty"), 0);
+    closeBarcodePicker("qty");
   }
 
   function handlePickerKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Tab" && !e.shiftKey) {
+      e.preventDefault();
+      barcodeListRef.current?.focus();
+      return;
+    }
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setPickerIndex((prev) => Math.min(prev + 1, Math.max(0, subcategoriesSorted.length - 1)));
@@ -431,6 +583,87 @@ export function SalesForm() {
 
   function removeLine(id: string) {
     setLines((prev) => (prev.length === 1 ? prev : prev.filter((l) => l.id !== id)));
+  }
+
+  function hasEnteredSalesData() {
+    const currentLines = lines.map(({ id: _id, ...line }) => normalizeLineForDirty(line));
+    const defaultLine = normalizeLineForDirty({
+      description: "",
+      subcategoryCode: "",
+      carat: "",
+      qty: "0",
+      goldWeight: "0",
+      stoneWeight: "0",
+      sellRatePer8g: "0"
+    });
+
+    if (!initialSale) {
+      return (
+        transactionDate !== initialTransactionDateRef.current ||
+        salesmanId !== "" ||
+        customerId !== "" ||
+        remarks.trim() !== "" ||
+        salesType !== "Gold" ||
+        paymentType !== "Credit" ||
+        toNumber(discount) > 0 ||
+        toNumber(paidAmount) > 0 ||
+        currentLines.some((line) => JSON.stringify(line) !== JSON.stringify(defaultLine))
+      );
+    }
+
+    const initialLines = initialSale.lines.length
+      ? initialSale.lines.map((line) =>
+          normalizeLineForDirty({
+            description: line.description ?? "",
+            subcategoryCode: line.subcategoryCode,
+            carat: line.carat,
+            qty: line.qty,
+            goldWeight: line.goldWeight,
+            stoneWeight: line.stoneWeight,
+            sellRatePer8g: line.sellRatePer8g
+          })
+        )
+      : [defaultLine];
+
+    return (
+      transactionDate !== initialSale.transactionDate ||
+      (salesmanId === "" ? null : Number(salesmanId)) !== (initialSale.salesmanId ?? null) ||
+      (customerId === "" ? null : Number(customerId)) !== Number(initialSale.customerId) ||
+      remarks.trim() !== (initialSale.remarks ?? "").trim() ||
+      salesType !== initialSale.salesType ||
+      paymentType !== (initialSale.paymentType ?? "Credit") ||
+      toNumber(discount) !== 0 ||
+      toNumber(paidAmount) !== toNumber(initialSale.paidAmount ?? "0") ||
+      JSON.stringify(currentLines) !== JSON.stringify(initialLines)
+    );
+  }
+
+  function salesListPath() {
+    return isCustomerGoldReceiptMode ? "/gold?tab=customer" : "/sales";
+  }
+
+  function cancelEntry() {
+    if (hasEnteredData) {
+      setPendingCancelAction("cancel");
+      return;
+    }
+    allowNavigationRef.current = true;
+    router.push(salesListPath());
+  }
+
+  function closeCancelConfirm() {
+    setPendingCancelAction(null);
+  }
+
+  function confirmCancelEntry() {
+    const action = pendingCancelAction;
+    setPendingCancelAction(null);
+    allowNavigationRef.current = true;
+    if (action === "back") {
+      window.history.back();
+      return;
+    }
+    router.push(salesListPath());
   }
 
   function openCustomerModal() {
@@ -484,7 +717,7 @@ export function SalesForm() {
     if (!transactionDate) return setError("Transaction date is required.");
     if (!Number.isFinite(sid)) return setError("Salesman is required.");
     if (!Number.isFinite(cid)) return setError("Customer is required.");
-    if (isRateSale && paidValue > grandTotal) return setError("Paid amount cannot exceed the invoice total.");
+    if (isRateSale && paymentType === "Cash" && paidValue <= 0) return setError("Paid amount is required for cash sales.");
     if (isRateSale && customerCredit && balanceDue > customerCredit.available) {
       return setError(`Credit limit exceeded. Available credit is ${customerCredit.available.toFixed(2)}.`);
     }
@@ -517,15 +750,25 @@ export function SalesForm() {
 
     setBusy(true);
     try {
-      const res = await fetch("/api/sales", {
-        method: "POST",
+      const res = await fetch(
+        isCustomerGoldReceiptMode
+          ? "/api/gold-receipts"
+          : isEditMode
+            ? `/api/sales?id=${initialSale?.id}`
+            : "/api/sales",
+        {
+        method: isEditMode && !isCustomerGoldReceiptMode ? "PUT" : "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           transactionDate,
           salesmanId: sid,
           customerId: cid,
-          salesType,
-          goldTransactionType: isRateSale ? undefined : goldTransactionType,
+          ...(isCustomerGoldReceiptMode
+            ? {}
+            : {
+                salesType: effectiveSalesType,
+                goldTransactionType: isRateSale ? undefined : effectiveGoldTransactionType
+              }),
           remarks,
           paymentType: isRateSale ? paymentType : "Credit",
           discount,
@@ -533,10 +776,18 @@ export function SalesForm() {
           items
         })
       });
-      const json = (await res.json().catch(() => null)) as { error?: string; sale?: { id?: number } } | null;
+      const json = (await res.json().catch(() => null)) as {
+        error?: string;
+        sale?: { id?: number };
+        goldReceipt?: { grnNo?: string };
+      } | null;
       if (!res.ok) throw new Error(json?.error ?? "Save failed");
       const savedSaleId = Number(json?.sale?.id);
-      toast.success("Invoice saved", invoiceNo || undefined);
+      const savedGrnNo = json?.goldReceipt?.grnNo ?? invoiceNo;
+      toast.success(
+        isCustomerGoldReceiptMode ? "Gold receipt saved" : isEditMode ? "Invoice updated" : "Invoice saved",
+        savedGrnNo || invoiceNo || undefined
+      );
       setLines([
         {
           id: uid(),
@@ -554,9 +805,18 @@ export function SalesForm() {
       setCustomerId("");
       setDiscount("0");
       setPaidAmount("0");
-      setGoldTransactionType("RECEIVED");
+      setGoldTransactionType(isCustomerGoldReceiptMode ? "RECEIVED" : "ISSUED");
       setPaymentType("Credit");
-      router.push(destination === "invoice" && Number.isFinite(savedSaleId) ? `/sales/${savedSaleId}` : "/sales");
+      allowNavigationRef.current = true;
+      router.push(
+        destination === "invoice" && (Number.isFinite(savedSaleId) || isEditMode)
+          ? `/sales/${Number.isFinite(savedSaleId) ? savedSaleId : initialSale?.id}`
+          : isCustomerGoldReceiptMode
+            ? destination === "invoice" && savedGrnNo
+              ? `/gold/receipts/${encodeURIComponent(savedGrnNo)}`
+              : "/gold?tab=customer"
+            : "/sales"
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Save failed");
     } finally {
@@ -575,9 +835,9 @@ export function SalesForm() {
       <div className="rounded-lg border border-ebony-100 bg-white p-4 shadow-sm">
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-6">
           <label className="space-y-1.5 text-sm">
-            <div className="text-xs font-bold text-ebony-800">Invoice No</div>
+            <div className="text-xs font-bold text-ebony-800">{isCustomerGoldReceiptMode ? "GRN No" : "Invoice No"}</div>
             <input
-              value={invoiceNo || "INV001"}
+              value={invoiceNo || (isCustomerGoldReceiptMode ? "GRN001" : "INV001")}
               readOnly
               className="h-10 w-full rounded-md border border-ebony-200 bg-ebony-50 px-3 text-sm font-semibold text-ebony-900 outline-none"
             />
@@ -648,31 +908,41 @@ export function SalesForm() {
             </select>
           </label>
 
-          <label className="space-y-1.5 text-sm">
-            <div className="text-xs font-bold text-ebony-800">Sales Type</div>
-            <select
-              value={salesType}
-              onChange={(e) => setSalesType(e.target.value)}
-              className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
-            >
-              <option>Gold</option>
-              <option>Rate</option>
-            </select>
-          </label>
-
-          {!isRateSale ? (
+          {isCustomerGoldReceiptMode ? (
+            <>
+              <label className="space-y-1.5 text-sm">
+                <div className="text-xs font-bold text-ebony-800">Sales Type</div>
+                <input
+                  value="Gold"
+                  readOnly
+                  className="h-10 w-full rounded-md border border-ebony-200 bg-ebony-50 px-3 text-sm font-semibold text-ebony-700 outline-none"
+                />
+              </label>
+              <label className="space-y-1.5 text-sm">
+                <div className="text-xs font-bold text-ebony-800">Gold Transaction</div>
+                <input
+                  value="RECEIVED"
+                  readOnly
+                  className="h-10 w-full rounded-md border border-ebony-200 bg-ebony-50 px-3 text-sm font-semibold text-ebony-700 outline-none"
+                />
+              </label>
+            </>
+          ) : (
             <label className="space-y-1.5 text-sm">
-              <div className="text-xs font-bold text-ebony-800">Gold Transaction</div>
+              <div className="text-xs font-bold text-ebony-800">Sales Type</div>
               <select
-                value={goldTransactionType}
-                onChange={(e) => setGoldTransactionType(e.target.value === "ISSUED" ? "ISSUED" : "RECEIVED")}
+                value={salesType}
+                onChange={(e) => {
+                  setSalesType(e.target.value === "Rate" ? "Rate" : "Gold");
+                  setGoldTransactionType("ISSUED");
+                }}
                 className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
               >
-                <option value="RECEIVED">RECEIVED</option>
-                <option value="ISSUED">ISSUED</option>
+                <option>Gold</option>
+                <option>Rate</option>
               </select>
             </label>
-          ) : null}
+          )}
 
           {isRateSale ? (
             <label className="space-y-1.5 text-sm">
@@ -755,7 +1025,7 @@ export function SalesForm() {
                         <td className="border border-ebony-100 px-2 py-1 text-center">
                           <button
                             type="button"
-                            onClick={() => removeLine(l.id)}
+                            onClick={() => setDeleteLineTarget({ id: l.id, label: `row ${index + 1}` })}
                             className="inline-flex h-8 w-8 items-center justify-center rounded-md text-red-600 hover:bg-red-50"
                             aria-label="Remove row"
                             title="Remove row"
@@ -769,7 +1039,7 @@ export function SalesForm() {
                 </tbody>
               </table>
             ) : (
-            <table className={`w-full text-sm ${isRateSale ? "min-w-[1160px]" : "min-w-[940px]"}`}>
+            <table className={`w-full text-sm ${isRateSale ? "min-w-[1000px]" : "min-w-[860px]"}`}>
               <thead className="bg-ebony-50 text-left text-[11px] font-bold uppercase tracking-wide text-ebony-600">
                 <tr>
                   <th className="border border-ebony-100 px-3 py-2 text-center">#</th>
@@ -778,9 +1048,10 @@ export function SalesForm() {
                   <th className="border border-ebony-100 px-3 py-2">Karat</th>
                   <th className="border border-ebony-100 px-3 py-2 text-right">Qty</th>
                   <th className="border border-ebony-100 px-3 py-2 text-right">Gold Wt</th>
-                  <th className="border border-ebony-100 px-3 py-2 text-right">Real Wt</th>
                   <th className="border border-ebony-100 px-3 py-2 text-right">Stone Wt</th>
-                  <th className="border border-ebony-100 px-3 py-2 text-right">24KT Wt</th>
+                  {!isRateSale ? (
+                    <th className="border border-ebony-100 px-3 py-2 text-right">24KT Wt</th>
+                  ) : null}
                   {isRateSale ? (
                     <>
                       <th className="border border-ebony-100 px-3 py-2 text-right">Rate/8g</th>
@@ -798,9 +1069,8 @@ export function SalesForm() {
                   const sellRate = Math.max(0, toNumber(l.sellRatePer8g));
                   const goldWeight = Math.max(0, toNumber(l.goldWeight));
                   const karat = Math.max(0, toNumber(normalizeCarat(l.carat)));
-                  const realWeight = (goldWeight / 24) * karat;
                   const stoneWeight = Math.max(0, toNumber(l.stoneWeight));
-                  const netWeight = realWeight;
+                  const pureWeight = (goldWeight / 24) * karat;
                   const amount = (goldWeight / 8) * sellRate;
                   const availableQty = Math.max(0, Number(avail?.balanceQty ?? subAvail?.balanceQty ?? 0));
                   const availableWeight = Math.max(
@@ -869,9 +1139,6 @@ export function SalesForm() {
                           <div className="px-2 pb-1 text-xs font-semibold text-red-600">{weightErrors.get(l.id)}</div>
                         ) : null}
                       </td>
-                      <td className="border border-ebony-100 px-3 py-2 text-right font-semibold tabular-nums text-ebony-800">
-                        {realWeight.toFixed(3)}
-                      </td>
                       <td className="border border-ebony-100 p-0 focus-within:bg-gold-50 focus-within:ring-2 focus-within:ring-inset focus-within:ring-gold-500">
                         <input
                           inputMode="decimal"
@@ -883,9 +1150,11 @@ export function SalesForm() {
                           className="h-10 w-full border-0 bg-transparent px-2 text-right outline-none focus:bg-gold-50"
                         />
                       </td>
-                      <td className="border border-ebony-100 px-3 py-2 text-right tabular-nums text-ebony-700">
-                        {netWeight.toFixed(3)}
-                      </td>
+                      {!isRateSale ? (
+                        <td className="border border-ebony-100 px-3 py-2 text-right tabular-nums text-ebony-700">
+                          {pureWeight.toFixed(3)}
+                        </td>
+                      ) : null}
                       {isRateSale ? (
                         <>
                           <td className="border border-ebony-100 p-0 focus-within:bg-gold-50 focus-within:ring-2 focus-within:ring-inset focus-within:ring-gold-500">
@@ -912,7 +1181,7 @@ export function SalesForm() {
                       <td className="border border-ebony-100 px-2 py-1 text-center">
                         <button
                           type="button"
-                          onClick={() => removeLine(l.id)}
+                          onClick={() => setDeleteLineTarget({ id: l.id, label: `row ${index + 1}` })}
                           className="inline-flex h-8 w-8 items-center justify-center rounded-md text-red-600 hover:bg-red-50"
                           aria-label="Remove row"
                           title="Remove row"
@@ -930,27 +1199,47 @@ export function SalesForm() {
         )}
       </div>
 
-      <button
-        type="button"
-        onClick={addLine}
-        className="inline-flex items-center gap-2 rounded-md border border-ebony-200 bg-white px-3 py-2 text-sm font-bold text-indigo-700 shadow-sm hover:bg-ebony-50"
-      >
-        <Plus className="h-4 w-4" />
-        Add Item
-      </button>
+      <div className="space-y-3">
+        <button
+          type="button"
+          onClick={addLine}
+          className="inline-flex items-center gap-2 rounded-md border border-ebony-200 bg-white px-3 py-2 text-sm font-bold text-indigo-700 shadow-sm hover:bg-ebony-50"
+        >
+          <Plus className="h-4 w-4" />
+          Add Item
+        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={() => void submit("invoice")}
+            disabled={busy}
+            className="inline-flex items-center gap-2 rounded-md bg-indigo-700 px-6 py-3 text-sm font-bold text-white hover:bg-indigo-800 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Save className="h-4 w-4" />
+          {busy ? "Saving..." : isCustomerGoldReceiptMode ? "Save GRN" : "Save"}
+          </button>
+          <button
+            type="button"
+            onClick={() => void submit()}
+            disabled={busy}
+            className="inline-flex items-center gap-2 rounded-md bg-indigo-700 px-6 py-3 text-sm font-bold text-white hover:bg-indigo-800 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Save className="h-4 w-4" />
+          {isCustomerGoldReceiptMode ? "Save & Print GRN" : "Save & Print"}
+          </button>
+          <button
+            type="button"
+            onClick={cancelEntry}
+            disabled={busy}
+            className="rounded-md bg-ebony-100 px-6 py-3 text-sm font-bold text-ebony-800 hover:bg-ebony-200 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_310px]">
-        <label className="space-y-2 text-sm lg:self-end">
-          <div className="font-bold text-ebony-800">Notes</div>
-          <textarea
-            value={remarks}
-            onChange={(e) => setRemarks(e.target.value)}
-            className="min-h-24 w-full resize-y rounded-md border border-ebony-200 bg-white px-4 py-3 outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
-            placeholder="Thank you for your business!"
-          />
-        </label>
-
-        <div className="rounded-lg border border-ebony-100 bg-white shadow-sm">
+      <div className="flex justify-end">
+        <div className="w-full max-w-[310px] rounded-lg border border-ebony-100 bg-white shadow-sm">
           {[
             ["Total Gold Weight", `${totals.totalGoldWeight.toFixed(3)} g`]
           ].map(([label, value]) => (
@@ -982,7 +1271,7 @@ export function SalesForm() {
                 <span className="font-extrabold tabular-nums text-ebony-900">{grandTotal.toFixed(2)}</span>
               </div>
               <label className="flex items-center justify-between border-b border-ebony-100 px-4 py-2 text-sm">
-                <span className="font-semibold text-ebony-700">Paid Amount</span>
+                <span className="font-semibold text-ebony-700">Paid Amount{paymentType === "Cash" ? " *" : ""}</span>
                 <input
                   inputMode="decimal"
                   value={paidAmount}
@@ -992,42 +1281,20 @@ export function SalesForm() {
                   className="h-9 w-32 rounded-md border border-ebony-200 px-2 text-right font-bold tabular-nums outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
                 />
               </label>
-              <div className="flex items-center justify-between px-4 py-4">
-                <span className="text-base font-extrabold text-red-600">Balance Due</span>
-                <span className="text-lg font-extrabold tabular-nums text-red-600">{balanceDue.toFixed(2)}</span>
-              </div>
+              {remainingAmount > 0 ? (
+                <div className="flex items-center justify-between px-4 py-4">
+                  <span className="text-base font-extrabold text-emerald-700">Remaining Amount</span>
+                  <span className="text-lg font-extrabold tabular-nums text-emerald-700">{remainingAmount.toFixed(2)}</span>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between px-4 py-4">
+                  <span className="text-base font-extrabold text-red-600">Balance Due</span>
+                  <span className="text-lg font-extrabold tabular-nums text-red-600">{balanceDue.toFixed(2)}</span>
+                </div>
+              )}
             </>
           ) : null}
         </div>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          onClick={() => void submit("invoice")}
-          disabled={busy}
-          className="inline-flex items-center gap-2 rounded-md bg-indigo-700 px-6 py-3 text-sm font-bold text-white hover:bg-indigo-800 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          <Save className="h-4 w-4" />
-          {busy ? "Saving..." : "Save"}
-        </button>
-        <button
-          type="button"
-          onClick={() => void submit()}
-          disabled={busy}
-          className="inline-flex items-center gap-2 rounded-md bg-indigo-700 px-6 py-3 text-sm font-bold text-white hover:bg-indigo-800 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          <Save className="h-4 w-4" />
-          Save & Print
-        </button>
-        <button
-          type="button"
-          onClick={() => router.push("/sales")}
-          disabled={busy}
-          className="rounded-md bg-ebony-100 px-6 py-3 text-sm font-bold text-ebony-800 hover:bg-ebony-200 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          Cancel
-        </button>
       </div>
 
       <Modal open={customerModalOpen} onClose={() => !customerBusy && setCustomerModalOpen(false)} title="Add Customer">
@@ -1067,7 +1334,7 @@ export function SalesForm() {
 
       <Modal
         open={barcodePickerRowId !== null}
-        onClose={closeBarcodePicker}
+        onClose={() => closeBarcodePicker("subcategory")}
         title="Select Barcode"
         panelClassName="max-w-4xl"
       >
@@ -1084,7 +1351,15 @@ export function SalesForm() {
             />
           </div>
 
-          <div className="max-h-[48vh] overflow-auto rounded-lg border border-ebony-100">
+          <div
+            ref={barcodeListRef}
+            tabIndex={0}
+            role="listbox"
+            aria-label="Barcode items"
+            aria-activedescendant={subcategoriesSorted[pickerIndex]?.code ? `barcode-option-${subcategoriesSorted[pickerIndex].code}` : undefined}
+            onKeyDown={handlePickerKeyDown}
+            className="max-h-[48vh] overflow-auto rounded-lg border border-ebony-100 outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+          >
             <table className="w-full min-w-[680px] text-sm">
               <thead className="sticky top-0 bg-ebony-50 text-left text-[11px] font-bold uppercase tracking-wide text-ebony-600">
                 <tr>
@@ -1102,18 +1377,17 @@ export function SalesForm() {
                   return (
                     <tr
                       key={item.code}
-                      tabIndex={0}
+                      id={`barcode-option-${item.code}`}
+                      ref={(el) => {
+                        barcodeRowRefs.current[index] = el;
+                      }}
+                      role="option"
+                      aria-selected={isActive}
                       onClick={() => selectBarcodeItem(item.code)}
                       onMouseEnter={() => setPickerIndex(index)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          selectBarcodeItem(item.code);
-                        }
-                      }}
                       className={[
-                        "cursor-pointer bg-white outline-none hover:bg-cream-50",
-                        isActive ? "bg-gold-100/60" : ""
+                        "cursor-pointer outline-none hover:bg-cream-50",
+                        isActive ? "bg-gold-100 text-ebony-950 ring-1 ring-inset ring-gold-400" : "bg-white"
                       ].join(" ")}
                     >
                       <td className="px-4 py-3 font-bold text-ebony-900">{item.code}</td>
@@ -1145,6 +1419,38 @@ export function SalesForm() {
           </div>
         </div>
       </Modal>
+
+      <ConfirmModal
+        open={pendingCancelAction !== null}
+        title="Cancel Entry?"
+        message={
+          isCustomerGoldReceiptMode
+            ? "You have entered gold receipt details."
+            : "You have entered sales details."
+        }
+        details="Are you sure you want to leave this form? Unsaved details will be lost."
+        confirmLabel="Yes, leave"
+        cancelLabel="Keep editing"
+        tone="warning"
+        onCancel={closeCancelConfirm}
+        onConfirm={confirmCancelEntry}
+      />
+
+      <DeleteConfirmModal
+        open={deleteLineTarget !== null}
+        itemLabel={deleteLineTarget?.label ?? "this row"}
+        description={
+          isCustomerGoldReceiptMode
+            ? "This will remove the row from the gold receipt form."
+            : "This will remove the row from the invoice form."
+        }
+        onCancel={() => setDeleteLineTarget(null)}
+        onConfirm={() => {
+          if (!deleteLineTarget) return;
+          removeLine(deleteLineTarget.id);
+          setDeleteLineTarget(null);
+        }}
+      />
     </div>
   );
 
@@ -1213,7 +1519,7 @@ export function SalesForm() {
               </button>
             </div>
             {customerCredit ? (
-              <div className={`text-xs font-semibold ${salesType.toLowerCase() === "rate" && balanceDue > customerCredit!.available ? "text-red-600" : "text-ebony-500"}`}>
+              <div className={`text-xs font-semibold ${isRateSale && balanceDue > customerCredit!.available ? "text-red-600" : "text-ebony-500"}`}>
                 Outstanding: {customerCredit!.balance.toFixed(2)} · Limit: {customerCredit!.limit.toFixed(2)} · Available: {customerCredit!.available.toFixed(2)}
               </div>
             ) : null}
@@ -1249,7 +1555,7 @@ export function SalesForm() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-ebony-100">
-                  {lines.map((l) => {
+                  {lines.map((l, index) => {
                     const sellRate = Math.max(0, toNumber(l.sellRatePer8g));
                     const sellCost = (Math.max(0, toNumber(l.goldWeight)) / 8) * sellRate;
                     return (
@@ -1339,7 +1645,7 @@ export function SalesForm() {
                         <td className="border border-ebony-200 p-0 text-right">
                           <button
                             type="button"
-                            onClick={() => removeLine(l.id)}
+                            onClick={() => setDeleteLineTarget({ id: l.id, label: `row ${index + 1}` })}
                             className="inline-flex h-10 w-10 items-center justify-center bg-white text-red-700 hover:bg-red-50"
                             aria-label="Remove row"
                             title="Remove row"
@@ -1373,7 +1679,7 @@ export function SalesForm() {
             </div>
           )}
 
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-ebony-100 px-4 py-3">
+          <div className="space-y-3 border-t border-ebony-100 px-4 py-3">
             <button
               type="button"
               onClick={addLine}
@@ -1381,10 +1687,10 @@ export function SalesForm() {
             >
               + Add Row
             </button>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={() => router.push("/sales")}
+                onClick={cancelEntry}
                 disabled={busy}
                 className="rounded-lg border border-ebony-300 bg-white px-5 py-2.5 text-sm font-semibold text-ebony-700 hover:bg-ebony-50 disabled:cursor-not-allowed disabled:opacity-60"
               >
@@ -1401,17 +1707,33 @@ export function SalesForm() {
             </div>
           </div>
         </div>
-
-        <label className="block space-y-2 text-sm">
-          <div className="font-semibold text-ebony-700">Remarks</div>
-          <textarea
-            value={remarks}
-            onChange={(e) => setRemarks(e.target.value)}
-            className="min-h-24 w-full resize-y rounded-lg border border-ebony-200 bg-white px-4 py-2.5 outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
-            placeholder="Optional notes..."
-          />
-        </label>
       </CardContent>
+      <ConfirmModal
+        open={pendingCancelAction !== null}
+        title="Cancel Entry?"
+        message={
+          isCustomerGoldReceiptMode
+            ? "You have entered gold receipt details."
+            : "You have entered sales details."
+        }
+        details="Are you sure you want to leave this form? Unsaved details will be lost."
+        confirmLabel="Yes, leave"
+        cancelLabel="Keep editing"
+        tone="warning"
+        onCancel={closeCancelConfirm}
+        onConfirm={confirmCancelEntry}
+      />
+      <DeleteConfirmModal
+        open={deleteLineTarget !== null}
+        itemLabel={deleteLineTarget?.label ?? "this row"}
+        description="This will remove the row from the invoice form."
+        onCancel={() => setDeleteLineTarget(null)}
+        onConfirm={() => {
+          if (!deleteLineTarget) return;
+          removeLine(deleteLineTarget.id);
+          setDeleteLineTarget(null);
+        }}
+      />
     </Card>
   );
 }

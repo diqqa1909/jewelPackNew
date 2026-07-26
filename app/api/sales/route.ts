@@ -79,8 +79,8 @@ export async function POST(req: Request) {
     const isRateSale = salesType.toLowerCase() === "rate";
     const goldTransactionType = isRateSale
       ? null
-      : (body.goldTransactionType ?? "RECEIVED").trim().toUpperCase();
-    if (!isRateSale && goldTransactionType !== "RECEIVED" && goldTransactionType !== "ISSUED") {
+      : (body.goldTransactionType ?? "ISSUED").trim().toUpperCase();
+    if (!isRateSale && goldTransactionType !== "ISSUED") {
       return NextResponse.json({ error: "Invalid gold transaction type" }, { status: 400 });
     }
     const isGoldReceipt = goldTransactionType === "RECEIVED";
@@ -400,8 +400,8 @@ export async function POST(req: Request) {
     }
 
     const grandTotal = clampDecimalNonNegative(headerSellSubTotal.minus(discount));
-    if (paidAmount.greaterThan(grandTotal)) {
-      throw new Error(`Paid amount cannot exceed invoice total (${grandTotal.toFixed(2)})`);
+    if (isRateSale && paymentType.toLowerCase() === "cash" && paidAmount.lessThanOrEqualTo(new Prisma.Decimal("0"))) {
+      throw new Error("Paid amount is required for cash sales.");
     }
 
     // Serialize credit checks per customer so simultaneous invoices cannot both
@@ -508,6 +508,348 @@ export async function POST(req: Request) {
   } catch (e) {
     const message =
       e instanceof Error ? e.message : "Unable to save sale. Please try again.";
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
+}
+
+export async function PUT(req: Request) {
+  try {
+    const url = new URL(req.url);
+    const id = Number(url.searchParams.get("id"));
+    if (!Number.isFinite(id)) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+
+    const body = (await req.json()) as Partial<{
+      transactionDate: string;
+      customerId: number;
+      salesmanId?: number | null;
+      salesType?: string;
+      goldTransactionType?: string;
+      remarks?: string;
+      paymentType?: string;
+      discount?: string;
+      paidAmount?: string;
+      items: SaleLineInput[];
+    }>;
+
+    if (!body.transactionDate) return NextResponse.json({ error: "Missing date" }, { status: 400 });
+    const txDate = new Date(body.transactionDate);
+    if (Number.isNaN(txDate.getTime())) return NextResponse.json({ error: "Invalid date" }, { status: 400 });
+    const customerId = Number(body.customerId);
+    if (!Number.isFinite(customerId)) return NextResponse.json({ error: "Missing customer" }, { status: 400 });
+    const salesmanIdRaw = body.salesmanId ?? null;
+    const salesmanId = salesmanIdRaw == null ? null : Number(salesmanIdRaw);
+    if (salesmanIdRaw != null && !Number.isFinite(salesmanId)) return NextResponse.json({ error: "Invalid salesman" }, { status: 400 });
+
+    const salesType = (body.salesType ?? "Gold").trim();
+    const isRateSale = salesType.toLowerCase() === "rate";
+    const goldTransactionType = isRateSale ? null : "ISSUED";
+    const items = Array.isArray(body.items) ? body.items : [];
+    if (items.length === 0) return NextResponse.json({ error: "Add at least one item" }, { status: 400 });
+
+    const normalized: Array<{
+      subcategoryCode: string;
+      qty: number;
+      goldWeight: Prisma.Decimal;
+      stoneWeight: Prisma.Decimal;
+      sellRatePer8g: Prisma.Decimal;
+    }> = [];
+    for (const row of items) {
+      const subcategoryCode = (row.subcategoryCode ?? "").trim();
+      if (!subcategoryCode) return NextResponse.json({ error: "Missing subcategory" }, { status: 400 });
+      const qty = Number(row.qty);
+      if (!Number.isFinite(qty) || qty <= 0) return NextResponse.json({ error: "Invalid qty" }, { status: 400 });
+      const weight = decimal(String(row.goldWeight ?? "0"));
+      if (weight.lessThanOrEqualTo(new Prisma.Decimal("0"))) return NextResponse.json({ error: "Invalid weight" }, { status: 400 });
+      const stoneWeight = clampDecimalNonNegative(decimal(String(row.stoneWeight ?? "0")));
+      const rate = isRateSale ? decimal(String(row.sellRatePer8g ?? "0")) : new Prisma.Decimal("0");
+      if (isRateSale && rate.lessThanOrEqualTo(new Prisma.Decimal("0"))) return NextResponse.json({ error: "Invalid sell rate" }, { status: 400 });
+      normalized.push({ subcategoryCode, qty, goldWeight: weight, stoneWeight, sellRatePer8g: rate });
+    }
+
+    const aggregated = new Map<
+      string,
+      { subcategoryCode: string; qty: number; goldWeight: Prisma.Decimal; stoneWeight: Prisma.Decimal; sellRatePer8g: Prisma.Decimal }
+    >();
+    for (const r of normalized) {
+      const key = `${r.subcategoryCode}||${r.sellRatePer8g.toString()}`;
+      const prev = aggregated.get(key);
+      if (!prev) aggregated.set(key, { ...r });
+      else {
+        aggregated.set(key, {
+          ...prev,
+          qty: prev.qty + r.qty,
+          goldWeight: prev.goldWeight.plus(r.goldWeight),
+          stoneWeight: prev.stoneWeight.plus(r.stoneWeight)
+        });
+      }
+    }
+    const requested = Array.from(aggregated.values());
+
+    const result = await prisma.$transaction(async (tx) => {
+      const existing = await tx.salesNTX.findUnique({ where: { id }, include: { customer: true } });
+      if (!existing) throw new Error("Invoice not found");
+      const customer = await tx.customer.findUnique({ where: { id: customerId } });
+      if (!customer) throw new Error("Invalid customer");
+      if (salesmanId) {
+        const exists = await tx.salesman.findUnique({ where: { id: salesmanId } });
+        if (!exists) throw new Error("Invalid salesman");
+      }
+
+      await tx.sale.deleteMany({ where: { salesNTXId: id } });
+      await tx.goldReceipt.deleteMany({ where: { salesNTXId: id } });
+      await tx.transaction.deleteMany({
+        where: {
+          referenceNumber: existing.saleNo,
+          type: { in: ["INVOICE", "PAYMENT", "GOLD_ISSUED", "GOLD_RECEIVED"] }
+        }
+      });
+
+      const availableRows = await getInventoryBalanceRows(tx as any);
+      const availableMap = new Map(
+        availableRows.map((row) => [`${row.subcategoryCode}||${normalizeCarat(row.carat)}`, row] as const)
+      );
+
+      let headerTotalQty = 0;
+      let headerTotalItems = 0;
+      let headerTotalWeight = new Prisma.Decimal("0");
+      let headerTotalStoneWeight = new Prisma.Decimal("0");
+      let headerTotalNetWeight = new Prisma.Decimal("0");
+      let headerTotalCost = new Prisma.Decimal("0");
+      let headerSellSubTotal = new Prisma.Decimal("0");
+
+      for (const reqLine of requested) {
+        const sub = await tx.subcategory.findUnique({ where: { code: reqLine.subcategoryCode } });
+        const subCarat = normalizeCarat(sub?.carat);
+        const subRows = availableRows.filter((row) => row.subcategoryCode === reqLine.subcategoryCode);
+        const carat = subCarat || (subRows.length === 1 ? normalizeCarat(subRows[0].carat) : "");
+        if (!carat) throw new Error(`Carat not set for subcategory ${reqLine.subcategoryCode}. Please set it in Subcategories.`);
+
+        const available = availableMap.get(`${reqLine.subcategoryCode}||${carat}`);
+        const fallbackQty = subRows.reduce((sum, row) => sum + row.balanceQty, 0);
+        const fallbackWeight = subRows.reduce((sum, row) => sum + Number(row.balanceGoldWeight ?? 0), 0);
+        const effectiveQty = available?.balanceQty ?? fallbackQty;
+        const effectiveWeight = available?.balanceGoldWeight ?? String(fallbackWeight);
+        if (reqLine.qty > effectiveQty) throw new Error(`Insufficient stock for ${reqLine.subcategoryCode}${carat ? ` (${carat})` : ""}`);
+        if (reqLine.goldWeight.greaterThan(new Prisma.Decimal(String(effectiveWeight)))) {
+          throw new Error(`Insufficient stock for ${reqLine.subcategoryCode}${carat ? ` (${carat})` : ""}`);
+        }
+
+        const receipts = await tx.purchase.findMany({
+          where: { subcategoryCode: reqLine.subcategoryCode },
+          orderBy: [{ purchaseDate: "asc" }, { id: "asc" }]
+        });
+        const matchingReceipts = receipts.filter((row) => normalizeCarat(row.carat) === carat);
+        if (matchingReceipts.length === 0) throw new Error(`No stock available for ${reqLine.subcategoryCode}${carat ? ` (${carat})` : ""}`);
+
+        const receiptIds = matchingReceipts.map((r) => r.id);
+        const existingSales = receiptIds.length
+          ? await tx.sale.findMany({
+              where: { purchaseId: { in: receiptIds } },
+              select: { purchaseId: true, qty: true, goldWeight: true }
+            })
+          : [];
+        const soldByPurchase = new Map<number, { qty: number; weight: Prisma.Decimal }>();
+        for (const sale of existingSales) {
+          if (sale.purchaseId == null) continue;
+          const current = soldByPurchase.get(sale.purchaseId) ?? { qty: 0, weight: new Prisma.Decimal("0") };
+          current.qty += sale.qty ?? 0;
+          current.weight = current.weight.plus(sale.goldWeight ?? new Prisma.Decimal("0"));
+          soldByPurchase.set(sale.purchaseId, current);
+        }
+
+        let remainingQty = reqLine.qty;
+        let remainingWeight = reqLine.goldWeight;
+        let remainingStoneWeight = reqLine.stoneWeight;
+        const originalGoldWeight = reqLine.goldWeight;
+
+        for (const r of matchingReceipts) {
+          if (remainingQty <= 0 && remainingWeight.lessThanOrEqualTo(new Prisma.Decimal("0"))) break;
+
+          const alreadySold = soldByPurchase.get(r.id) ?? { qty: 0, weight: new Prisma.Decimal("0") };
+          const availableQtyFromReceipt = Math.max(0, Number(r.qty ?? 0) - alreadySold.qty);
+          const receiptWeight = r.goldWeight ?? new Prisma.Decimal("0");
+          const availableWeightFromReceipt = clampDecimalNonNegative(receiptWeight.minus(alreadySold.weight));
+          if (availableQtyFromReceipt <= 0 && availableWeightFromReceipt.lessThanOrEqualTo(new Prisma.Decimal("0"))) continue;
+
+          const takeQty = remainingQty > 0 ? Math.min(remainingQty, availableQtyFromReceipt) : 0;
+          const takeWeight = availableWeightFromReceipt.greaterThan(remainingWeight) ? remainingWeight : availableWeightFromReceipt;
+          if (takeQty <= 0 && takeWeight.lessThanOrEqualTo(new Prisma.Decimal("0"))) continue;
+
+          const perGramCost = receiptWeight.equals(new Prisma.Decimal("0")) ? new Prisma.Decimal("0") : (r.totalCost ?? new Prisma.Decimal("0")).div(receiptWeight);
+          const takeCost = takeWeight.mul(perGramCost);
+          const lineSellCost = takeWeight.div(new Prisma.Decimal("8")).mul(reqLine.sellRatePer8g);
+          const stoneShare = originalGoldWeight.equals(new Prisma.Decimal("0")) ? new Prisma.Decimal("0") : reqLine.stoneWeight.mul(takeWeight).div(originalGoldWeight);
+          const takeStoneWeight = stoneShare.greaterThan(remainingStoneWeight) ? remainingStoneWeight : stoneShare;
+          const takeNetWeight = takeWeight.mul(new Prisma.Decimal(carat)).div(new Prisma.Decimal("24"));
+
+          await tx.sale.create({
+            data: {
+              salesNTXId: id,
+              purchaseId: r.id,
+              stockMasterId: null,
+              subcategoryCode: r.subcategoryCode ?? reqLine.subcategoryCode,
+              carat,
+              qty: takeQty,
+              goldWeight: takeWeight,
+              stoneWeight: takeStoneWeight,
+              netWeight: takeNetWeight,
+              cost: takeCost,
+              sellRatePer8g: reqLine.sellRatePer8g,
+              sellCost: lineSellCost
+            }
+          });
+
+          remainingQty -= takeQty;
+          remainingWeight = clampDecimalNonNegative(remainingWeight.minus(takeWeight));
+          remainingStoneWeight = clampDecimalNonNegative(remainingStoneWeight.minus(takeStoneWeight));
+          headerTotalQty += takeQty;
+          headerTotalItems += 1;
+          headerTotalWeight = headerTotalWeight.plus(takeWeight);
+          headerTotalStoneWeight = headerTotalStoneWeight.plus(takeStoneWeight);
+          headerTotalNetWeight = headerTotalNetWeight.plus(takeNetWeight);
+          headerTotalCost = headerTotalCost.plus(takeCost);
+          headerSellSubTotal = headerSellSubTotal.plus(lineSellCost);
+        }
+
+        if (remainingQty > 0 || remainingWeight.greaterThan(new Prisma.Decimal("0"))) {
+          throw new Error(`Insufficient stock for ${reqLine.subcategoryCode}${carat ? ` (${carat})` : ""}`);
+        }
+      }
+
+      const discount = isRateSale ? clampDecimalNonNegative(decimal(String(body.discount ?? "0"))) : new Prisma.Decimal("0");
+      const paidAmount = isRateSale ? clampDecimalNonNegative(decimal(String(body.paidAmount ?? "0"))) : new Prisma.Decimal("0");
+      const paymentType = isRateSale ? (body.paymentType ?? "Credit").trim() || "Credit" : "Credit";
+      const grandTotal = clampDecimalNonNegative(headerSellSubTotal.minus(discount));
+      if (isRateSale && paymentType.toLowerCase() === "cash" && paidAmount.lessThanOrEqualTo(new Prisma.Decimal("0"))) {
+        throw new Error("Paid amount is required for cash sales.");
+      }
+
+      if (isRateSale) {
+        await tx.$queryRaw`SELECT "id" FROM "Customer" WHERE "id" = ${customerId} FOR UPDATE`;
+        const acct = (customer.accountNumber ?? "").trim();
+        if (!acct) throw new Error("Customer account not found");
+        const totals = await tx.transaction.aggregate({
+          where: { accountNumber: acct },
+          _sum: { debit: true, credit: true }
+        });
+        const outstanding = Prisma.Decimal.max(
+          new Prisma.Decimal("0"),
+          (totals._sum.debit ?? new Prisma.Decimal("0")).minus(totals._sum.credit ?? new Prisma.Decimal("0"))
+        );
+        const invoiceCredit = grandTotal.minus(paidAmount);
+        if (outstanding.plus(invoiceCredit).greaterThan(customer.creditLimit)) {
+          const available = Prisma.Decimal.max(new Prisma.Decimal("0"), customer.creditLimit.minus(outstanding));
+          throw new Error(`Credit limit exceeded. Available credit is ${available.toFixed(2)}; this invoice requires ${invoiceCredit.toFixed(2)}.`);
+        }
+      }
+
+      const updatedHeader = await tx.salesNTX.update({
+        where: { id },
+        data: {
+          transactionDate: txDate,
+          customerId,
+          salesmanId: salesmanId || null,
+          totalItems: headerTotalItems,
+          totalQty: headerTotalQty,
+          totalGoldWeight: headerTotalWeight,
+          totalStoneWeight: headerTotalStoneWeight,
+          totalNetWeight: headerTotalNetWeight,
+          totalCost: headerTotalCost,
+          sellSubTotal: grandTotal,
+          goldTransactionType,
+          remarks: (body.remarks ?? "").trim() || null
+        }
+      });
+
+      const acct = (customer.accountNumber ?? "").trim();
+      if (!acct) throw new Error("Customer account not found");
+      if (isRateSale) {
+        await tx.transaction.create({
+          data: {
+            date: txDate,
+            source: "INV",
+            account: customer.name,
+            memo: updatedHeader.saleNo,
+            debit: grandTotal,
+            credit: new Prisma.Decimal("0"),
+            goldIssued: new Prisma.Decimal("0"),
+            goldReceived: new Prisma.Decimal("0"),
+            accountNumber: acct,
+            type: "INVOICE",
+            referenceNumber: updatedHeader.saleNo,
+            remarks: (body.remarks ?? "").trim() || null
+          }
+        });
+        if (paidAmount.greaterThan(new Prisma.Decimal("0"))) {
+          await tx.transaction.create({
+            data: {
+              date: txDate,
+              source: paymentType.toUpperCase(),
+              account: customer.name,
+              memo: `Payment for ${updatedHeader.saleNo}`,
+              debit: new Prisma.Decimal("0"),
+              credit: paidAmount,
+              goldIssued: new Prisma.Decimal("0"),
+              goldReceived: new Prisma.Decimal("0"),
+              accountNumber: acct,
+              type: "PAYMENT",
+              referenceNumber: updatedHeader.saleNo,
+              remarks: (body.remarks ?? "").trim() || null
+            }
+          });
+        }
+      } else {
+        await tx.transaction.create({
+          data: {
+            date: txDate,
+            source: "GOLD",
+            account: customer.name,
+            memo: `Gold issued for ${updatedHeader.saleNo}`,
+            debit: new Prisma.Decimal("0"),
+            credit: new Prisma.Decimal("0"),
+            goldIssued: headerTotalNetWeight,
+            goldReceived: new Prisma.Decimal("0"),
+            accountNumber: acct,
+            type: "GOLD_ISSUED",
+            referenceNumber: updatedHeader.saleNo,
+            remarks: (body.remarks ?? "").trim() || null
+          }
+        });
+      }
+
+      return updatedHeader;
+    });
+
+    return NextResponse.json({ ok: true, sale: result });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Unable to update sale. Please try again.";
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    const url = new URL(req.url);
+    const id = Number(url.searchParams.get("id"));
+    if (!Number.isFinite(id)) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+
+    await prisma.$transaction(async (tx) => {
+      const sale = await tx.salesNTX.findUnique({ where: { id }, select: { saleNo: true } });
+      if (!sale) throw new Error("Invoice not found");
+      await tx.sale.deleteMany({ where: { salesNTXId: id } });
+      await tx.goldReceipt.deleteMany({ where: { salesNTXId: id } });
+      await tx.transaction.deleteMany({
+        where: {
+          referenceNumber: sale.saleNo,
+          type: { in: ["INVOICE", "PAYMENT", "GOLD_ISSUED", "GOLD_RECEIVED"] }
+        }
+      });
+      await tx.salesNTX.delete({ where: { id } });
+    });
+
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Unable to delete sale.";
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

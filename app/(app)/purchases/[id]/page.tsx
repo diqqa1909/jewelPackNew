@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { Pencil } from "lucide-react";
+import { PurchaseDeleteButton } from "@/components/app/PurchaseDeleteButton";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
 import { buttonClassName } from "@/components/ui/Button";
 import { prismaWithRetry } from "@/lib/prisma";
@@ -28,6 +30,11 @@ function dateText(value: Date) {
 
 function dateInputValue(value: Date) {
   return value.toISOString().slice(0, 10);
+}
+
+function decimalNumber(value: unknown) {
+  const n = Number(value && typeof (value as any).toString === "function" ? (value as any).toString() : value ?? 0);
+  return Number.isFinite(n) ? n : 0;
 }
 
 export default async function PurchaseViewPage({
@@ -65,9 +72,9 @@ export default async function PurchaseViewPage({
   const totalGoldWeight = groupedRows.reduce((sum, row) => sum + Number(row.goldWeight?.toString?.() ?? 0), 0);
   const totalGoldCost = groupedRows.reduce((sum, row) => sum + Number(row.goldCost?.toString?.() ?? 0), 0);
   const totalWastageMg = groupedRows.reduce((sum, row) => sum + Number(row.wastageMg?.toString?.() ?? 0), 0);
+  const totalWastageCost = groupedRows.reduce((sum, row) => sum + Number(row.wastage?.toString?.() ?? 0), 0);
   const totalLabour = groupedRows.reduce((sum, row) => sum + Number(row.labourCharges?.toString?.() ?? 0), 0);
-  const totalOtherCosts = groupedRows.reduce((sum, row) => sum + Number(row.otherCosts?.toString?.() ?? 0), 0);
-  const totalCost = groupedRows.reduce((sum, row) => sum + Number(row.totalCost?.toString?.() ?? 0), 0);
+  const totalCost = totalGoldCost + totalWastageCost + totalLabour;
 
   const isEditing = searchParams?.edit === "1";
   const formId = "purchase-edit-form";
@@ -104,6 +111,7 @@ export default async function PurchaseViewPage({
             location: purchase.location ?? "",
             gsmCode: purchase.gsmCode ?? "",
             gsmName: purchase.gsmName ?? "",
+            supplierId: purchase.supplierId ? String(purchase.supplierId) : "",
             categoryCode: "",
             articleName: "",
             subcategoryCode: "",
@@ -114,7 +122,6 @@ export default async function PurchaseViewPage({
             goldWeight: "0",
             wastageMg: "0",
             labourCharges: "0",
-            otherCosts: "0",
             remarks: purchase.remarks ?? ""
           }}
           initialLines={groupedRows.map((row) => ({
@@ -128,7 +135,14 @@ export default async function PurchaseViewPage({
             goldWeight: row.goldWeight.toString(),
             wastageMg: row.wastageMg.toString(),
             labourCharges: row.labourCharges.toString(),
-            otherCosts: row.otherCosts.toString()
+            goldCostRatePer8g:
+              decimalNumber(row.goldWeight) > 0
+                ? String((decimalNumber(row.goldCost) * 8) / decimalNumber(row.goldWeight))
+                : undefined,
+            wastageRateMgPer8g:
+              decimalNumber(row.goldWeight) > 0
+                ? String((decimalNumber(row.wastageMg) * 8) / decimalNumber(row.goldWeight))
+                : undefined
           }))}
         />
       </div>
@@ -141,9 +155,21 @@ export default async function PurchaseViewPage({
         <Link href="/purchases" className={buttonClassName("secondary", "px-5 py-2.5")}>
           ← Back to Purchases
         </Link>
-        <Link href={`/purchases/${purchase.id}?edit=1`} className={buttonClassName("primary", "px-5 py-2.5")}>
-          Edit Purchase
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href={`/purchases/${purchase.id}?edit=1`}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-ebony-200 bg-white text-ebony-700 transition hover:bg-ebony-50"
+            aria-label={`Edit purchase ${purchaseGroupNo}`}
+            title="Edit"
+          >
+            <Pencil className="h-4 w-4" />
+          </Link>
+          <PurchaseDeleteButton
+            purchaseId={purchase.id}
+            purchaseNo={purchaseGroupNo}
+            redirectTo="/purchases"
+          />
+        </div>
       </div>
 
       <div className="grid gap-6">
@@ -201,7 +227,13 @@ export default async function PurchaseViewPage({
                       <td className="px-3 py-3 text-right tabular-nums">{row.qty}</td>
                       <td className="px-3 py-3 text-right tabular-nums">{weight(row.goldWeight)} g</td>
                       <td className="px-3 py-3 text-right tabular-nums">{money(row.goldCost)}</td>
-                      <td className="px-3 py-3 text-right font-bold tabular-nums">{money(row.totalCost)}</td>
+                      <td className="px-3 py-3 text-right font-bold tabular-nums">
+                        {money(
+                          Number(row.goldCost?.toString?.() ?? 0) +
+                            Number(row.wastage?.toString?.() ?? 0) +
+                            Number(row.labourCharges?.toString?.() ?? 0)
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -226,12 +258,12 @@ export default async function PurchaseViewPage({
                 <span className="font-semibold text-ebony-900 tabular-nums">{weight(totalWastageMg)}</span>
               </div>
               <div className="flex items-center justify-between border-b border-ebony-100 pb-3">
-                <span className="text-ebony-700">Labour Charges</span>
-                <span className="font-semibold text-ebony-900 tabular-nums">{money(totalLabour)}</span>
+                <span className="text-ebony-700">Wastage Cost</span>
+                <span className="font-semibold text-ebony-900 tabular-nums">{money(totalWastageCost)}</span>
               </div>
               <div className="flex items-center justify-between border-b border-ebony-100 pb-3">
-                <span className="text-ebony-700">Other Costs</span>
-                <span className="font-semibold text-ebony-900 tabular-nums">{money(totalOtherCosts)}</span>
+                <span className="text-ebony-700">Labour Charges</span>
+                <span className="font-semibold text-ebony-900 tabular-nums">{money(totalLabour)}</span>
               </div>
               <div className="flex items-center justify-between bg-ebony-50 px-3 py-2 rounded-md">
                 <span className="font-semibold text-ebony-900">Total Cost</span>

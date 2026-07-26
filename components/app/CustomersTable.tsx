@@ -4,16 +4,27 @@ import type { Customer } from "@/lib/generated/prisma";
 import { DeleteConfirmModal } from "@/components/ui/DeleteConfirmModal";
 import { useToast } from "@/components/ui/ToastProvider";
 import { buttonClassName } from "@/components/ui/Button";
-import { Edit3, Plus, Search, Trash2, UserPlus, X } from "lucide-react";
+import { Pencil, Plus, Search, Trash2, UserPlus, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
-type Props = { initial: Customer[] };
+type CustomerDirectoryRow = Customer & {
+  goldBalance: string;
+  cashBalance: string;
+};
+type CustomerDirectoryInput = Customer & Partial<Pick<CustomerDirectoryRow, "goldBalance" | "cashBalance">>;
+type Props = { initial: CustomerDirectoryInput[] };
 
 export function CustomersTable({ initial }: Props) {
   const router = useRouter();
   const toast = useToast();
-  const [rows, setRows] = useState<Customer[]>(initial);
+  const [rows, setRows] = useState<CustomerDirectoryRow[]>(
+    initial.map((customer) => ({
+      ...customer,
+      goldBalance: String(customer.goldBalance ?? "0.000"),
+      cashBalance: String(customer.cashBalance ?? "0.00")
+    }))
+  );
   const [editingId, setEditingId] = useState<number | null>(null);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -53,7 +64,7 @@ export function CustomersTable({ initial }: Props) {
   const stats = [
     { label: "Total Customers", value: rows.length },
     { label: "Active Customers", value: rows.length },
-    { label: "Credit Customers", value: 0 },
+    { label: "Credit Customers", value: rows.filter((customer) => Number(customer.cashBalance) > 0).length },
     { label: "New This Month", value: newThisMonth }
   ];
 
@@ -78,7 +89,7 @@ export function CustomersTable({ initial }: Props) {
     setIsCustomerModalOpen(false);
   }
 
-  function editCustomer(customer: Customer) {
+  function editCustomer(customer: CustomerDirectoryRow) {
     setEditingId(customer.id);
     setName(customer.name);
     setPhone(customer.phone ?? "");
@@ -113,7 +124,15 @@ export function CustomersTable({ initial }: Props) {
         throw new Error(msg?.error ?? "Save failed");
       }
       const json = (await res.json()) as { customer: Customer };
-      setRows((prev) => [json.customer, ...prev.filter((r) => r.id !== json.customer.id)].sort((a, b) => b.id - a.id));
+      setRows((prev) => {
+        const existing = prev.find((row) => row.id === json.customer.id);
+        const nextCustomer = {
+          ...json.customer,
+          goldBalance: existing?.goldBalance ?? "0.000",
+          cashBalance: existing?.cashBalance ?? "0.00"
+        };
+        return [nextCustomer, ...prev.filter((r) => r.id !== json.customer.id)].sort((a, b) => b.id - a.id);
+      });
       toast.success(editingId ? "Customer updated" : "Customer added");
       resetForm();
       setIsCustomerModalOpen(false);
@@ -227,7 +246,7 @@ export function CustomersTable({ initial }: Props) {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-[920px] w-full text-sm">
+            <table className="min-w-[1120px] w-full text-sm">
               <thead className="bg-ebony-50 text-left text-xs font-semibold uppercase tracking-widest text-ebony-600">
                 <tr>
                   <th className="px-5 py-4">Customer</th>
@@ -235,6 +254,8 @@ export function CustomersTable({ initial }: Props) {
                   <th className="px-5 py-4">Email</th>
                   <th className="px-5 py-4">Address</th>
                   <th className="px-5 py-4 text-right">Credit Limit</th>
+                  <th className="px-5 py-4 text-right">Gold B/L</th>
+                  <th className="px-5 py-4 text-right">Cash B/L</th>
                   <th className="px-5 py-4">Status</th>
                   <th className="px-5 py-4 text-right">Actions</th>
                 </tr>
@@ -268,6 +289,12 @@ export function CustomersTable({ initial }: Props) {
                     <td className="px-5 py-4 text-right font-semibold tabular-nums text-ebony-800">
                       {Number(r.creditLimit).toFixed(2)}
                     </td>
+                    <td className={`px-5 py-4 text-right font-semibold tabular-nums ${Number(r.goldBalance) > 0 ? "text-red-600" : "text-ebony-700"}`}>
+                      {Number(r.goldBalance).toFixed(3)} g
+                    </td>
+                    <td className={`px-5 py-4 text-right font-semibold tabular-nums ${Number(r.cashBalance) > 0 ? "text-red-600" : "text-ebony-700"}`}>
+                      {Number(r.cashBalance).toFixed(2)}
+                    </td>
                     <td className="px-5 py-4">
                       <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
                         Active
@@ -286,7 +313,7 @@ export function CustomersTable({ initial }: Props) {
                           aria-label={`Edit ${r.name}`}
                           title="Edit"
                         >
-                          <Edit3 className="h-4 w-4" />
+                          <Pencil className="h-4 w-4" />
                         </button>
                         <button
                           type="button"
@@ -307,7 +334,7 @@ export function CustomersTable({ initial }: Props) {
                 ))}
                 {filteredCustomers.length === 0 && (
                   <tr>
-                    <td className="px-5 py-10 text-center text-sm text-ebony-600" colSpan={7}>
+                    <td className="px-5 py-10 text-center text-sm text-ebony-600" colSpan={9}>
                       No customers match your search.
                     </td>
                   </tr>

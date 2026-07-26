@@ -4,6 +4,7 @@ import { useToast } from "@/components/ui/ToastProvider";
 import { useEffect, useMemo, useState } from "react";
 import { buttonClassName } from "@/components/ui/Button";
 import { DeleteConfirmModal } from "@/components/ui/DeleteConfirmModal";
+import { Pencil, Trash2 } from "lucide-react";
 
 type CategoryRow = { code: string; name: string };
 type SubcategoryRow = { code: string; name: string; categoryCode: string; imageUrl: string; carat?: string | null };
@@ -279,31 +280,37 @@ export function SubcategoriesTable({
                   )}
                 </td>
                 <td className="px-5 py-4 text-right">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditingCode(r.code);
-                      setName(r.name);
-                      setCategoryCode(r.categoryCode);
-                      setCarat(normalizeCarat(r.carat));
-                      setFile(null);
-                      setEditingImageUrl(r.imageUrl ?? "");
-                      if (previewUrl) URL.revokeObjectURL(previewUrl);
-                      setPreviewUrl(r.imageUrl ?? "");
-                    }}
-                    disabled={busy}
-                    className={buttonClassName("secondary", "px-4 py-2 text-xs")}
-                  >
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDeleteTarget(r)}
-                    disabled={busy}
-                    className={buttonClassName("secondary", "ml-2 px-4 py-2 text-xs text-red-700")}
-                  >
-                    Delete
-                  </button>
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingCode(r.code);
+                        setName(r.name);
+                        setCategoryCode(r.categoryCode);
+                        setCarat(normalizeCarat(r.carat));
+                        setFile(null);
+                        setEditingImageUrl(r.imageUrl ?? "");
+                        if (previewUrl) URL.revokeObjectURL(previewUrl);
+                        setPreviewUrl(r.imageUrl ?? "");
+                      }}
+                      disabled={busy}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-ebony-200 bg-white text-ebony-700 transition hover:bg-ebony-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      aria-label={`Edit ${r.code}`}
+                      title="Edit"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDeleteTarget(r)}
+                      disabled={busy}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-red-200 bg-white text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      aria-label={`Delete ${r.code}`}
+                      title="Delete"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}

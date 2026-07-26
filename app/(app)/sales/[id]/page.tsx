@@ -86,6 +86,7 @@ export default async function SaleViewPage({ params }: { params: { id: string } 
   );
 
   const total24KtWeight = Number(sale.totalNetWeight.toString());
+  const totalGoldWeight = sale.items.reduce((sum, item) => sum + Number(item.goldWeight.toString()), 0);
   const grandTotal = Number(sale.sellSubTotal.toString());
   const isRateSale = accountTransactions.some((tx) => tx.type === "INVOICE");
   const isGoldReceipt = !isRateSale && sale.goldTransactionType === "RECEIVED";
@@ -95,6 +96,7 @@ export default async function SaleViewPage({ params }: { params: { id: string } 
         .reduce((sum, tx) => sum + Number(tx.credit.toString()), 0)
     : 0;
   const balanceDue = Math.max(0, grandTotal - paidAmount);
+  const remainingAmount = Math.max(0, paidAmount - grandTotal);
   const invoiceItems = Array.from(
     sale.items
       .reduce((map, item) => {
@@ -231,10 +233,13 @@ export default async function SaleViewPage({ params }: { params: { id: string } 
                   <th className="border border-ebony-700 px-3 py-2 text-center">#</th>
                   <th className="border border-ebony-700 px-3 py-2">Description</th>
                   <th className="border border-ebony-700 px-3 py-2 text-center">Karat</th>
-                  <th className="border border-ebony-700 px-3 py-2 text-right">24KT Wt (g)</th>
+                  <th className="border border-ebony-700 px-3 py-2 text-right">Gold Wt (g)</th>
+                  {!isRateSale ? (
+                    <th className="border border-ebony-700 px-3 py-2 text-right">24KT Wt (g)</th>
+                  ) : null}
                   {isRateSale ? (
                     <>
-                      <th className="border border-ebony-700 px-3 py-2 text-right">Rate (/Per g)</th>
+                      <th className="border border-ebony-700 px-3 py-2 text-right">Rate / 8g</th>
                       <th className="border border-ebony-700 px-3 py-2 text-right">Amount (LKR)</th>
                     </>
                   ) : null}
@@ -242,18 +247,20 @@ export default async function SaleViewPage({ params }: { params: { id: string } 
               </thead>
               <tbody>
                 {invoiceItems.map((item, index) => {
-                  const ratePerGram = item.sellRatePer8g / 8;
                   return (
                     <tr key={item.id}>
                       <td className="border border-ebony-700 px-3 py-2 text-center font-semibold">{index + 1}</td>
-                    <td className="border border-ebony-700 px-3 py-2">
+                      <td className="border border-ebony-700 px-3 py-2">
                         {item.description}
                       </td>
                       <td className="border border-ebony-700 px-3 py-2 text-center">{item.carat || "-"}</td>
-                      <td className="border border-ebony-700 px-3 py-2 text-right tabular-nums">{weight(item.pureGoldWeight)}</td>
+                      <td className="border border-ebony-700 px-3 py-2 text-right tabular-nums">{weight(item.goldWeight)}</td>
+                      {!isRateSale ? (
+                        <td className="border border-ebony-700 px-3 py-2 text-right tabular-nums">{weight(item.pureGoldWeight)}</td>
+                      ) : null}
                       {isRateSale ? (
                         <>
-                          <td className="border border-ebony-700 px-3 py-2 text-right tabular-nums">{money(ratePerGram)}</td>
+                          <td className="border border-ebony-700 px-3 py-2 text-right tabular-nums">{money(item.sellRatePer8g)}</td>
                           <td className="border border-ebony-700 px-3 py-2 text-right font-semibold tabular-nums">
                             {money(item.sellCost)}
                           </td>
@@ -264,7 +271,7 @@ export default async function SaleViewPage({ params }: { params: { id: string } 
                 })}
                 {invoiceItems.length === 0 ? (
                   <tr>
-                    <td className="border border-ebony-700 px-3 py-6 text-center text-ebony-600" colSpan={isRateSale ? 6 : 4}>
+                    <td className="border border-ebony-700 px-3 py-6 text-center text-ebony-600" colSpan={isRateSale ? 6 : 5}>
                       No items.
                     </td>
                   </tr>
@@ -281,14 +288,18 @@ export default async function SaleViewPage({ params }: { params: { id: string } 
 
             <div className="overflow-hidden rounded-md border border-ebony-300 text-sm">
               <SummaryRow
-                label="Total 24KT Weight"
-                value={`${weight(total24KtWeight)} g`}
+                label={isRateSale ? "Total Gold Weight" : "Total 24KT Weight"}
+                value={`${weight(isRateSale ? totalGoldWeight : total24KtWeight)} g`}
               />
               {isRateSale ? (
                 <>
                   <SummaryRow label="Grand Total" value={money(grandTotal)} strong />
                   <SummaryRow label="Paid Amount" value={money(paidAmount)} />
-                  <SummaryRow label="Balance Due" value={money(balanceDue)} danger />
+                  {remainingAmount > 0 ? (
+                    <SummaryRow label="Remaining Amount" value={money(remainingAmount)} success />
+                  ) : (
+                    <SummaryRow label="Balance Due" value={money(balanceDue)} danger />
+                  )}
                 </>
               ) : null}
             </div>
@@ -315,12 +326,14 @@ function SummaryRow({
   label,
   value,
   strong = false,
-  danger = false
+  danger = false,
+  success = false
 }: {
   label: string;
   value: string;
   strong?: boolean;
   danger?: boolean;
+  success?: boolean;
 }) {
   return (
     <div className="flex items-center justify-between border-b border-ebony-200 px-4 py-2 last:border-b-0">
@@ -329,7 +342,8 @@ function SummaryRow({
         className={[
           "font-bold tabular-nums",
           strong ? "text-base text-ebony-900" : "text-ebony-800",
-          danger ? "text-red-600" : ""
+          danger ? "text-red-600" : "",
+          success ? "text-emerald-700" : ""
         ].join(" ")}
       >
         {value}

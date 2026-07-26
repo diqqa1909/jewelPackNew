@@ -5,7 +5,7 @@ import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/ToastProvider";
 import { cn } from "@/lib/utils";
 import { Banknote, CreditCard, ReceiptText, Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 export type PaymentCustomerRow = {
   id: number;
@@ -41,6 +41,7 @@ function dateLabel(value: string | null) {
 
 export function PaymentsClient({ initialRows }: { initialRows: PaymentCustomerRow[] }) {
   const toast = useToast();
+  const amountInputRef = useRef<HTMLInputElement | null>(null);
   const [rows, setRows] = useState(initialRows);
   const [query, setQuery] = useState("");
   const [target, setTarget] = useState<PaymentCustomerRow | null>(null);
@@ -77,6 +78,14 @@ export function PaymentsClient({ initialRows }: { initialRows: PaymentCustomerRo
       ),
     [pendingRows]
   );
+
+  useEffect(() => {
+    if (!target) return;
+    window.setTimeout(() => {
+      amountInputRef.current?.focus();
+      amountInputRef.current?.select();
+    }, 0);
+  }, [target]);
 
   function openPayment(row: PaymentCustomerRow) {
     setTarget(row);
@@ -287,6 +296,7 @@ export function PaymentsClient({ initialRows }: { initialRows: PaymentCustomerRo
           <label className="space-y-2 text-sm">
             <div className="font-bold text-ebony-800">Amount</div>
             <input
+              ref={amountInputRef}
               inputMode="decimal"
               value={amount}
               onChange={(e) => setAmount(sanitizeDecimal(e.target.value))}

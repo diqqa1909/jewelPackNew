@@ -142,6 +142,7 @@ model Customer {
   updatedAt DateTime @updatedAt
 
   sales     SalesNTX[]
+  goldReceipts GoldReceipt[]
 }
 
 model Transaction {
@@ -203,15 +204,26 @@ model SalesNTX {
 
 model GoldReceipt {
   id             Int      @id @default(autoincrement())
-  salesNTXId     Int
-  salesNTX       SalesNTX @relation(fields: [salesNTXId], references: [id], onDelete: Restrict)
+  grnNo          String?
+  transactionDate DateTime? @db.Date
+  customerId     Int?
+  customer       Customer? @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  salesmanId     Int?
+  salesman       Salesman? @relation(fields: [salesmanId], references: [id], onDelete: Restrict)
+  salesNTXId     Int?
+  salesNTX       SalesNTX? @relation(fields: [salesNTXId], references: [id], onDelete: Restrict)
   description    String
   carat          String
   goldWeight     Decimal  @db.Decimal(12, 3)
   pureGoldWeight Decimal  @map("pure_gold_weight") @db.Decimal(12, 3)
+  remarks        String?
   createdAt      DateTime @default(now())
 
   @@map("GoldReceipts")
+  @@index([grnNo])
+  @@index([transactionDate])
+  @@index([customerId])
+  @@index([salesmanId])
   @@index([salesNTXId])
 }
 
@@ -252,6 +264,7 @@ model Salesman {
   updatedAt DateTime @updatedAt
 
   invoices  SalesNTX[]
+  goldReceipts GoldReceipt[]
 
   @@index([name])
   @@index([code])

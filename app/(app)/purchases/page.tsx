@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { Eye, Pencil, Plus } from "lucide-react";
+import { PurchaseDeleteButton } from "@/components/app/PurchaseDeleteButton";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
 import { buttonClassName } from "@/components/ui/Button";
 import { prismaWithRetry } from "@/lib/prisma";
@@ -55,13 +56,11 @@ export default async function PurchasesPage() {
             wastageMg: 0,
             wastage: 0,
             labourCharges: 0,
-            otherCosts: 0,
             totalCost: 0,
             totalItems: 0,
             totalWeight: 0,
             subTotal: 0,
-            totalAmount: 0,
-            balanceDue: 0,
+            purchaseAmount: 0,
             lineCount: 0,
             subcategoryCode: "",
             subcategoryName: ""
@@ -71,12 +70,10 @@ export default async function PurchasesPage() {
             wastageMg: number;
             wastage: number;
             labourCharges: number;
-            otherCosts: number;
             totalCost: number;
             totalWeight: number;
             subTotal: number;
-            totalAmount: number;
-            balanceDue: number;
+            purchaseAmount: number;
             lineCount: number;
           });
         current.qty += Number(purchase.qty ?? 0);
@@ -85,13 +82,15 @@ export default async function PurchasesPage() {
         current.wastageMg += Number(purchase.wastageMg?.toString?.() ?? 0);
         current.wastage += Number(purchase.wastage?.toString?.() ?? 0);
         current.labourCharges += Number(purchase.labourCharges?.toString?.() ?? 0);
-        current.otherCosts += Number(purchase.otherCosts?.toString?.() ?? 0);
-        current.totalCost += Number(purchase.totalCost?.toString?.() ?? 0);
+        const rowTotal =
+          Number(purchase.goldCost?.toString?.() ?? 0) +
+          Number(purchase.wastage?.toString?.() ?? 0) +
+          Number(purchase.labourCharges?.toString?.() ?? 0);
+        current.totalCost += rowTotal;
         current.totalItems += Number(purchase.qty ?? 0);
         current.totalWeight += Number(purchase.goldWeight?.toString?.() ?? 0);
-        current.subTotal += Number(purchase.totalCost?.toString?.() ?? 0);
-        current.totalAmount += Number(purchase.totalCost?.toString?.() ?? 0);
-        current.balanceDue += Number(purchase.totalCost?.toString?.() ?? 0);
+        current.subTotal += rowTotal;
+        current.purchaseAmount += rowTotal;
         current.lineCount += 1;
         current.subcategoryCode = current.lineCount > 1 ? `${current.lineCount} items` : purchase.subcategoryCode ?? "";
         current.subcategoryName = current.lineCount > 1 ? "Multiple items" : purchase.subcategoryName ?? "";
@@ -129,7 +128,7 @@ export default async function PurchasesPage() {
         <CardContent className="min-w-0 overflow-hidden">
           <div className="max-w-full overflow-hidden rounded-lg border border-ebony-100 bg-white">
             <div className="max-w-full overflow-x-auto">
-              <table className="min-w-[1120px] table-fixed text-sm">
+              <table className="min-w-[1040px] table-fixed text-sm">
                 <thead className="bg-ebony-50 text-left text-[10px] font-bold uppercase tracking-wide text-ebony-700">
                   <tr>
                     <th className="w-36 px-3 py-3">Purchase No</th>
@@ -142,8 +141,7 @@ export default async function PurchasesPage() {
                     <th className="w-20 px-3 py-3 text-right">Rows</th>
                     <th className="w-20 px-3 py-3 text-right">Qty</th>
                     <th className="w-32 px-3 py-3 text-right">Gold Wt</th>
-                    <th className="w-32 px-3 py-3 text-right">Total Amount</th>
-                    <th className="w-32 px-3 py-3 text-right">Balance Due</th>
+                    <th className="w-36 px-3 py-3 text-right">Purchase Amount</th>
                     <th className="sticky right-0 w-36 bg-ebony-50 px-3 py-3 text-center">Action</th>
                   </tr>
                 </thead>
@@ -164,15 +162,27 @@ export default async function PurchasesPage() {
                     <td className="px-3 py-3 text-right tabular-nums text-ebony-700">{purchase.lineCount}</td>
                     <td className="px-3 py-3 text-right font-semibold tabular-nums text-ebony-800">{purchase.qty}</td>
                     <td className="px-3 py-3 text-right tabular-nums text-ebony-700">{weight(purchase.goldWeight)} g</td>
-                    <td className="px-3 py-3 text-right font-semibold tabular-nums text-ebony-900">{money(purchase.totalAmount)}</td>
-                    <td className="px-3 py-3 text-right font-semibold tabular-nums text-red-600">{money(purchase.balanceDue)}</td>
+                    <td className="px-3 py-3 text-right font-semibold tabular-nums text-ebony-900">{money(purchase.purchaseAmount)}</td>
                     <td className="sticky right-0 bg-white px-3 py-3 text-center shadow-[-8px_0_12px_-12px_rgba(0,0,0,0.35)]">
-                      <Link href={`/purchases/${purchase.id}`} className={buttonClassName("secondary", "mr-2 px-3 py-2 text-xs")}>
-                        View
-                      </Link>
-                      <Link href={`/purchases/${purchase.id}?edit=1`} className={buttonClassName("primary", "px-3 py-2 text-xs")}>
-                        Edit
-                      </Link>
+                      <div className="flex justify-end gap-2">
+                        <Link
+                          href={`/purchases/${purchase.id}`}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-ebony-200 bg-white text-ebony-700 transition hover:bg-ebony-50"
+                          aria-label={`View purchase ${purchase.purchaseNo}`}
+                          title="View"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Link>
+                        <Link
+                          href={`/purchases/${purchase.id}?edit=1`}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-ebony-200 bg-white text-ebony-700 transition hover:bg-ebony-50"
+                          aria-label={`Edit purchase ${purchase.purchaseNo}`}
+                          title="Edit"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Link>
+                        <PurchaseDeleteButton purchaseId={purchase.id} purchaseNo={purchase.purchaseNo} />
+                      </div>
                     </td>
                     </tr>
                   ))}

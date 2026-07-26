@@ -4,6 +4,7 @@ import type { StockMaster } from "@/lib/generated/prisma";
 import { DeleteConfirmModal } from "@/components/ui/DeleteConfirmModal";
 import Link from "next/link";
 import { useState } from "react";
+import { Pencil, Trash2 } from "lucide-react";
 
 type Props = {
   initial: StockMaster[];
@@ -83,20 +84,26 @@ export function StocksTable({ initial }: Props) {
                 <td className="px-5 py-4 text-right text-ebony-700">{r.carat ?? ""}</td>
                 <td className="px-5 py-4 text-right font-semibold text-ebony-900">{r.totalCost.toString()}</td>
                 <td className="px-5 py-4 text-right">
-                  <Link
-                    href={`/stock/receipts/${r.id}`}
-                    className="inline-flex rounded-lg border border-ebony-200 bg-white px-3 py-2 text-xs font-semibold text-ebony-700 hover:bg-ebony-50"
-                  >
-                    Edit
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={() => setDeleteTarget(r)}
-                    disabled={busy}
-                    className="ml-2 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    Delete
-                  </button>
+                  <div className="flex justify-end gap-2">
+                    <Link
+                      href={`/stock/receipts/${r.id}`}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-ebony-200 bg-white text-ebony-700 transition hover:bg-ebony-50"
+                      aria-label={`Edit receipt ${new Date(r.transactionDate).toISOString().slice(0, 10)} - ${r.gsmCode}`}
+                      title="Edit"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => setDeleteTarget(r)}
+                      disabled={busy}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-red-200 bg-white text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      aria-label={`Delete receipt ${new Date(r.transactionDate).toISOString().slice(0, 10)} - ${r.gsmCode}`}
+                      title="Delete"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}

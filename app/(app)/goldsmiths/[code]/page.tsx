@@ -197,7 +197,12 @@ export default async function GoldsmithTrackingPage({ params }: { params: { code
                   <td className="px-4 py-3 text-right tabular-nums text-ebony-800">{fmt(row.labourCharges, 2)}</td>
                   <td className="px-4 py-3 text-right font-semibold tabular-nums text-ebony-900">{fmt(row.labourCharges - row.labourChargePaid, 2)}</td>
                   <td className="px-4 py-3 text-center">
-                    <Link href={row.sourceHref} className={buttonClassName("secondary", "h-8 w-8 px-0 py-0 text-ebony-500")} aria-label="View entry" title="View entry">
+                    <Link
+                      href={row.sourceHref}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-ebony-200 bg-white text-ebony-700 transition hover:bg-ebony-50"
+                      aria-label="View entry"
+                      title="View entry"
+                    >
                       <Eye className="h-4 w-4" />
                     </Link>
                   </td>

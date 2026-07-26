@@ -7,6 +7,8 @@ export type CategoryStockRow = {
   purchasedQty: number;
   soldQty: number;
   availableQty: number;
+  availableGoldWeight: number;
+  totalCost: number;
 };
 
 export type SubcategoryStockRow = {
@@ -21,6 +23,7 @@ export type SubcategoryStockRow = {
   purchasedGoldWeight: number;
   soldGoldWeight: number;
   availableGoldWeight: number;
+  totalCost: number;
 };
 
 export function buildInventorySummary({
@@ -39,6 +42,7 @@ export function buildInventorySummary({
     carat: string | null;
     qty: number | null;
     goldWeight: { toString(): string } | null;
+    totalCost: { toString(): string } | null;
   }>;
   sales: Array<{
     subcategoryCode: string | null;
@@ -64,7 +68,9 @@ export function buildInventorySummary({
       categoryName: c.name,
       purchasedQty: 0,
       soldQty: 0,
-      availableQty: 0
+      availableQty: 0,
+      availableGoldWeight: 0,
+      totalCost: 0
     });
   }
 
@@ -76,9 +82,13 @@ export function buildInventorySummary({
         categoryName: categoryByCode.get(categoryCode) ?? p.articleName ?? categoryCode,
         purchasedQty: 0,
         soldQty: 0,
-        availableQty: 0
+        availableQty: 0,
+        availableGoldWeight: 0,
+        totalCost: 0
       };
       current.purchasedQty += Number(p.qty ?? 0);
+      current.availableGoldWeight += Number(p.goldWeight?.toString?.() ?? 0);
+      current.totalCost += Number(p.totalCost?.toString?.() ?? 0);
       categoryMap.set(categoryCode, current);
     }
 
@@ -98,10 +108,12 @@ export function buildInventorySummary({
       availableQty: 0,
       purchasedGoldWeight: 0,
       soldGoldWeight: 0,
-      availableGoldWeight: 0
+      availableGoldWeight: 0,
+      totalCost: 0
     };
     current.purchasedQty += Number(p.qty ?? 0);
     current.purchasedGoldWeight += Number(p.goldWeight?.toString?.() ?? 0);
+    current.totalCost += Number(p.totalCost?.toString?.() ?? 0);
     subcategoryMap.set(key, current);
   }
 
@@ -116,9 +128,12 @@ export function buildInventorySummary({
         categoryName: categoryByCode.get(categoryCode) ?? categoryCode,
         purchasedQty: 0,
         soldQty: 0,
-        availableQty: 0
+        availableQty: 0,
+        availableGoldWeight: 0,
+        totalCost: 0
       };
       currentCategory.soldQty += Number(s.qty ?? 0);
+      currentCategory.availableGoldWeight -= Number(s.goldWeight?.toString?.() ?? 0);
       categoryMap.set(categoryCode, currentCategory);
     }
 
@@ -135,7 +150,8 @@ export function buildInventorySummary({
       availableQty: 0,
       purchasedGoldWeight: 0,
       soldGoldWeight: 0,
-      availableGoldWeight: 0
+      availableGoldWeight: 0,
+      totalCost: 0
     };
     current.soldQty += Number(s.qty ?? 0);
     current.soldGoldWeight += Number(s.goldWeight?.toString?.() ?? 0);
@@ -157,7 +173,8 @@ export function buildInventorySummary({
   const categoryRows = Array.from(categoryMap.values())
     .map((row) => ({
       ...row,
-      availableQty: Math.max(0, row.purchasedQty - row.soldQty)
+      availableQty: Math.max(0, row.purchasedQty - row.soldQty),
+      availableGoldWeight: Math.max(0, row.availableGoldWeight)
     }))
     .sort((a, b) => a.categoryCode.localeCompare(b.categoryCode));
 

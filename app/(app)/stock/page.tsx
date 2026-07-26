@@ -14,9 +14,9 @@ export default async function StockPage() {
           subcategoryCode: true,
           subcategoryName: true,
           carat: true,
-          qty: true
-          ,
-          goldWeight: true
+          qty: true,
+          goldWeight: true,
+          totalCost: true
         }
       })
     ),

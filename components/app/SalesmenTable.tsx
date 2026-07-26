@@ -4,7 +4,7 @@ import { buttonClassName } from "@/components/ui/Button";
 import { DeleteConfirmModal } from "@/components/ui/DeleteConfirmModal";
 import { useToast } from "@/components/ui/ToastProvider";
 import { cn } from "@/lib/utils";
-import { Edit3, Plus, Search, Trash2, Users, X } from "lucide-react";
+import { Pencil, Plus, Search, Trash2, Users, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 type SalesmanRowNoTags = { id: number; code: string; name: string };
@@ -245,17 +245,17 @@ export function SalesmenTable({ initial }: { initial: SalesmanRowNoTags[] }) {
                           type="button"
                           onClick={() => openEditModal(r)}
                           disabled={busy}
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-ebony-200 bg-white text-ebony-700 hover:bg-ebony-50 disabled:cursor-not-allowed disabled:opacity-60"
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-ebony-200 bg-white text-ebony-700 transition hover:bg-ebony-50 disabled:cursor-not-allowed disabled:opacity-60"
                           aria-label={`Edit ${r.name}`}
                           title="Edit"
                         >
-                          <Edit3 className="h-4 w-4" />
+                          <Pencil className="h-4 w-4" />
                         </button>
                         <button
                           type="button"
                           onClick={() => setDeleteTarget(r)}
                           disabled={busy}
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-200 bg-white text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-red-200 bg-white text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
                           aria-label={`Delete ${r.name}`}
                           title="Delete"
                         >
