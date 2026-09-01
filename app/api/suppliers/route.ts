@@ -20,14 +20,18 @@ export async function POST(req: Request) {
   const name = (body.name ?? "").trim();
   if (!name) return NextResponse.json({ error: "Name is required" }, { status: 400 });
 
-  const supplier = await prisma.supplier.create({
-    data: {
-      name,
-      contact: (body.contact ?? "").trim() || null,
-      phone: (body.phone ?? "").trim() || null,
-      email: (body.email ?? "").trim() || null,
-      address: (body.address ?? "").trim() || null
-    }
+  const supplier = await prisma.$transaction(async (tx) => {
+    const created = await tx.supplier.create({
+      data: {
+        name,
+        contact: (body.contact ?? "").trim() || null,
+        phone: (body.phone ?? "").trim() || null,
+        email: (body.email ?? "").trim() || null,
+        address: (body.address ?? "").trim() || null
+      }
+    });
+    const accountNumber = `SUP-${String(created.id).padStart(4, "0")}`;
+    return tx.supplier.update({ where: { id: created.id }, data: { accountNumber } });
   });
 
   return NextResponse.json({ supplier });
@@ -71,4 +75,3 @@ export async function DELETE(req: Request) {
   await prisma.supplier.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }
-

@@ -35,7 +35,7 @@ export async function POST(req: Request) {
         creditLimit: creditLimit(body.creditLimit)
       }
     });
-    const accountNumber = `CUST-${String(created.id).padStart(6, "0")}`;
+    const accountNumber = `CUST-${String(created.id).padStart(4, "0")}`;
     return tx.customer.update({ where: { id: created.id }, data: { accountNumber } });
   });
 

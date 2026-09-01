@@ -4,6 +4,7 @@ import {
   BarChart3,
   Boxes,
   Building2,
+  BookOpen,
   ClipboardList,
   CreditCard,
   FileText,
@@ -59,6 +60,8 @@ export const navSections: NavSection[] = [
     label: "Accounts",
     items: [
       { href: "/accounts", label: "Accounts", icon: Building2 },
+      { href: "/display", label: "Display", icon: FileText },
+      { href: "/cashbook", label: "Cashbook", icon: BookOpen },
       { href: "/payments", label: "Payments", icon: CreditCard }
     ]
   },

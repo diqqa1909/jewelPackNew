@@ -24,6 +24,116 @@ function clampDecimalNonNegative(d: Prisma.Decimal) {
   return d.lessThan(new Prisma.Decimal("0")) ? new Prisma.Decimal("0") : d;
 }
 
+async function ensureSalesAccount(tx: Prisma.TransactionClient) {
+  return tx.generalLedgerAccount.upsert({
+    where: { accountNumber: "1000" },
+    update: { name: "Sales" },
+    create: { accountNumber: "1000", name: "Sales" }
+  });
+}
+
+async function deleteSaleMoneyPostings(tx: Prisma.TransactionClient, saleNo: string) {
+  const postingTransactions = await tx.transaction.findMany({
+    where: {
+      referenceNumber: saleNo,
+      type: { in: ["INVOICE", "PAYMENT", "SALE_REVENUE", "GOLD_ISSUED", "GOLD_RECEIVED"] }
+    },
+    select: { id: true }
+  });
+  const transactionIds = postingTransactions.map((transaction) => transaction.id);
+  if (transactionIds.length > 0) {
+    await tx.cashBookEntry.deleteMany({ where: { transactionId: { in: transactionIds } } });
+  }
+  await tx.transaction.deleteMany({
+    where: {
+      referenceNumber: saleNo,
+      type: { in: ["INVOICE", "PAYMENT", "SALE_REVENUE", "GOLD_ISSUED", "GOLD_RECEIVED"] }
+    }
+  });
+}
+
+async function createSaleMoneyPostings(
+  tx: Prisma.TransactionClient,
+  data: {
+    date: Date;
+    saleNo: string;
+    customerId: number;
+    customerName: string;
+    customerAccountNumber: string;
+    saleAmount: Prisma.Decimal;
+    paidAmount: Prisma.Decimal;
+    paymentType: string;
+    remarks: string | null;
+  }
+) {
+  const salesAccount = await ensureSalesAccount(tx);
+  await tx.transaction.create({
+    data: {
+      date: data.date,
+      source: "SALE",
+      account: salesAccount.name,
+      memo: data.saleNo,
+      debit: new Prisma.Decimal("0"),
+      credit: data.saleAmount,
+      goldIssued: new Prisma.Decimal("0"),
+      goldReceived: new Prisma.Decimal("0"),
+      accountNumber: salesAccount.accountNumber,
+      type: "SALE_REVENUE",
+      referenceNumber: data.saleNo,
+      remarks: data.remarks
+    }
+  });
+
+  await tx.transaction.create({
+    data: {
+      date: data.date,
+      source: "INV",
+      account: data.customerName,
+      memo: data.saleNo,
+      debit: data.saleAmount,
+      credit: new Prisma.Decimal("0"),
+      goldIssued: new Prisma.Decimal("0"),
+      goldReceived: new Prisma.Decimal("0"),
+      accountNumber: data.customerAccountNumber,
+      type: "INVOICE",
+      referenceNumber: data.saleNo,
+      remarks: data.remarks
+    }
+  });
+
+  if (data.paidAmount.greaterThan(new Prisma.Decimal("0"))) {
+    const payment = await tx.transaction.create({
+      data: {
+        date: data.date,
+        source: data.paymentType.toUpperCase(),
+        account: data.customerName,
+        memo: `Payment for ${data.saleNo}`,
+        debit: new Prisma.Decimal("0"),
+        credit: data.paidAmount,
+        goldIssued: new Prisma.Decimal("0"),
+        goldReceived: new Prisma.Decimal("0"),
+        accountNumber: data.customerAccountNumber,
+        type: "PAYMENT",
+        referenceNumber: data.saleNo,
+        remarks: data.remarks
+      }
+    });
+    await tx.cashBookEntry.create({
+      data: {
+        date: data.date,
+        accountType: "DR",
+        accountId: data.customerId,
+        accountNo: data.customerAccountNumber,
+        accountName: data.customerName,
+        memo: `Payment for ${data.saleNo}`,
+        debit: data.paidAmount,
+        credit: new Prisma.Decimal("0"),
+        transactionId: payment.id
+      }
+    });
+  }
+}
+
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const preview = url.searchParams.get("preview") === "1";
@@ -441,44 +551,21 @@ export async function POST(req: Request) {
       }
     });
 
-    // Rate sales are posted to customer money accounts. Gold sales are posted
-    // to the customer gold ledger with no money movement.
+    // Rate sales are posted as: Dr customer, Cr Sales, and any received
+    // amount as Dr Cashbook / Cr customer.
     const acct = (customer.accountNumber ?? "").trim();
     if (isRateSale && acct) {
-      await tx.transaction.create({
-        data: {
-          date: txDate,
-          source: "INV",
-          account: customer.name,
-          memo: updatedHeader.saleNo,
-          debit: grandTotal,
-          credit: new Prisma.Decimal("0"),
-          goldIssued: new Prisma.Decimal("0"),
-          goldReceived: new Prisma.Decimal("0"),
-          accountNumber: acct,
-          type: "INVOICE",
-          referenceNumber: updatedHeader.saleNo,
-          remarks: (body.remarks ?? "").trim() || null
-        }
+      await createSaleMoneyPostings(tx, {
+        date: txDate,
+        saleNo: updatedHeader.saleNo,
+        customerId,
+        customerName: customer.name,
+        customerAccountNumber: acct,
+        saleAmount: grandTotal,
+        paidAmount,
+        paymentType,
+        remarks: (body.remarks ?? "").trim() || null
       });
-      if (paidAmount.greaterThan(new Prisma.Decimal("0"))) {
-        await tx.transaction.create({
-          data: {
-            date: txDate,
-            source: paymentType.toUpperCase(),
-            account: customer.name,
-            memo: `Payment for ${updatedHeader.saleNo}`,
-            debit: new Prisma.Decimal("0"),
-            credit: paidAmount,
-            goldIssued: new Prisma.Decimal("0"),
-            goldReceived: new Prisma.Decimal("0"),
-            accountNumber: acct,
-            type: "PAYMENT",
-            referenceNumber: updatedHeader.saleNo,
-            remarks: (body.remarks ?? "").trim() || null
-          }
-        });
-      }
     }
     if (!isRateSale) {
       if (!acct) throw new Error("Customer account not found");
@@ -597,12 +684,7 @@ export async function PUT(req: Request) {
 
       await tx.sale.deleteMany({ where: { salesNTXId: id } });
       await tx.goldReceipt.deleteMany({ where: { salesNTXId: id } });
-      await tx.transaction.deleteMany({
-        where: {
-          referenceNumber: existing.saleNo,
-          type: { in: ["INVOICE", "PAYMENT", "GOLD_ISSUED", "GOLD_RECEIVED"] }
-        }
-      });
+      await deleteSaleMoneyPostings(tx, existing.saleNo);
 
       const availableRows = await getInventoryBalanceRows(tx as any);
       const availableMap = new Map(
@@ -764,40 +846,17 @@ export async function PUT(req: Request) {
       const acct = (customer.accountNumber ?? "").trim();
       if (!acct) throw new Error("Customer account not found");
       if (isRateSale) {
-        await tx.transaction.create({
-          data: {
-            date: txDate,
-            source: "INV",
-            account: customer.name,
-            memo: updatedHeader.saleNo,
-            debit: grandTotal,
-            credit: new Prisma.Decimal("0"),
-            goldIssued: new Prisma.Decimal("0"),
-            goldReceived: new Prisma.Decimal("0"),
-            accountNumber: acct,
-            type: "INVOICE",
-            referenceNumber: updatedHeader.saleNo,
-            remarks: (body.remarks ?? "").trim() || null
-          }
+        await createSaleMoneyPostings(tx, {
+          date: txDate,
+          saleNo: updatedHeader.saleNo,
+          customerId,
+          customerName: customer.name,
+          customerAccountNumber: acct,
+          saleAmount: grandTotal,
+          paidAmount,
+          paymentType,
+          remarks: (body.remarks ?? "").trim() || null
         });
-        if (paidAmount.greaterThan(new Prisma.Decimal("0"))) {
-          await tx.transaction.create({
-            data: {
-              date: txDate,
-              source: paymentType.toUpperCase(),
-              account: customer.name,
-              memo: `Payment for ${updatedHeader.saleNo}`,
-              debit: new Prisma.Decimal("0"),
-              credit: paidAmount,
-              goldIssued: new Prisma.Decimal("0"),
-              goldReceived: new Prisma.Decimal("0"),
-              accountNumber: acct,
-              type: "PAYMENT",
-              referenceNumber: updatedHeader.saleNo,
-              remarks: (body.remarks ?? "").trim() || null
-            }
-          });
-        }
       } else {
         await tx.transaction.create({
           data: {
@@ -838,12 +897,7 @@ export async function DELETE(req: Request) {
       if (!sale) throw new Error("Invoice not found");
       await tx.sale.deleteMany({ where: { salesNTXId: id } });
       await tx.goldReceipt.deleteMany({ where: { salesNTXId: id } });
-      await tx.transaction.deleteMany({
-        where: {
-          referenceNumber: sale.saleNo,
-          type: { in: ["INVOICE", "PAYMENT", "GOLD_ISSUED", "GOLD_RECEIVED"] }
-        }
-      });
+      await deleteSaleMoneyPostings(tx, sale.saleNo);
       await tx.salesNTX.delete({ where: { id } });
     });
 

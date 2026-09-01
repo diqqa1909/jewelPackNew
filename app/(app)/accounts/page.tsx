@@ -5,9 +5,21 @@ import { AccountsClient } from "@/components/app/AccountsClient";
 export const dynamic = "force-dynamic";
 
 export default async function AccountsPage() {
-  const [customers, transactions] = await Promise.all([
+  const [customers, suppliers, ledgerAccounts, transactions] = await Promise.all([
     prismaWithRetry((p) =>
       p.customer.findMany({
+        orderBy: [{ name: "asc" }],
+        take: 500
+      })
+    ),
+    prismaWithRetry((p) =>
+      p.supplier.findMany({
+        orderBy: [{ name: "asc" }],
+        take: 500
+      })
+    ),
+    prismaWithRetry((p) =>
+      p.generalLedgerAccount.findMany({
         orderBy: [{ name: "asc" }],
         take: 500
       })
@@ -25,13 +37,17 @@ export default async function AccountsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Accounts</CardTitle>
-          <CardDescription>Select a customer to view their transactions.</CardDescription>
+          <CardDescription>Select an account to view its transactions.</CardDescription>
         </CardHeader>
         <CardContent>
-          <AccountsClient customers={customers} transactions={transactions} />
+          <AccountsClient
+            customers={customers}
+            suppliers={suppliers}
+            ledgerAccounts={ledgerAccounts}
+            transactions={transactions}
+          />
         </CardContent>
       </Card>
     </div>
   );
 }
-

@@ -1,0 +1,2 @@
+-- No-op migration kept because it was generated during local development.
+-- The cash_book updated_at shape is handled in 20260819090000_add_cashbook.

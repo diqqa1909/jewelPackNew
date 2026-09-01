@@ -85,6 +85,7 @@ model GoldIssue {
 
 model Supplier {
   id        Int      @id @default(autoincrement())
+  accountNumber String? @unique
   name      String
   contact   String?
   phone     String?
@@ -96,6 +97,37 @@ model Supplier {
   @@index([name])
 
   purchases Purchase[]
+}
+
+model CashBookEntry {
+  id          Int      @id @default(autoincrement())
+  date        DateTime @db.Date
+  accountType String   @map("account_type")
+  accountId   Int      @map("account_id")
+  accountNo   String   @map("account_no")
+  accountName String   @map("account_name")
+  memo        String?
+  debit       Decimal  @default(0) @db.Decimal(12, 2)
+  credit      Decimal  @default(0) @db.Decimal(12, 2)
+  transactionId Int?    @unique @map("transaction_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([date])
+  @@index([accountType])
+  @@index([accountNo])
+  @@map("cash_book")
+}
+
+model GeneralLedgerAccount {
+  id            Int      @id @default(autoincrement())
+  accountNumber String   @unique @map("account_number")
+  name          String
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@index([name])
+  @@map("general_ledger_accounts")
 }
 
 model Category {
