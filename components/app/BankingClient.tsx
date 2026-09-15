@@ -10,9 +10,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type AccountType = "DR" | "CR" | "GL";
 
-type CashbookEntry = {
+type BankAccount = {
+  id: number;
+  accountNo: string;
+  accountName: string;
+  balance: string;
+};
+
+type BankingEntry = {
   id: number;
   date: string;
+  bankAccountId: number;
+  bankAccountNo: string;
+  bankAccountName: string;
   accountType: AccountType;
   accountId: number;
   accountNo: string;
@@ -38,13 +48,6 @@ type DraftRow = {
   saving: boolean;
 };
 
-type Totals = {
-  dayDebit: string;
-  dayCredit: string;
-  opening: string;
-  closing: string;
-};
-
 type LookupAccount = {
   id: number;
   accountNo: string;
@@ -53,9 +56,16 @@ type LookupAccount = {
   balance: string;
 };
 
+type Totals = {
+  dayDebit: string;
+  dayCredit: string;
+  opening: string;
+  closing: string;
+};
+
 const emptyTotals: Totals = { dayDebit: "0.00", dayCredit: "0.00", opening: "0.00", closing: "0.00" };
 
-function rowFromEntry(entry: CashbookEntry): DraftRow {
+function rowFromEntry(entry: BankingEntry): DraftRow {
   return {
     key: `entry-${entry.id}`,
     id: entry.id,
@@ -74,7 +84,7 @@ function rowFromEntry(entry: CashbookEntry): DraftRow {
 function blankRow(): DraftRow {
   return {
     key: `new-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    accountType: "DR",
+    accountType: "CR",
     accountId: null,
     accountNo: "",
     accountName: "",
@@ -112,9 +122,11 @@ function isFilled(row: DraftRow) {
   );
 }
 
-export function CashbookClient({ initialDate }: { initialDate: string }) {
+export function BankingClient({ initialDate }: { initialDate: string }) {
   const toast = useToast();
   const [selectedDate, setSelectedDate] = useState(initialDate);
+  const [banks, setBanks] = useState<BankAccount[]>([]);
+  const [selectedBankId, setSelectedBankId] = useState<number | null>(null);
   const [rows, setRows] = useState<DraftRow[]>(() => [blankRow()]);
   const [totals, setTotals] = useState<Totals>(emptyTotals);
   const [loading, setLoading] = useState(true);
@@ -135,6 +147,11 @@ export function CashbookClient({ initialDate }: { initialDate: string }) {
   const pendingBlankFocusRef = useRef(true);
 
   const savedRows = useMemo(() => rows.filter((row) => row.id), [rows]);
+  const selectedBank = useMemo(() => banks.find((bank) => bank.id === selectedBankId) ?? null, [banks, selectedBankId]);
+  const activeLookupType = useMemo(
+    () => rows.find((row) => row.key === lookupRowKey)?.accountType ?? "GL",
+    [lookupRowKey, rows]
+  );
 
   const setInputRef = (key: string) => (node: HTMLInputElement | HTMLSelectElement | null) => {
     inputRefs.current.set(key, node);
@@ -144,37 +161,43 @@ export function CashbookClient({ initialDate }: { initialDate: string }) {
     window.setTimeout(() => inputRefs.current.get(`${rowKey}:${field}`)?.focus(), 0);
   }, []);
 
-  const loadDay = useCallback(async () => {
+  const loadBanking = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/cashbook?date=${encodeURIComponent(selectedDate)}`);
-      const json = (await res.json()) as { entries?: CashbookEntry[]; totals?: Totals; error?: string };
-      if (!res.ok) throw new Error(json.error ?? "Unable to load cashbook");
-      pendingBlankFocusRef.current = true;
+      const params = new URLSearchParams({ date: selectedDate });
+      if (selectedBankId) params.set("bankAccountId", String(selectedBankId));
+      const res = await fetch(`/api/banking?${params.toString()}`);
+      const json = (await res.json()) as {
+        banks?: BankAccount[];
+        selectedBank?: BankAccount | null;
+        entries?: BankingEntry[];
+        totals?: Totals;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(json.error ?? "Unable to load banking");
+      const nextBanks = json.banks ?? [];
+      setBanks(nextBanks);
+      setSelectedBankId(json.selectedBank?.id ?? nextBanks[0]?.id ?? null);
       setRows([...(json.entries ?? []).map(rowFromEntry), blankRow()]);
       setTotals(json.totals ?? emptyTotals);
+      pendingBlankFocusRef.current = true;
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Unable to load cashbook";
-      toast.error("Cashbook load failed", message);
+      const message = err instanceof Error ? err.message : "Unable to load banking";
+      toast.error("Banking load failed", message);
     } finally {
       setLoading(false);
     }
-  }, [selectedDate, toast]);
+  }, [selectedBankId, selectedDate, toast]);
 
   useEffect(() => {
-    loadDay();
-  }, [loadDay]);
+    loadBanking();
+  }, [loadBanking]);
 
   useEffect(() => {
     if (loading || !pendingBlankFocusRef.current) return;
     pendingBlankFocusRef.current = false;
     focusFirstBlank();
   }, [loading, rows]);
-
-  const activeLookupType = useMemo(
-    () => rows.find((row) => row.key === lookupRowKey)?.accountType ?? "GL",
-    [lookupRowKey, rows]
-  );
 
   const fetchLookup = useCallback(async () => {
     setLookupBusy(true);
@@ -183,7 +206,8 @@ export function CashbookClient({ initialDate }: { initialDate: string }) {
       const res = await fetch(`/api/cashbook?${params.toString()}`);
       const json = (await res.json()) as { accounts?: LookupAccount[]; error?: string };
       if (!res.ok) throw new Error(json.error ?? "Unable to search accounts");
-      setLookupRows(json.accounts ?? []);
+      const currentBankAccountNo = selectedBank?.accountNo ?? "";
+      setLookupRows((json.accounts ?? []).filter((account) => account.accountNo !== currentBankAccountNo));
       setLookupIndex(0);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unable to search accounts";
@@ -191,7 +215,7 @@ export function CashbookClient({ initialDate }: { initialDate: string }) {
     } finally {
       setLookupBusy(false);
     }
-  }, [activeLookupType, lookupQuery, toast]);
+  }, [activeLookupType, lookupQuery, selectedBank?.accountNo, toast]);
 
   useEffect(() => {
     if (!lookupOpen) return;
@@ -222,14 +246,6 @@ export function CashbookClient({ initialDate }: { initialDate: string }) {
       dirty: row.id ? true : isFilled(row)
     });
     focusCell(row.key, "accountNo");
-  }
-
-  function moveType(row: DraftRow, direction: 1 | -1) {
-    const types: AccountType[] = ["DR", "CR", "GL"];
-    const currentIndex = Math.max(0, types.indexOf(row.accountType));
-    const nextIndex = (currentIndex + direction + types.length) % types.length;
-    updateType(row, types[nextIndex]);
-    focusCell(row.key, "type");
   }
 
   function openLookup(row: DraftRow, seed = "") {
@@ -300,6 +316,10 @@ export function CashbookClient({ initialDate }: { initialDate: string }) {
   }
 
   async function saveRow(row: DraftRow) {
+    if (!selectedBankId) {
+      toast.error("Select a bank", "Add a GL bank account in range 6006-6025 first.");
+      return;
+    }
     const debit = Number(row.debit || 0);
     const credit = Number(row.credit || 0);
     if (!row.accountId) {
@@ -308,18 +328,19 @@ export function CashbookClient({ initialDate }: { initialDate: string }) {
       return;
     }
     if ((debit <= 0 && credit <= 0) || (debit > 0 && credit > 0)) {
-      toast.error("Enter one amount", "Use either debit or credit for a cashbook row.");
+      toast.error("Enter one amount", "Use either debit or credit for a banking row.");
       return;
     }
 
     setRows((prev) => prev.map((item) => (item.key === row.key ? { ...item, saving: true } : item)));
     try {
-      const res = await fetch("/api/cashbook", {
+      const res = await fetch("/api/banking", {
         method: row.id ? "PATCH" : "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           id: row.id,
           date: selectedDate,
+          bankAccountId: selectedBankId,
           accountType: row.accountType,
           accountId: row.accountId,
           memo: row.memo,
@@ -327,10 +348,10 @@ export function CashbookClient({ initialDate }: { initialDate: string }) {
           credit: row.credit || "0"
         })
       });
-      const json = (await res.json()) as { entry?: CashbookEntry; error?: string };
+      const json = (await res.json()) as { entry?: BankingEntry; error?: string };
       if (!res.ok || !json.entry) throw new Error(json.error ?? "Unable to save row");
-      await loadDay();
-      toast.success(row.id ? "Cashbook row updated" : "Cashbook row saved");
+      await loadBanking();
+      toast.success(row.id ? "Banking row updated" : "Banking row saved");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unable to save row";
       toast.error("Save failed", message);
@@ -342,12 +363,12 @@ export function CashbookClient({ initialDate }: { initialDate: string }) {
     if (!deleteRow?.id) return;
     setDeleteBusy(true);
     try {
-      const res = await fetch(`/api/cashbook?id=${deleteRow.id}`, { method: "DELETE" });
+      const res = await fetch(`/api/banking?id=${deleteRow.id}`, { method: "DELETE" });
       const json = (await res.json().catch(() => null)) as { error?: string } | null;
       if (!res.ok) throw new Error(json?.error ?? "Unable to delete row");
       setDeleteRow(null);
-      await loadDay();
-      toast.success("Cashbook row deleted");
+      await loadBanking();
+      toast.success("Banking row deleted");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unable to delete row";
       toast.error("Delete failed", message);
@@ -370,48 +391,6 @@ export function CashbookClient({ initialDate }: { initialDate: string }) {
       openLookup(row);
       return;
     }
-    if (field === "type" && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
-      e.preventDefault();
-      moveType(row, e.key === "ArrowDown" ? 1 : -1);
-      return;
-    }
-    if (e.key === "ArrowDown" && (field === "debit" || field === "credit")) {
-      e.preventDefault();
-      saveRow(row);
-      return;
-    }
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      const rowIndex = rows.findIndex((item) => item.key === row.key);
-      const next = rows[rowIndex + 1] ?? row;
-      focusCell(next.key, field);
-      return;
-    }
-    if (e.key === "ArrowUp") {
-      e.preventDefault();
-      const rowIndex = rows.findIndex((item) => item.key === row.key);
-      const prev = rows[Math.max(0, rowIndex - 1)] ?? row;
-      focusCell(prev.key, field);
-      return;
-    }
-    if (e.key === "ArrowRight") {
-      const order = ["type", "accountNo", "accountName", "memo", "debit", "credit"];
-      const index = order.indexOf(field);
-      if (index >= 0 && index < order.length - 1) {
-        e.preventDefault();
-        focusCell(row.key, order[index + 1]);
-      }
-      return;
-    }
-    if (e.key === "ArrowLeft") {
-      const order = ["type", "accountNo", "accountName", "memo", "debit", "credit"];
-      const index = order.indexOf(field);
-      if (index > 0) {
-        e.preventDefault();
-        focusCell(row.key, order[index - 1]);
-      }
-      return;
-    }
     if (e.key !== "Enter") return;
     e.preventDefault();
     const order = ["type", "accountNo", "accountName", "memo", "debit", "credit"];
@@ -428,14 +407,14 @@ export function CashbookClient({ initialDate }: { initialDate: string }) {
       <div className="rounded-lg border border-ebony-100 bg-white shadow-sm">
         <div className="flex flex-col gap-3 border-b border-ebony-100 p-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h1 className="text-xl font-extrabold tracking-tight text-ebony-950">Cashbook</h1>
+            <h1 className="text-xl font-extrabold tracking-tight text-ebony-950">Banking</h1>
             <p className="mt-1 text-sm font-medium text-ebony-600">
-              Daily cash ledger. DR searches customers, CR searches suppliers, GL searches ledger accounts.
+              Select a bank account from GL range 6006-6025, then enter bank debits or credits below.
             </p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <label className="text-sm">
-              <span className="sr-only">Cashbook date</span>
+              <span className="sr-only">Banking date</span>
               <input
                 type="date"
                 value={selectedDate}
@@ -443,20 +422,53 @@ export function CashbookClient({ initialDate }: { initialDate: string }) {
                 className="h-10 rounded-lg border border-ebony-200 bg-white px-3 font-semibold text-ebony-900 outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
               />
             </label>
-            <button
-              type="button"
-              onClick={loadDay}
-              className={buttonClassName("secondary", "h-10 px-3")}
-              title="Refresh"
-            >
+            <button type="button" onClick={loadBanking} className={buttonClassName("secondary", "h-10 px-3")} title="Refresh">
               <RefreshCw className={cn("h-4 w-4", loading ? "animate-spin" : "")} />
               Refresh
             </button>
           </div>
         </div>
 
-        <div className="flex justify-end border-b border-ebony-100 bg-white px-3 py-2">
-          <div className="min-w-64 rounded-md border border-ebony-200 bg-ebony-50 px-3 py-2 text-right">
+        <div className="overflow-x-auto border-b border-ebony-100">
+          <table className="min-w-[760px] w-full text-sm">
+            <thead className="bg-ebony-50 text-left text-[10px] font-bold uppercase tracking-wide text-ebony-600">
+              <tr>
+                <th className="px-3 py-2">Bank Account</th>
+                <th className="px-3 py-2">Account No</th>
+                <th className="px-3 py-2 text-right">Balance</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-ebony-100">
+              {banks.map((bank) => (
+                <tr
+                  key={bank.id}
+                  onClick={() => setSelectedBankId(bank.id)}
+                  className={cn(
+                    "cursor-pointer bg-white hover:bg-gold-50/40",
+                    selectedBankId === bank.id ? "bg-gold-50 outline outline-2 -outline-offset-2 outline-gold-500/40" : ""
+                  )}
+                >
+                  <td className="px-3 py-2 font-bold text-ebony-950">{bank.accountName}</td>
+                  <td className="px-3 py-2 font-bold tabular-nums text-ebony-900">{bank.accountNo}</td>
+                  <td className="px-3 py-2 text-right font-extrabold tabular-nums text-ebony-950">{money(bank.balance)}</td>
+                </tr>
+              ))}
+              {banks.length === 0 ? (
+                <tr>
+                  <td colSpan={3} className="px-4 py-8 text-center text-sm font-semibold text-ebony-600">
+                    No GL bank accounts found in range 6006-6025.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex justify-between gap-3 border-b border-ebony-100 bg-white px-3 py-2">
+          <div className="text-sm font-bold text-ebony-800">
+            {selectedBank ? `${selectedBank.accountNo} - ${selectedBank.accountName}` : "No bank selected"}
+          </div>
+          <div className="rounded-md border border-ebony-200 bg-ebony-50 px-3 py-2 text-right">
             <div className="text-[10px] font-bold uppercase tracking-wide text-ebony-500">Opening Balance</div>
             <div className="text-base font-extrabold tabular-nums text-ebony-950">{money(totals.opening)}</div>
           </div>
@@ -470,8 +482,8 @@ export function CashbookClient({ initialDate }: { initialDate: string }) {
                 <th className="w-36 border border-ebony-100 px-2 py-1.5">Acc No</th>
                 <th className="w-56 border border-ebony-100 px-2 py-1.5">Account</th>
                 <th className="border border-ebony-100 px-2 py-1.5">Memo</th>
-                <th className="w-32 border border-ebony-100 px-2 py-1.5 text-right">Debit</th>
-                <th className="w-32 border border-ebony-100 px-2 py-1.5 text-right">Credit</th>
+                <th className="w-32 border border-ebony-100 px-2 py-1.5 text-right">Bank Debit</th>
+                <th className="w-32 border border-ebony-100 px-2 py-1.5 text-right">Bank Credit</th>
                 <th className="w-20 border border-ebony-100 px-2 py-1.5 text-right">Action</th>
               </tr>
             </thead>
@@ -487,8 +499,8 @@ export function CashbookClient({ initialDate }: { initialDate: string }) {
                       className="h-8 w-full rounded-none border-0 bg-white px-1.5 text-sm font-bold text-ebony-900 outline-none focus:ring-2 focus:ring-inset focus:ring-gold-400/30"
                     >
                       <option value="DR">DR</option>
-                      <option value="GL">GL</option>
                       <option value="CR">CR</option>
+                      <option value="GL">GL</option>
                     </select>
                   </td>
                   <td className="border border-ebony-100 p-0">
@@ -583,7 +595,7 @@ export function CashbookClient({ initialDate }: { initialDate: string }) {
               {!loading && savedRows.length === 0 ? (
                 <tr>
                   <td className="border border-ebony-100 px-4 py-8 text-center text-sm font-semibold text-ebony-600" colSpan={7}>
-                    No saved cashbook rows for this date. Start in the blank row above.
+                    No saved banking rows for this bank and date. Start in the blank row above.
                   </td>
                 </tr>
               ) : null}
@@ -617,53 +629,53 @@ export function CashbookClient({ initialDate }: { initialDate: string }) {
       >
         <div className="space-y-4">
           <div className="flex gap-2">
-          <label className="relative block min-w-0 flex-1">
-            <span className="sr-only">Search accounts</span>
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ebony-400" />
-            <input
-              autoFocus
-              value={lookupQuery}
-              onChange={(e) => setLookupQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "ArrowDown") {
-                  e.preventDefault();
-                  setLookupIndex((index) => Math.min(lookupRows.length - 1, index + 1));
-                } else if (e.key === "ArrowUp") {
-                  e.preventDefault();
-                  setLookupIndex((index) => Math.max(0, index - 1));
-                } else if (e.key === "Enter" && lookupRows[lookupIndex]) {
-                  e.preventDefault();
-                  chooseAccount(lookupRows[lookupIndex]);
-                }
+            <label className="relative block min-w-0 flex-1">
+              <span className="sr-only">Search accounts</span>
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ebony-400" />
+              <input
+                autoFocus
+                value={lookupQuery}
+                onChange={(e) => setLookupQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    setLookupIndex((index) => Math.min(lookupRows.length - 1, index + 1));
+                  } else if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    setLookupIndex((index) => Math.max(0, index - 1));
+                  } else if (e.key === "Enter" && lookupRows[lookupIndex]) {
+                    e.preventDefault();
+                    chooseAccount(lookupRows[lookupIndex]);
+                  }
+                }}
+                className="h-10 w-full rounded-lg border border-ebony-200 bg-white pl-9 pr-3 text-sm font-medium text-ebony-900 outline-none placeholder:text-ebony-400 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+                placeholder="Search account number or name..."
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => {
+                setAddAccountNumber("");
+                setAddAccountName("");
+                setAddAccountPhone("");
+                setAddAccountOpen(true);
               }}
-              className="h-10 w-full rounded-lg border border-ebony-200 bg-white pl-9 pr-3 text-sm font-medium text-ebony-900 outline-none placeholder:text-ebony-400 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
-              placeholder="Search account number or name..."
-            />
-          </label>
-          <button
-            type="button"
-            onClick={() => {
-              setAddAccountNumber("");
-              setAddAccountName("");
-              setAddAccountPhone("");
-              setAddAccountOpen(true);
-            }}
-            className={buttonClassName("primary", "h-10 w-10 px-0")}
-            title="Add account"
-          >
-            <Plus className="h-4 w-4" />
-          </button>
+              className={buttonClassName("primary", "h-10 w-10 px-0")}
+              title="Add account"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
           </div>
 
           <div className="overflow-hidden rounded-lg border border-ebony-100">
             <table className="w-full text-sm">
               <thead className="bg-ebony-50 text-left text-[11px] font-bold uppercase tracking-wide text-ebony-600">
                 <tr>
-                    <th className="px-4 py-3">Account No</th>
-                    <th className="px-4 py-3">Name</th>
-                    <th className="px-4 py-3">Category</th>
-                    <th className="px-4 py-3 text-right">Balance</th>
-                  </tr>
+                  <th className="px-4 py-3">Account No</th>
+                  <th className="px-4 py-3">Name</th>
+                  <th className="px-4 py-3">Category</th>
+                  <th className="px-4 py-3 text-right">Balance</th>
+                </tr>
               </thead>
               <tbody className="divide-y divide-ebony-100">
                 {lookupRows.map((account, index) => (
@@ -675,12 +687,12 @@ export function CashbookClient({ initialDate }: { initialDate: string }) {
                       "cursor-pointer bg-white hover:bg-gold-50/40",
                       index === lookupIndex ? "bg-gold-50 outline outline-2 -outline-offset-2 outline-gold-500/40" : ""
                     )}
-                    >
-                      <td className="px-4 py-3 font-bold tabular-nums text-ebony-950">{account.accountNo}</td>
-                      <td className="px-4 py-3 font-semibold text-ebony-900">{account.accountName}</td>
-                      <td className="px-4 py-3 text-ebony-600">{account.detail ?? "-"}</td>
-                      <td className="px-4 py-3 text-right font-bold tabular-nums text-ebony-900">{money(account.balance)}</td>
-                    </tr>
+                  >
+                    <td className="px-4 py-3 font-bold tabular-nums text-ebony-950">{account.accountNo}</td>
+                    <td className="px-4 py-3 font-semibold text-ebony-900">{account.accountName}</td>
+                    <td className="px-4 py-3 text-ebony-600">{account.detail ?? "-"}</td>
+                    <td className="px-4 py-3 text-right font-bold tabular-nums text-ebony-900">{money(account.balance)}</td>
+                  </tr>
                 ))}
                 {lookupRows.length === 0 ? (
                   <tr>
@@ -711,7 +723,7 @@ export function CashbookClient({ initialDate }: { initialDate: string }) {
                 autoFocus
                 value={addAccountNumber}
                 onChange={(e) => setAddAccountNumber(e.target.value.replace(/[^\d]/g, "").slice(0, 4))}
-                placeholder="4001"
+                placeholder="4201"
                 className="h-10 w-full rounded-lg border border-ebony-200 bg-white px-3 font-semibold tabular-nums outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
               />
             </label>
@@ -753,8 +765,8 @@ export function CashbookClient({ initialDate }: { initialDate: string }) {
 
       <DeleteConfirmModal
         open={deleteRow !== null}
-        itemLabel={deleteRow?.accountName ?? "cashbook row"}
-        description="This will remove the cash movement from the selected day."
+        itemLabel={deleteRow?.accountName ?? "banking row"}
+        description="This will remove both posted transactions for this banking row."
         busy={deleteBusy}
         onCancel={() => {
           if (!deleteBusy) setDeleteRow(null);

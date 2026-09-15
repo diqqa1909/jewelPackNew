@@ -1,0 +1,73 @@
+CREATE TABLE IF NOT EXISTS "chart" (
+  "id" SERIAL NOT NULL,
+  "code" TEXT NOT NULL,
+  "major_code" TEXT NOT NULL,
+  "group_code" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "range_start" INTEGER NOT NULL,
+  "range_end" INTEGER NOT NULL,
+  "normal_balance" TEXT NOT NULL,
+  "statement" TEXT,
+  "source" TEXT DEFAULT 'Chart.xlsx',
+  "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "chart_pkey" PRIMARY KEY ("id")
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS "chart_code_key" ON "chart"("code");
+CREATE INDEX IF NOT EXISTS "chart_major_code_group_code_idx" ON "chart"("major_code", "group_code");
+CREATE INDEX IF NOT EXISTS "chart_range_start_range_end_idx" ON "chart"("range_start", "range_end");
+
+INSERT INTO "chart" ("code", "major_code", "group_code", "name", "range_start", "range_end", "normal_balance", "statement", "source", "updated_at")
+VALUES
+  ('1-0', '1', '0', 'Sales', 1000, 1099, 'CREDIT', 'PROFIT_LOSS', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('1-1', '1', '1', 'Sales', 1100, 1199, 'CREDIT', 'PROFIT_LOSS', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('1-2', '1', '2', 'Sales', 1200, 1299, 'CREDIT', 'PROFIT_LOSS', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('1-3', '1', '3', 'Sales', 1300, 1399, 'CREDIT', 'PROFIT_LOSS', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('2-0', '2', '0', 'Purchases and stock', 2000, 2099, 'DEBIT', 'PROFIT_LOSS', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('2-1', '2', '1', 'Purchases and stock', 2100, 2199, 'DEBIT', 'PROFIT_LOSS', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('2-2', '2', '2', 'Purchases and stock', 2200, 2299, 'DEBIT', 'PROFIT_LOSS', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('2-3', '2', '3', 'Purchases and stock', 2300, 2399, 'DEBIT', 'PROFIT_LOSS', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('2-4', '2', '4', 'Purchase costs', 2400, 2499, 'DEBIT', 'PROFIT_LOSS', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('2-6', '2', '6', 'Purchase adjustments', 2600, 2699, 'DEBIT', 'PROFIT_LOSS', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('3-0', '3', '0', 'Other income', 3000, 3099, 'CREDIT', 'PROFIT_LOSS', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('3-1', '3', '1', 'Other income', 3100, 3199, 'CREDIT', 'PROFIT_LOSS', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('3-2', '3', '2', 'Other income', 3200, 3299, 'CREDIT', 'PROFIT_LOSS', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('4-0', '4', '0', 'Operating expenses', 4000, 4099, 'DEBIT', 'PROFIT_LOSS', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('4-1', '4', '1', 'Selling and statutory expenses', 4100, 4199, 'DEBIT', 'PROFIT_LOSS', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('4-2', '4', '2', 'Finance and general expenses', 4200, 4299, 'DEBIT', 'PROFIT_LOSS', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('5-0', '5', '0', 'Fixed assets', 5000, 5099, 'DEBIT', 'BALANCE_SHEET', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('5-1', '5', '1', 'Fixed assets', 5100, 5199, 'DEBIT', 'BALANCE_SHEET', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('5-2', '5', '2', 'Fixed assets', 5200, 5299, 'DEBIT', 'BALANCE_SHEET', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('5-3', '5', '3', 'Fixed assets', 5300, 5399, 'DEBIT', 'BALANCE_SHEET', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('5-4', '5', '4', 'Fixed assets', 5400, 5499, 'DEBIT', 'BALANCE_SHEET', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('5-5', '5', '5', 'Fixed assets', 5500, 5599, 'DEBIT', 'BALANCE_SHEET', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('5-6', '5', '6', 'Fixed assets', 5600, 5699, 'DEBIT', 'BALANCE_SHEET', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('5-7', '5', '7', 'Fixed assets', 5700, 5799, 'DEBIT', 'BALANCE_SHEET', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('6-0', '6', '0', 'Current assets', 6000, 6099, 'DEBIT', 'BALANCE_SHEET', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('6-1', '6', '1', 'Current assets', 6100, 6199, 'DEBIT', 'BALANCE_SHEET', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('6-2', '6', '2', 'Debtors and receivables', 6200, 6299, 'DEBIT', 'BALANCE_SHEET', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('6-3', '6', '3', 'Suspense and savings', 6300, 6399, 'DEBIT', 'BALANCE_SHEET', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('6-4', '6', '4', 'Current assets', 6400, 6499, 'DEBIT', 'BALANCE_SHEET', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('6-5', '6', '5', 'Current assets', 6500, 6599, 'DEBIT', 'BALANCE_SHEET', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('6-6', '6', '6', 'Current assets', 6600, 6699, 'DEBIT', 'BALANCE_SHEET', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('6-7', '6', '7', 'Current assets', 6700, 6799, 'DEBIT', 'BALANCE_SHEET', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('7-0', '7', '0', 'Creditors and current liabilities', 7000, 7099, 'CREDIT', 'BALANCE_SHEET', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('7-1', '7', '1', 'Creditors and current liabilities', 7100, 7199, 'CREDIT', 'BALANCE_SHEET', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('7-2', '7', '2', 'Payables', 7200, 7299, 'CREDIT', 'BALANCE_SHEET', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('7-3', '7', '3', 'Creditors and current liabilities', 7300, 7399, 'CREDIT', 'BALANCE_SHEET', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('7-4', '7', '4', 'Creditors and current liabilities', 7400, 7499, 'CREDIT', 'BALANCE_SHEET', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('8-0', '8', '0', 'Loans', 8000, 8099, 'CREDIT', 'BALANCE_SHEET', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('9-0', '9', '0', 'Capital and tax', 9000, 9099, 'CREDIT', 'BALANCE_SHEET', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('9-1', '9', '1', 'Capital and tax', 9100, 9199, 'CREDIT', 'BALANCE_SHEET', 'Chart.xlsx', CURRENT_TIMESTAMP),
+  ('9-2', '9', '2', 'Capital and tax', 9200, 9299, 'CREDIT', 'BALANCE_SHEET', 'Chart.xlsx', CURRENT_TIMESTAMP)
+ON CONFLICT ("code") DO UPDATE
+SET "major_code" = EXCLUDED."major_code",
+    "group_code" = EXCLUDED."group_code",
+    "name" = EXCLUDED."name",
+    "range_start" = EXCLUDED."range_start",
+    "range_end" = EXCLUDED."range_end",
+    "normal_balance" = EXCLUDED."normal_balance",
+    "statement" = EXCLUDED."statement",
+    "source" = EXCLUDED."source",
+    "updated_at" = CURRENT_TIMESTAMP;

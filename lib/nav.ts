@@ -62,6 +62,7 @@ export const navSections: NavSection[] = [
       { href: "/accounts", label: "Accounts", icon: Building2 },
       { href: "/display", label: "Display", icon: FileText },
       { href: "/cashbook", label: "Cashbook", icon: BookOpen },
+      { href: "/banking", label: "Banking", icon: Building2 },
       { href: "/payments", label: "Payments", icon: CreditCard }
     ]
   },

@@ -1,4 +1,5 @@
 import { AccountDisplayClient, type DisplayAccount, type DisplayTransaction } from "@/components/app/AccountDisplayClient";
+import { accountChartCode } from "@/lib/account-chart";
 import { prismaWithRetry } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +18,7 @@ function dateValue(value: Date | string | null | undefined) {
 }
 
 export default async function DisplayPage() {
-  const [customers, suppliers, ledgerAccounts, transactions] = await Promise.all([
+  const [customers, suppliers, ledgerAccounts, chartRows, transactions] = await Promise.all([
     prismaWithRetry((p) =>
       p.customer.findMany({
         where: { accountNumber: { not: null } },
@@ -38,6 +39,12 @@ export default async function DisplayPage() {
         orderBy: [{ accountNumber: "asc" }, { name: "asc" }],
         take: 1000,
         select: { id: true, accountNumber: true, name: true }
+      })
+    ),
+    prismaWithRetry((p) =>
+      p.chart.findMany({
+        orderBy: [{ rangeStart: "asc" }],
+        select: { code: true, name: true, rangeStart: true, rangeEnd: true }
       })
     ),
     prismaWithRetry((p) =>
@@ -76,6 +83,8 @@ export default async function DisplayPage() {
     return totals.debit - totals.credit;
   }
 
+  const chartByCode = new Map(chartRows.map((row) => [row.code, row]));
+
   const accounts: DisplayAccount[] = [
     ...customers.map((account) => {
       const accountNumber = account.accountNumber ?? "";
@@ -99,14 +108,17 @@ export default async function DisplayPage() {
         balance: balance(accountNumber)
       };
     }),
-    ...ledgerAccounts.map((account) => ({
-      key: `GL-${account.id}`,
-      kind: "GL" as const,
-      accountNumber: account.accountNumber,
-      name: account.name,
-      detail: "General Ledger",
-      balance: balance(account.accountNumber)
-    }))
+    ...ledgerAccounts.map((account) => {
+      const chart = chartByCode.get(accountChartCode(account.accountNumber) ?? "");
+      return {
+        key: `GL-${account.id}`,
+        kind: "GL" as const,
+        accountNumber: account.accountNumber,
+        name: account.name,
+        detail: chart ? `${chart.name} (${chart.rangeStart}-${chart.rangeEnd})` : "General Ledger",
+        balance: balance(account.accountNumber)
+      };
+    })
   ];
 
   const displayTransactions: DisplayTransaction[] = transactions.map((tx) => ({

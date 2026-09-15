@@ -5,6 +5,7 @@ const protectedRoutes = [
   "/dashboard",
   "/stock",
   "/accounts",
+  "/banking",
   "/customers",
   "/suppliers",
   "/goldsmiths",

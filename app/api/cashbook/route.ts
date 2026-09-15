@@ -1,4 +1,5 @@
 import { Prisma } from "@/lib/generated/prisma";
+import { accountChartCode } from "@/lib/account-chart";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 
@@ -106,6 +107,26 @@ async function balanceMap(accountNumbers: string[]) {
   }, new Map<string, Prisma.Decimal>());
 }
 
+async function resolveGeneralLedgerAccountNumber(value: unknown) {
+  const accountNumber = String(value ?? "").trim();
+  if (!/^\d{4}$/.test(accountNumber)) {
+    throw new Error("GL account number must be a 4 digit chart account number");
+  }
+
+  const code = accountChartCode(accountNumber);
+  const chart = code ? await prisma.chart.findUnique({ where: { code } }) : null;
+  if (!chart) {
+    throw new Error("GL account number is outside the chart ranges");
+  }
+
+  const existing = await prisma.generalLedgerAccount.findUnique({ where: { accountNumber } });
+  if (existing) {
+    throw new Error(`GL account ${accountNumber} already exists`);
+  }
+
+  return accountNumber;
+}
+
 async function postTransaction(data: {
   id?: number | null;
   date: Date;
@@ -181,19 +202,29 @@ export async function GET(req: Request) {
       if (type === "GL") {
         const accounts = await prisma.generalLedgerAccount.findMany({
           where,
-          orderBy: { name: "asc" },
+          orderBy: [{ accountNumber: "asc" }, { name: "asc" }],
           take: 50,
           select: { id: true, accountNumber: true, name: true }
         });
+        const chartCodes = Array.from(
+          new Set(accounts.map((account) => accountChartCode(account.accountNumber)).filter((code): code is string => Boolean(code)))
+        );
+        const chartRows = chartCodes.length
+          ? await prisma.chart.findMany({ where: { code: { in: chartCodes } } })
+          : [];
+        const chartByCode = new Map(chartRows.map((row) => [row.code, row]));
         const balances = await balanceMap(accounts.map((account) => account.accountNumber));
         return NextResponse.json({
-          accounts: accounts.map((account) => ({
-            id: account.id,
-            accountNo: account.accountNumber,
-            accountName: account.name,
-            detail: "General ledger",
-            balance: balances.get(account.accountNumber)?.toFixed(2) ?? "0.00"
-          }))
+          accounts: accounts.map((account) => {
+            const chart = chartByCode.get(accountChartCode(account.accountNumber) ?? "");
+            return {
+              id: account.id,
+              accountNo: account.accountNumber,
+              accountName: account.name,
+              detail: chart ? `${chart.name} (${chart.rangeStart}-${chart.rangeEnd})` : "General ledger",
+              balance: balances.get(account.accountNumber)?.toFixed(2) ?? "0.00"
+            };
+          })
         });
       }
 
@@ -269,6 +300,7 @@ export async function POST(req: Request) {
       name: string;
       phone: string;
       contact: string;
+      accountNumber: string;
       memo: string;
       debit: string;
       credit: string;
@@ -323,16 +355,17 @@ export async function POST(req: Request) {
 
       const created = await prisma.generalLedgerAccount.create({
         data: {
-          accountNumber: `GL-${Date.now()}`,
+          accountNumber: await resolveGeneralLedgerAccountNumber(body.accountNumber),
           name
         }
       });
+      const chart = await prisma.chart.findUnique({ where: { code: accountChartCode(created.accountNumber) ?? "" } });
       return NextResponse.json({
         account: {
           id: created.id,
           accountNo: created.accountNumber,
           accountName: created.name,
-          detail: "General ledger",
+          detail: chart ? `${chart.name} (${chart.rangeStart}-${chart.rangeEnd})` : "General ledger",
           balance: "0.00"
         }
       });

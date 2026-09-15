@@ -120,6 +120,31 @@ model CashBookEntry {
   @@map("cash_book")
 }
 
+model BankingEntry {
+  id                   Int      @id @default(autoincrement())
+  date                 DateTime @db.Date
+  bankAccountId        Int      @map("bank_account_id")
+  bankAccountNo        String   @map("bank_account_no")
+  bankAccountName      String   @map("bank_account_name")
+  accountType          String   @map("account_type")
+  accountId            Int      @map("account_id")
+  accountNo            String   @map("account_no")
+  accountName          String   @map("account_name")
+  memo                 String?
+  debit                Decimal  @default(0) @db.Decimal(12, 2)
+  credit               Decimal  @default(0) @db.Decimal(12, 2)
+  bankTransactionId    Int?     @unique @map("bank_transaction_id")
+  accountTransactionId Int?     @unique @map("account_transaction_id")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  @@index([date])
+  @@index([bankAccountNo])
+  @@index([accountType])
+  @@index([accountNo])
+  @@map("banking")
+}
+
 model GeneralLedgerAccount {
   id            Int      @id @default(autoincrement())
   accountNumber String   @unique @map("account_number")
@@ -129,6 +154,25 @@ model GeneralLedgerAccount {
 
   @@index([name])
   @@map("general_ledger_accounts")
+}
+
+model Chart {
+  id            Int      @id @default(autoincrement())
+  code          String   @unique
+  majorCode     String   @map("major_code")
+  groupCode     String   @map("group_code")
+  name          String
+  rangeStart    Int      @map("range_start")
+  rangeEnd      Int      @map("range_end")
+  normalBalance String   @map("normal_balance")
+  statement     String?
+  source        String?  @default("Chart.xlsx")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@index([majorCode, groupCode])
+  @@index([rangeStart, rangeEnd])
+  @@map("chart")
 }
 
 model Category {

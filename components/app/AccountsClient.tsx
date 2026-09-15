@@ -33,6 +33,7 @@ interface GeneralLedgerAccount {
   id: number;
   accountNumber: string;
   name: string;
+  chartName?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -66,6 +67,7 @@ interface AccountRow {
   phone: string | null;
   email: string | null;
   address: string | null;
+  category: string | null;
 }
 
 interface Props {
@@ -97,7 +99,8 @@ export function AccountsClient({ customers, suppliers, ledgerAccounts, transacti
           name: account.name,
           phone: account.phone,
           email: account.email,
-          address: account.address
+          address: account.address,
+          category: null
         })),
       ...suppliers.map((account) => ({
         key: `CR-${account.id}`,
@@ -106,7 +109,8 @@ export function AccountsClient({ customers, suppliers, ledgerAccounts, transacti
         name: account.name,
         phone: account.phone ?? account.contact,
         email: account.email,
-        address: account.address
+        address: account.address,
+        category: null
       })),
       ...ledgerAccounts.map((account) => ({
         key: `GL-${account.id}`,
@@ -115,7 +119,8 @@ export function AccountsClient({ customers, suppliers, ledgerAccounts, transacti
         name: account.name,
         phone: null,
         email: null,
-        address: null
+        address: null,
+        category: account.chartName ?? null
       }))
     ],
     [customers, suppliers, ledgerAccounts]
@@ -154,6 +159,7 @@ export function AccountsClient({ customers, suppliers, ledgerAccounts, transacti
                 <th className="px-5 py-4">Type</th>
                 <th className="px-5 py-4">Name</th>
                 <th className="px-5 py-4">Account No</th>
+                <th className="px-5 py-4">Category</th>
                 <th className="px-5 py-4">Phone</th>
                 <th className="px-5 py-4">Email</th>
                 <th className="px-5 py-4">Address</th>
@@ -171,6 +177,7 @@ export function AccountsClient({ customers, suppliers, ledgerAccounts, transacti
                   <td className="px-5 py-4 font-bold text-ebony-700">{account.kind}</td>
                   <td className="px-5 py-4 font-semibold text-ebony-900">{account.name}</td>
                   <td className="px-5 py-4 text-ebony-700">{account.accountNumber || "-"}</td>
+                  <td className="px-5 py-4 text-ebony-700">{account.category ?? "-"}</td>
                   <td className="px-5 py-4 text-ebony-700">{account.phone ?? "-"}</td>
                   <td className="px-5 py-4 text-ebony-700">{account.email ?? "-"}</td>
                   <td className="px-5 py-4 text-ebony-700">{account.address ?? "-"}</td>
@@ -178,7 +185,7 @@ export function AccountsClient({ customers, suppliers, ledgerAccounts, transacti
               ))}
               {accounts.length === 0 ? (
                 <tr>
-                  <td className="px-5 py-8 text-center text-sm text-ebony-600" colSpan={6}>
+                  <td className="px-5 py-8 text-center text-sm text-ebony-600" colSpan={7}>
                     No accounts found.
                   </td>
                 </tr>
