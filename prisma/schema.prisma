@@ -86,6 +86,7 @@ model GoldIssue {
 model Supplier {
   id        Int      @id @default(autoincrement())
   accountNumber String? @unique
+  goldsmithCode String? @unique
   name      String
   contact   String?
   phone     String?

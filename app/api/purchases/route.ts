@@ -70,11 +70,13 @@ function wastageWeightForCost(purchaseType: string, wastageMg: Prisma.Decimal) {
 
 function purchaseAccount({
   supplierId,
+  supplierAccountNumber,
   supplierName,
   goldsmithCode,
   goldsmithName
 }: {
   supplierId?: number | null;
+  supplierAccountNumber?: string | null;
   supplierName?: string | null;
   goldsmithCode?: string | null;
   goldsmithName?: string | null;
@@ -82,7 +84,7 @@ function purchaseAccount({
   if (supplierId) {
     return {
       account: supplierName?.trim() || `Supplier #${supplierId}`,
-      accountNumber: `SUP-${String(supplierId).padStart(6, "0")}`
+      accountNumber: supplierAccountNumber ?? `SUP-${String(supplierId).padStart(4, "0")}`
     };
   }
   const code = (goldsmithCode ?? "").trim();
@@ -166,9 +168,10 @@ export async function POST(req: Request) {
     const system = await prisma.system.findUnique({ where: { id: 1 } });
     const goldRatePer8g = system?.goldCostRatePer8g ?? new Prisma.Decimal("0");
 
-    const goldsmith = await prisma.goldsmith.findUnique({ where: { code: body.gsmCode } });
     const supplierId = body.supplierId == null ? null : Number(body.supplierId);
     const supplier = supplierId ? await prisma.supplier.findUnique({ where: { id: supplierId } }) : null;
+    const goldsmith = body.gsmCode ? await prisma.goldsmith.findUnique({ where: { code: body.gsmCode } }) : null;
+    const selectedGoldsmithName = goldsmith?.name ?? supplier?.name ?? "";
     const purchaseType = normalizePurchaseType(body.purchaseType);
     const lines: NormalizedPurchaseLine[] = [];
     for (const line of linePayloads(body)) {
@@ -222,7 +225,7 @@ export async function POST(req: Request) {
           purchaseType,
           location: (body.location ?? "").trim() || null,
           gsmCode: body.gsmCode,
-          gsmName: goldsmith?.name ?? "",
+          gsmName: selectedGoldsmithName,
           categoryCode: row.line.categoryCode,
           articleName: row.category.name,
           subcategoryCode: row.line.subcategoryCode,
@@ -258,9 +261,10 @@ export async function POST(req: Request) {
       if (purchaseType === "Rate") {
         const account = purchaseAccount({
           supplierId,
+          supplierAccountNumber: supplier?.accountNumber,
           supplierName: supplier?.name,
           goldsmithCode: body.gsmCode,
-          goldsmithName: goldsmith?.name
+          goldsmithName: selectedGoldsmithName
         });
         await tx.transaction.create({
           data: {
@@ -324,9 +328,10 @@ export async function PATCH(req: Request) {
     const system = await prisma.system.findUnique({ where: { id: 1 } });
     const goldRatePer8g = system?.goldCostRatePer8g ?? new Prisma.Decimal("0");
 
-    const goldsmith = await prisma.goldsmith.findUnique({ where: { code: body.gsmCode } });
     const supplierId = body.supplierId === undefined ? existing.supplierId : body.supplierId == null ? null : Number(body.supplierId);
     const supplier = supplierId ? await prisma.supplier.findUnique({ where: { id: supplierId } }) : null;
+    const goldsmith = body.gsmCode ? await prisma.goldsmith.findUnique({ where: { code: body.gsmCode } }) : null;
+    const selectedGoldsmithName = goldsmith?.name ?? supplier?.name ?? "";
     const purchaseType = normalizePurchaseType(body.purchaseType);
     const lines: NormalizedPurchaseLine[] = [];
     for (const line of linePayloads(body)) {
@@ -372,7 +377,7 @@ export async function PATCH(req: Request) {
             purchaseType,
             location: (body.location ?? "").trim() || null,
             gsmCode: body.gsmCode,
-            gsmName: goldsmith?.name ?? "",
+            gsmName: selectedGoldsmithName,
             categoryCode: row.line.categoryCode,
             articleName: row.category.name,
             subcategoryCode: row.line.subcategoryCode,
@@ -412,9 +417,10 @@ export async function PATCH(req: Request) {
       if (purchaseType !== "Rate") return firstPurchase;
       const account = purchaseAccount({
         supplierId,
+        supplierAccountNumber: supplier?.accountNumber,
         supplierName: supplier?.name,
         goldsmithCode: body.gsmCode,
-        goldsmithName: goldsmith?.name
+        goldsmithName: selectedGoldsmithName
       });
       await tx.transaction.create({
         data: {

@@ -184,7 +184,9 @@ export function ReceiptForm({
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [loading, setLoading] = useState(mode === "edit");
   const [goldsmiths, setGoldsmiths] = useState<Array<{ code: string; name: string }>>([]);
-  const [suppliers, setSuppliers] = useState<Array<{ id: number; name: string }>>([]);
+  const [suppliers, setSuppliers] = useState<
+    Array<{ id: number; accountNumber?: string | null; goldsmithCode?: string | null; name: string }>
+  >([]);
   const [categories, setCategories] = useState<Array<{ code: string; name: string }>>([]);
   const [subcategories, setSubcategories] = useState<
     Array<{ code: string; name: string; categoryCode: string; carat?: string | null }>
@@ -215,6 +217,7 @@ export function ReceiptForm({
   const [pendingCancelAction, setPendingCancelAction] = useState<"cancel" | "back" | null>(null);
   const [deleteLineTarget, setDeleteLineTarget] = useState<{ id: string; label: string } | null>(null);
   const useTableLayout = layout === "table";
+  const usesCreditorGoldsmiths = submitPath === "/api/purchases";
   const hasEnteredData = hasEnteredReceiptData();
 
   useEffect(() => {
@@ -460,6 +463,31 @@ export function ReceiptForm({
       gsmName: match?.name ?? ""
     }));
     setErrors((prev) => ({ ...prev, gsmCode: undefined, gsmName: undefined, form: undefined }));
+  }
+
+  function supplierAccountNumber(supplier: { id: number; accountNumber?: string | null }) {
+    return supplier.accountNumber ?? `SUP-${String(supplier.id).padStart(4, "0")}`;
+  }
+
+  function supplierGoldsmithCode(supplier: { id: number; accountNumber?: string | null; goldsmithCode?: string | null }) {
+    return supplier.goldsmithCode?.trim() || supplierAccountNumber(supplier);
+  }
+
+  function setCreditorGoldsmith(nextSupplierId: string) {
+    const supplier = suppliers.find((row) => String(row.id) === nextSupplierId);
+    setForm((prev) => ({
+      ...prev,
+      supplierId: nextSupplierId,
+      gsmCode: supplier ? supplierGoldsmithCode(supplier) : "",
+      gsmName: supplier?.name ?? ""
+    }));
+    setErrors((prev) => ({
+      ...prev,
+      supplierId: undefined,
+      gsmCode: undefined,
+      gsmName: undefined,
+      form: undefined
+    }));
   }
 
   function setCategoryCode(nextCode: string) {
@@ -860,6 +888,7 @@ export function ReceiptForm({
     const next: Errors = {};
     const nextLineErrors: Record<string, Partial<Record<keyof PurchaseLine, string>>> = {};
     if (!form.transactionDate) next.transactionDate = "Required";
+    if (usesCreditorGoldsmiths && !form.supplierId.trim()) next.supplierId = "Required";
     if (!form.gsmCode.trim()) next.gsmCode = "Required";
 
     if (useTableLayout) {
@@ -1137,25 +1166,44 @@ export function ReceiptForm({
                       />
                     </label>
 
-                    <label className="space-y-1.5 text-sm">
-                      <div className="text-xs font-bold text-ebony-800">GSM Code *</div>
-                      <select
-                        value={form.gsmCode}
-                        onChange={(e) => setGsmCode(e.target.value)}
-                        className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
-                      >
-                        <option value="">Select...</option>
-                        {goldsmiths.map((g) => (
-                          <option key={g.code} value={g.code}>
-                            {g.code}
-                          </option>
-                        ))}
-                      </select>
-                      {errors.gsmCode && <FieldError>{errors.gsmCode}</FieldError>}
-                    </label>
+                    {usesCreditorGoldsmiths ? (
+                      <label className="space-y-1.5 text-sm">
+                        <div className="text-xs font-bold text-ebony-800">Creditor / Goldsmith *</div>
+                        <select
+                          value={form.supplierId}
+                          onChange={(e) => setCreditorGoldsmith(e.target.value)}
+                          className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+                        >
+                          <option value="">Select creditor...</option>
+                          {suppliers.map((supplier) => (
+                            <option key={supplier.id} value={String(supplier.id)}>
+                              {supplierAccountNumber(supplier)} - {supplier.name}
+                            </option>
+                          ))}
+                        </select>
+                        {(errors.supplierId || errors.gsmCode) && <FieldError>{errors.supplierId ?? errors.gsmCode}</FieldError>}
+                      </label>
+                    ) : (
+                      <label className="space-y-1.5 text-sm">
+                        <div className="text-xs font-bold text-ebony-800">GSM Code *</div>
+                        <select
+                          value={form.gsmCode}
+                          onChange={(e) => setGsmCode(e.target.value)}
+                          className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+                        >
+                          <option value="">Select...</option>
+                          {goldsmiths.map((g) => (
+                            <option key={g.code} value={g.code}>
+                              {g.code}
+                            </option>
+                          ))}
+                        </select>
+                        {errors.gsmCode && <FieldError>{errors.gsmCode}</FieldError>}
+                      </label>
+                    )}
 
                     <label className="space-y-1.5 text-sm">
-                      <div className="text-xs font-bold text-ebony-800">GSM Name</div>
+                      <div className="text-xs font-bold text-ebony-800">{usesCreditorGoldsmiths ? "Creditor Name" : "GSM Name"}</div>
                       <input
                         readOnly
                         value={form.gsmName}
@@ -1175,21 +1223,23 @@ export function ReceiptForm({
                       </select>
                     </label>
 
-                    <label className="space-y-1.5 text-sm">
-                      <div className="text-xs font-bold text-ebony-800">Supplier</div>
-                      <select
-                        value={form.supplierId}
-                        onChange={(e) => update("supplierId", e.target.value)}
-                        className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
-                      >
-                        <option value="">No supplier</option>
-                        {suppliers.map((supplier) => (
-                          <option key={supplier.id} value={String(supplier.id)}>
-                            {supplier.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                    {!usesCreditorGoldsmiths && (
+                      <label className="space-y-1.5 text-sm">
+                        <div className="text-xs font-bold text-ebony-800">Supplier</div>
+                        <select
+                          value={form.supplierId}
+                          onChange={(e) => update("supplierId", e.target.value)}
+                          className="h-10 w-full rounded-md border border-ebony-200 bg-white px-3 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+                        >
+                          <option value="">No supplier</option>
+                          {suppliers.map((supplier) => (
+                            <option key={supplier.id} value={String(supplier.id)}>
+                              {supplier.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
                   </div>
                 </div>
 
@@ -1428,25 +1478,46 @@ export function ReceiptForm({
                   {errors.location && <div className="text-xs text-red-600">{errors.location}</div>}
                 </label>
 
-                <label className="space-y-2 text-sm">
-                  <div className="font-bold text-ebony-700">GSM Code</div>
-                  <select
-                    value={form.gsmCode}
-                    onChange={(e) => setGsmCode(e.target.value)}
-                    className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 text-sm outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
-                  >
-                    <option value="">Select goldsmith...</option>
-                    {goldsmiths.map((g) => (
-                      <option key={g.code} value={g.code}>
-                        {g.code}
-                      </option>
-                    ))}
-                  </select>
-                  {errors.gsmCode && <div className="text-xs text-red-600">{errors.gsmCode}</div>}
-                </label>
+                {usesCreditorGoldsmiths ? (
+                  <label className="space-y-2 text-sm">
+                    <div className="font-bold text-ebony-700">Creditor / Goldsmith</div>
+                    <select
+                      value={form.supplierId}
+                      onChange={(e) => setCreditorGoldsmith(e.target.value)}
+                      className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 text-sm outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
+                    >
+                      <option value="">Select creditor...</option>
+                      {suppliers.map((supplier) => (
+                        <option key={supplier.id} value={String(supplier.id)}>
+                          {supplierAccountNumber(supplier)} - {supplier.name}
+                        </option>
+                      ))}
+                    </select>
+                    {(errors.supplierId || errors.gsmCode) && (
+                      <div className="text-xs text-red-600">{errors.supplierId ?? errors.gsmCode}</div>
+                    )}
+                  </label>
+                ) : (
+                  <label className="space-y-2 text-sm">
+                    <div className="font-bold text-ebony-700">GSM Code</div>
+                    <select
+                      value={form.gsmCode}
+                      onChange={(e) => setGsmCode(e.target.value)}
+                      className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 text-sm outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
+                    >
+                      <option value="">Select goldsmith...</option>
+                      {goldsmiths.map((g) => (
+                        <option key={g.code} value={g.code}>
+                          {g.code}
+                        </option>
+                      ))}
+                    </select>
+                    {errors.gsmCode && <div className="text-xs text-red-600">{errors.gsmCode}</div>}
+                  </label>
+                )}
 
                 <label className="space-y-2 text-sm">
-                  <div className="font-bold text-ebony-700">GSM Name</div>
+                  <div className="font-bold text-ebony-700">{usesCreditorGoldsmiths ? "Creditor Name" : "GSM Name"}</div>
                   <input
                     readOnly
                     value={form.gsmName}
@@ -1454,21 +1525,23 @@ export function ReceiptForm({
                   />
                 </label>
 
-                <label className="space-y-2 text-sm">
-                  <div className="font-bold text-ebony-700">Supplier</div>
-                  <select
-                    value={form.supplierId}
-                    onChange={(e) => update("supplierId", e.target.value)}
-                    className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 text-sm outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
-                  >
-                    <option value="">No supplier</option>
-                    {suppliers.map((supplier) => (
-                      <option key={supplier.id} value={String(supplier.id)}>
-                        {supplier.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                {!usesCreditorGoldsmiths && (
+                  <label className="space-y-2 text-sm">
+                    <div className="font-bold text-ebony-700">Supplier</div>
+                    <select
+                      value={form.supplierId}
+                      onChange={(e) => update("supplierId", e.target.value)}
+                      className="w-full rounded-lg border-2 border-gold-300 bg-white px-4 py-2.5 text-sm outline-none transition-all focus:bg-cream-50 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/30"
+                    >
+                      <option value="">No supplier</option>
+                      {suppliers.map((supplier) => (
+                        <option key={supplier.id} value={String(supplier.id)}>
+                          {supplier.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
 
                 <label className="space-y-2 text-sm">
                   <div className="font-bold text-ebony-700">Category Code</div>

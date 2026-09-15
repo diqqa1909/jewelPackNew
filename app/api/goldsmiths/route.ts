@@ -9,7 +9,7 @@ export async function GET() {
 
 export async function POST(req: Request) {
   const body = (await req.json()) as Partial<{ code: string; name: string }>;
-  const code = (body.code ?? "").trim();
+  const code = (body.code ?? "").trim().toUpperCase();
   const name = (body.name ?? "").trim();
   if (!code || !name) return NextResponse.json({ error: "Missing code/name" }, { status: 400 });
 
@@ -22,7 +22,42 @@ export async function POST(req: Request) {
   }
 
   try {
-    const goldsmith = await prisma.goldsmith.create({ data: { code, name } });
+    const goldsmith = await prisma.$transaction(async (tx) => {
+      const created = await tx.goldsmith.create({ data: { code, name } });
+      const existingCreditor = await tx.supplier.findFirst({
+        where: {
+          OR: [
+            { goldsmithCode: code },
+            { name: { equals: name, mode: "insensitive" } },
+            { accountNumber: `GSM-${code}` }
+          ]
+        },
+        orderBy: { id: "asc" }
+      });
+
+      if (existingCreditor) {
+        await tx.supplier.update({
+          where: { id: existingCreditor.id },
+          data: {
+            name,
+            contact: existingCreditor.contact ?? "Goldsmith",
+            goldsmithCode: code,
+            accountNumber: existingCreditor.accountNumber ?? `GSM-${code}`
+          }
+        });
+      } else {
+        await tx.supplier.create({
+          data: {
+            accountNumber: `GSM-${code}`,
+            goldsmithCode: code,
+            name,
+            contact: "Goldsmith"
+          }
+        });
+      }
+
+      return created;
+    });
     return NextResponse.json({ goldsmith }, { status: 201 });
   } catch (error) {
     // Keep the database constraint as the final guard against concurrent requests.
@@ -35,13 +70,43 @@ export async function POST(req: Request) {
 
 export async function PATCH(req: Request) {
   const body = (await req.json()) as Partial<{ code: string; name: string }>;
-  const code = (body.code ?? "").trim();
+  const code = (body.code ?? "").trim().toUpperCase();
   const name = (body.name ?? "").trim();
   if (!code || !name) return NextResponse.json({ error: "Missing code/name" }, { status: 400 });
 
-  const goldsmith = await prisma.goldsmith.update({
-    where: { code },
-    data: { name }
+  const goldsmith = await prisma.$transaction(async (tx) => {
+    const updated = await tx.goldsmith.update({
+      where: { code },
+      data: { name }
+    });
+
+    const existingCreditor = await tx.supplier.findFirst({
+      where: { OR: [{ goldsmithCode: code }, { accountNumber: `GSM-${code}` }] },
+      orderBy: { id: "asc" }
+    });
+
+    if (existingCreditor) {
+      await tx.supplier.update({
+        where: { id: existingCreditor.id },
+        data: {
+          name,
+          contact: existingCreditor.contact ?? "Goldsmith",
+          goldsmithCode: code,
+          accountNumber: existingCreditor.accountNumber ?? `GSM-${code}`
+        }
+      });
+    } else {
+      await tx.supplier.create({
+        data: {
+          accountNumber: `GSM-${code}`,
+          goldsmithCode: code,
+          name,
+          contact: "Goldsmith"
+        }
+      });
+    }
+
+    return updated;
   });
   return NextResponse.json({ goldsmith });
 }
