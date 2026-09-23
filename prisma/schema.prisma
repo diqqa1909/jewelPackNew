@@ -17,42 +17,42 @@ model StockMaster {
   transactionDate DateTime
   location        String?
 
-  gsmCode      String
-  gsmName      String
-  categoryCode String
-  articleName  String
+  gsmCode         String
+  gsmName         String
+  categoryCode    String
+  articleName     String
   subcategoryCode String
   subcategoryName String
-  category     Category @relation(fields: [categoryCode], references: [code], onDelete: Restrict)
-  subcategory  Subcategory @relation(fields: [subcategoryCode], references: [code], onDelete: Restrict)
-  qty          Int
-  description  String?
-  carat        String?
+  category        Category    @relation(fields: [categoryCode], references: [code], onDelete: Restrict)
+  subcategory     Subcategory @relation(fields: [subcategoryCode], references: [code], onDelete: Restrict)
+  qty             Int
+  description     String?
+  carat           String?
 
-  wastageYN     Boolean  @default(false)
-  goldWeight    Decimal
-  goldCost      Decimal
-  wastageMg     Decimal   @default(0)
-  wastage       Decimal
-  labourCharges Decimal
-  otherCosts    Decimal
-  totalCost     Decimal
+  wastageYN         Boolean @default(false)
+  goldWeight        Decimal
+  goldCost          Decimal
+  wastageMg         Decimal @default(0)
+  wastage           Decimal
+  labourCharges     Decimal
+  otherCosts        Decimal
+  totalCost         Decimal
   // Balances (updated as items are sold)
-  soldQty          Int     @default(0)
-  balanceQty       Int
-  soldGoldWeight   Decimal @default(0)
+  soldQty           Int     @default(0)
+  balanceQty        Int
+  soldGoldWeight    Decimal @default(0)
   balanceGoldWeight Decimal
-  soldCost         Decimal @default(0)
-  balanceCost      Decimal
-  remarks       String?
+  soldCost          Decimal @default(0)
+  balanceCost       Decimal
+  remarks           String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  sales Sale[]
+
   @@index([categoryCode])
   @@index([subcategoryCode])
-
-  sales Sale[]
 }
 
 model Goldsmith {
@@ -65,18 +65,18 @@ model Goldsmith {
 }
 
 model GoldIssue {
-  id              Int      @id @default(autoincrement())
-  issueDate       DateTime @db.Date
+  id              Int       @id @default(autoincrement())
+  issueDate       DateTime  @db.Date
   goldsmithCode   String
   goldsmith       Goldsmith @relation(fields: [goldsmithCode], references: [code], onDelete: Restrict)
-  issueType       String   @default("GOLD")
+  issueType       String    @default("GOLD")
   carat           String
-  goldWeight      Decimal  @default(0) @db.Decimal(12, 3)
-  cashAmount      Decimal  @default(0) @db.Decimal(12, 2)
+  goldWeight      Decimal   @default(0) @db.Decimal(12, 3)
+  cashAmount      Decimal   @default(0) @db.Decimal(12, 2)
   referenceNumber String?
   remarks         String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   @@index([issueDate])
   @@index([goldsmithCode])
@@ -84,35 +84,35 @@ model GoldIssue {
 }
 
 model Supplier {
-  id        Int      @id @default(autoincrement())
-  accountNumber String? @unique
-  goldsmithCode String? @unique
-  name      String
-  contact   String?
-  phone     String?
-  email     String?
-  address   String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([name])
+  id            Int      @id @default(autoincrement())
+  accountNumber String?  @unique
+  goldsmithCode String?  @unique
+  name          String
+  contact       String?
+  phone         String?
+  email         String?
+  address       String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   purchases Purchase[]
+
+  @@index([name])
 }
 
 model CashBookEntry {
-  id          Int      @id @default(autoincrement())
-  date        DateTime @db.Date
-  accountType String   @map("account_type")
-  accountId   Int      @map("account_id")
-  accountNo   String   @map("account_no")
-  accountName String   @map("account_name")
-  memo        String?
-  debit       Decimal  @default(0) @db.Decimal(12, 2)
-  credit      Decimal  @default(0) @db.Decimal(12, 2)
-  transactionId Int?    @unique @map("transaction_id")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id            Int      @id @default(autoincrement())
+  date          DateTime @db.Date
+  accountType   String   @map("account_type")
+  accountId     Int      @map("account_id")
+  accountNo     String   @map("account_no")
+  accountName   String   @map("account_name")
+  memo          String?
+  debit         Decimal  @default(0) @db.Decimal(12, 2)
+  credit        Decimal  @default(0) @db.Decimal(12, 2)
+  transactionId Int?     @unique @map("transaction_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
   @@index([date])
   @@index([accountType])
@@ -152,8 +152,22 @@ model GeneralLedgerAccount {
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
+  systemAccountMappings SystemAccountMapping[]
+
   @@index([name])
   @@map("general_ledger_accounts")
+}
+
+model SystemAccountMapping {
+  id            Int                  @id @default(autoincrement())
+  key           String               @unique
+  accountNumber String               @map("account_number")
+  account       GeneralLedgerAccount @relation(fields: [accountNumber], references: [accountNumber], onDelete: Restrict)
+  createdAt     DateTime             @default(now()) @map("created_at")
+  updatedAt     DateTime             @updatedAt @map("updated_at")
+
+  @@index([accountNumber])
+  @@map("system_account_mappings")
 }
 
 model Chart {
@@ -176,142 +190,174 @@ model Chart {
 }
 
 model Category {
-  code      String   @id
-  name      String
+  code          String        @id
+  name          String
   subcategories Subcategory[]
-  stock     StockMaster[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  stock         StockMaster[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 }
 
 model Subcategory {
-  code         String   @id
+  code         String        @id
   name         String
   imageUrl     String?
   categoryCode String
-  category     Category @relation(fields: [categoryCode], references: [code], onDelete: Restrict)
+  category     Category      @relation(fields: [categoryCode], references: [code], onDelete: Restrict)
   carat        String?
   stock        StockMaster[]
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 }
 
 model System {
-  id                   Int     @id
-  vatRate              Decimal
-  nslRate              Decimal
-  goldCostRatePer8g    Decimal
-  wastageRateMgPer8g   Decimal
-  updatedAt            DateTime @updatedAt
+  id                 Int      @id
+  vatRate            Decimal
+  nslRate            Decimal
+  goldCostRatePer8g  Decimal
+  wastageRateMgPer8g Decimal
+  updatedAt          DateTime @updatedAt
 
   @@map("system")
 }
 
 model Customer {
-  id        Int      @id @default(autoincrement())
-  accountNumber String? @unique
-  name      String
-  phone     String?
-  email     String?
-  address   String?
-  creditLimit Decimal @default(0) @db.Decimal(12, 2)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            Int      @id @default(autoincrement())
+  accountNumber String?  @unique
+  name          String
+  phone         String?
+  email         String?
+  address       String?
+  creditLimit   Decimal  @default(0) @db.Decimal(12, 2)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  sales     SalesNTX[]
+  sales        SalesNTX[]
   goldReceipts GoldReceipt[]
 }
 
 model Transaction {
-  id              Int      @id @default(autoincrement())
-  date            DateTime @db.Date
+  id              Int       @id @default(autoincrement())
+  date            DateTime  @db.Date
   source          String?
   account         String?
   memo            String?
-  debit           Decimal  @default(0) @db.Decimal(12, 2)
-  credit          Decimal  @default(0) @db.Decimal(12, 2)
-  accountNumber   String?  @map("account_number")
+  debit           Decimal   @default(0) @db.Decimal(12, 2)
+  credit          Decimal   @default(0) @db.Decimal(12, 2)
+  accountNumber   String?   @map("account_number")
   type            String?
-  bankDebit       Decimal? @default(0) @map("bank_debit") @db.Decimal(12, 2)
-  bankCredit      Decimal? @default(0) @map("bank_credit") @db.Decimal(12, 2)
-  goldIssued      Decimal  @default(0) @map("gold_issued") @db.Decimal(12, 3)
-  goldReceived    Decimal  @default(0) @map("gold_received") @db.Decimal(12, 3)
+  bankDebit       Decimal?  @default(0) @map("bank_debit") @db.Decimal(12, 2)
+  bankCredit      Decimal?  @default(0) @map("bank_credit") @db.Decimal(12, 2)
+  goldIssued      Decimal   @default(0) @map("gold_issued") @db.Decimal(12, 3)
+  goldReceived    Decimal   @default(0) @map("gold_received") @db.Decimal(12, 3)
   realizedDate    DateTime? @map("realized_date") @db.Date
-  referenceNumber String?  @map("reference_number")
+  referenceNumber String?   @map("reference_number")
   remarks         String?
-  bankCode        String?  @map("bank_code")
-  recon           Boolean  @default(false)
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  bankCode        String?   @map("bank_code")
+  recon           Boolean   @default(false)
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  doubleTransactions DoubleTransaction[]
 
   @@index([accountNumber])
   @@index([date])
   @@map("transactions")
 }
 
+model DoubleTransaction {
+  id                  Int          @id @default(autoincrement())
+  postingKey          String       @map("posting_key")
+  lineNo              Int          @map("line_no")
+  date                DateTime     @db.Date
+  source              String
+  account             String
+  accountNumber       String       @map("account_number")
+  memo                String?
+  debit               Decimal      @default(0) @db.Decimal(12, 2)
+  credit              Decimal      @default(0) @db.Decimal(12, 2)
+  type                String?
+  referenceNumber     String?      @map("reference_number")
+  documentType        String?      @map("document_type")
+  documentId          String?      @map("document_id")
+  sourceTransactionId Int?         @map("source_transaction_id")
+  transaction         Transaction? @relation(fields: [sourceTransactionId], references: [id], onDelete: Cascade)
+  remarks             String?
+  createdAt           DateTime     @default(now()) @map("created_at")
+  updatedAt           DateTime     @updatedAt @map("updated_at")
+
+  @@unique([postingKey, lineNo])
+  @@index([sourceTransactionId])
+  @@index([accountNumber])
+  @@index([date])
+  @@index([source])
+  @@index([referenceNumber])
+  @@map("dbltransactions")
+}
+
 model SalesNTX {
-  id            Int      @id @default(autoincrement())
-  saleNo        String   @unique
+  id              Int       @id @default(autoincrement())
+  saleNo          String    @unique
   transactionDate DateTime
-  customerId    Int
-  customer      Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  salesmanId    Int?
-  salesman      Salesman? @relation(fields: [salesmanId], references: [id], onDelete: Restrict)
+  customerId      Int
+  customer        Customer  @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  salesmanId      Int?
+  salesman        Salesman? @relation(fields: [salesmanId], references: [id], onDelete: Restrict)
 
-  totalItems    Int
-  totalQty      Int
-  totalGoldWeight Decimal
-  totalStoneWeight Decimal @default(0)
-  totalNetWeight Decimal @default(0)
-  totalCost     Decimal
-  sellRatePer8g Decimal @default(0)
-  sellSubTotal  Decimal @default(0)
+  totalItems          Int
+  totalQty            Int
+  totalGoldWeight     Decimal
+  totalStoneWeight    Decimal @default(0)
+  totalNetWeight      Decimal @default(0)
+  totalCost           Decimal
+  sellRatePer8g       Decimal @default(0)
+  sellSubTotal        Decimal @default(0)
   goldTransactionType String?
-  remarks       String?
+  remarks             String?
 
-  items         Sale[]
-  goldReceipts  GoldReceipt[]
-  createdAt     DateTime @default(now())
+  items        Sale[]
+  goldReceipts GoldReceipt[]
+  createdAt    DateTime      @default(now())
 
-  @@map("salesNTX")
   @@index([transactionDate])
   @@index([customerId])
   @@index([salesmanId])
+  @@map("salesNTX")
 }
 
 model GoldReceipt {
-  id             Int      @id @default(autoincrement())
-  grnNo          String?
+  id              Int       @id @default(autoincrement())
+  grnNo           String?
   transactionDate DateTime? @db.Date
-  customerId     Int?
-  customer       Customer? @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  salesmanId     Int?
-  salesman       Salesman? @relation(fields: [salesmanId], references: [id], onDelete: Restrict)
-  salesNTXId     Int?
-  salesNTX       SalesNTX? @relation(fields: [salesNTXId], references: [id], onDelete: Restrict)
-  description    String
-  carat          String
-  goldWeight     Decimal  @db.Decimal(12, 3)
-  pureGoldWeight Decimal  @map("pure_gold_weight") @db.Decimal(12, 3)
-  remarks        String?
-  createdAt      DateTime @default(now())
+  customerId      Int?
+  customer        Customer? @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  salesmanId      Int?
+  salesman        Salesman? @relation(fields: [salesmanId], references: [id], onDelete: Restrict)
+  salesNTXId      Int?
+  salesNTX        SalesNTX? @relation(fields: [salesNTXId], references: [id], onDelete: Restrict)
+  description     String
+  carat           String
+  goldWeight      Decimal   @db.Decimal(12, 3)
+  pureGoldWeight  Decimal   @map("pure_gold_weight") @db.Decimal(12, 3)
+  remarks         String?
+  createdAt       DateTime  @default(now())
 
-  @@map("GoldReceipts")
   @@index([grnNo])
   @@index([transactionDate])
   @@index([customerId])
   @@index([salesmanId])
   @@index([salesNTXId])
+  @@map("GoldReceipts")
 }
 
 model Sale {
-  id            Int      @id @default(autoincrement())
-  salesNTXId    Int
-  salesNTX      SalesNTX @relation(fields: [salesNTXId], references: [id], onDelete: Restrict)
+  id         Int      @id @default(autoincrement())
+  salesNTXId Int
+  salesNTX   SalesNTX @relation(fields: [salesNTXId], references: [id], onDelete: Restrict)
 
   // The purchase row this sale line consumed from (FIFO allocation)
   purchaseId    Int?
-  purchase      Purchase? @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  purchase      Purchase?    @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
   stockMasterId Int?
   stockMaster   StockMaster? @relation(fields: [stockMasterId], references: [id], onDelete: Restrict)
 
@@ -327,10 +373,10 @@ model Sale {
 
   createdAt DateTime @default(now())
 
-  @@map("sales")
   @@index([salesNTXId])
   @@index([stockMasterId])
   @@index([subcategoryCode])
+  @@map("sales")
 }
 
 model Salesman {
@@ -340,7 +386,7 @@ model Salesman {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  invoices  SalesNTX[]
+  invoices     SalesNTX[]
   goldReceipts GoldReceipt[]
 
   @@index([name])
@@ -389,26 +435,26 @@ model Purchase {
   items PurchaseItem[]
   sales Sale[]
 
-  @@map("purchases")
   @@index([purchaseDate])
   @@index([purchaseGroupNo])
   @@index([supplierId])
+  @@map("purchases")
 }
 
 model PurchaseItem {
-  id              Int      @id @default(autoincrement())
-  purchaseId      Int
-  purchase        Purchase @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
-  description     String
-  karat           String?
-  weight          Decimal
-  ratePerGram     Decimal
-  makingPerPiece  Decimal  @default(0)
-  amount          Decimal
-  createdAt       DateTime @default(now())
+  id             Int      @id @default(autoincrement())
+  purchaseId     Int
+  purchase       Purchase @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  description    String
+  karat          String?
+  weight         Decimal
+  ratePerGram    Decimal
+  makingPerPiece Decimal  @default(0)
+  amount         Decimal
+  createdAt      DateTime @default(now())
 
-  @@map("purchase_items")
   @@index([purchaseId])
+  @@map("purchase_items")
 }
 
 // NextAuth.js models
@@ -424,25 +470,25 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  accounts      Account[]
-  sessions      Session[]
+  accounts Account[]
+  sessions Session[]
 
   @@index([email])
 }
 
 model Account {
-  id                 String  @id @default(cuid())
-  userId             String
-  type               String
-  provider           String
-  providerAccountId  String
-  refresh_token      String?  @db.Text
-  access_token       String?  @db.Text
-  expires_at         Int?
-  token_type         String?
-  scope              String?
-  id_token           String?  @db.Text
-  session_state      String?
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

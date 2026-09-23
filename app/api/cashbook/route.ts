@@ -1,5 +1,6 @@
 import { Prisma } from "@/lib/generated/prisma";
 import { accountChartCode } from "@/lib/account-chart";
+import { POSTING_SOURCE, deleteDoubleEntryPosting, postCashbookDoubleEntry } from "@/lib/double-entry";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 
@@ -141,7 +142,7 @@ async function postTransaction(data: {
   const amountCredit = data.cashDebit;
   const payload = {
     date: data.date,
-    source: "CASHBOOK",
+    source: POSTING_SOURCE.CASHBOOK,
     account: data.accountName,
     memo: data.memo || `Cashbook ${data.type}`,
     debit: amountDebit,
@@ -384,7 +385,7 @@ export async function POST(req: Request) {
       const transaction = await tx.transaction.create({
         data: {
           date,
-          source: "CASHBOOK",
+          source: POSTING_SOURCE.CASHBOOK,
           account: account.accountName,
           memo: memo || `Cashbook ${type}`,
           debit: credit,
@@ -410,6 +411,17 @@ export async function POST(req: Request) {
       await tx.transaction.update({
         where: { id: transaction.id },
         data: { referenceNumber: `CB-${created.id}` }
+      });
+      await postCashbookDoubleEntry(tx, {
+        cashBookEntryId: created.id,
+        transactionId: transaction.id,
+        date,
+        accountNo: account.accountNo,
+        accountName: account.accountName,
+        transactionDebit: credit,
+        transactionCredit: debit,
+        memo: memo || `Cashbook ${type}`,
+        remarks: memo
       });
       return created;
     });
@@ -453,7 +465,7 @@ export async function PATCH(req: Request) {
           where: { id: transactionId },
           data: {
             date,
-            source: "CASHBOOK",
+            source: POSTING_SOURCE.CASHBOOK,
             account: account.accountName,
             memo: memo || `Cashbook ${type}`,
             debit: credit,
@@ -468,7 +480,7 @@ export async function PATCH(req: Request) {
         const transaction = await tx.transaction.create({
           data: {
             date,
-            source: "CASHBOOK",
+            source: POSTING_SOURCE.CASHBOOK,
             account: account.accountName,
             memo: memo || `Cashbook ${type}`,
             debit: credit,
@@ -481,7 +493,7 @@ export async function PATCH(req: Request) {
         });
         transactionId = transaction.id;
       }
-      return tx.cashBookEntry.update({
+      const updated = await tx.cashBookEntry.update({
         where: { id },
         data: {
           date,
@@ -495,6 +507,18 @@ export async function PATCH(req: Request) {
           transactionId
         }
       });
+      await postCashbookDoubleEntry(tx, {
+        cashBookEntryId: id,
+        transactionId,
+        date,
+        accountNo: account.accountNo,
+        accountName: account.accountName,
+        transactionDebit: credit,
+        transactionCredit: debit,
+        memo: memo || `Cashbook ${type}`,
+        remarks: memo
+      });
+      return updated;
     });
 
     return NextResponse.json({ entry: entryJson(entry) });
@@ -515,6 +539,7 @@ export async function DELETE(req: Request) {
     });
     await prisma.$transaction(async (tx) => {
       await tx.cashBookEntry.delete({ where: { id } });
+      await deleteDoubleEntryPosting(tx, `C:CB-${id}`);
       if (existing?.transactionId) {
         await tx.transaction.delete({ where: { id: existing.transactionId } }).catch(() => null);
       }

@@ -1,4 +1,5 @@
 import { Prisma } from "@/lib/generated/prisma";
+import { POSTING_SOURCE, deleteDoubleEntryPosting, postBankingDoubleEntry } from "@/lib/double-entry";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 
@@ -155,7 +156,7 @@ function bankTransactionPayload(data: {
 }) {
   return {
     date: data.date,
-    source: "BANKING",
+    source: POSTING_SOURCE.BANKING,
     account: data.bankAccountName,
     memo: data.memo || "Banking",
     debit: data.debit,
@@ -178,7 +179,7 @@ function accountTransactionPayload(data: {
 }) {
   return {
     date: data.date,
-    source: "BANKING",
+    source: POSTING_SOURCE.BANKING,
     account: data.accountName,
     memo: data.memo || "Banking",
     debit: data.credit,
@@ -296,6 +297,20 @@ export async function POST(req: Request) {
         where: { id: { in: [bankTx.id, accountTx.id] } },
         data: { referenceNumber: `BN-${created.id}` }
       });
+      await postBankingDoubleEntry(tx, {
+        bankingEntryId: created.id,
+        bankTransactionId: bankTx.id,
+        accountTransactionId: accountTx.id,
+        date,
+        bankAccountNo: bank.bankAccountNo,
+        bankAccountName: bank.bankAccountName,
+        accountNo: account.accountNo,
+        accountName: account.accountName,
+        bankDebit: debit,
+        bankCredit: credit,
+        memo,
+        remarks: memo
+      });
       return created;
     });
 
@@ -361,7 +376,7 @@ export async function PATCH(req: Request) {
         accountTransactionId = accountTx.id;
       }
 
-      return tx.bankingEntry.update({
+      const updated = await tx.bankingEntry.update({
         where: { id },
         data: {
           date,
@@ -375,6 +390,21 @@ export async function PATCH(req: Request) {
           accountTransactionId
         }
       });
+      await postBankingDoubleEntry(tx, {
+        bankingEntryId: id,
+        bankTransactionId,
+        accountTransactionId,
+        date,
+        bankAccountNo: bank.bankAccountNo,
+        bankAccountName: bank.bankAccountName,
+        accountNo: account.accountNo,
+        accountName: account.accountName,
+        bankDebit: debit,
+        bankCredit: credit,
+        memo,
+        remarks: memo
+      });
+      return updated;
     });
 
     return NextResponse.json({ entry: entryJson(entry) });
@@ -395,6 +425,7 @@ export async function DELETE(req: Request) {
     });
     await prisma.$transaction(async (tx) => {
       await tx.bankingEntry.delete({ where: { id } });
+      await deleteDoubleEntryPosting(tx, `B:BN-${id}`);
       const ids = [existing?.bankTransactionId, existing?.accountTransactionId].filter(
         (value): value is number => Number.isFinite(value)
       );

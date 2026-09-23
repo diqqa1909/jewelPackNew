@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/lib/generated/prisma";
+import { POSTING_SOURCE, postCashbookDoubleEntry, postSaleDoubleEntry } from "@/lib/double-entry";
 import { getInventoryBalanceRows, normalizeCarat } from "@/lib/inventory-balance";
 import { NextResponse } from "next/server";
 
@@ -42,6 +43,22 @@ async function deleteSaleMoneyPostings(tx: Prisma.TransactionClient, saleNo: str
   });
   const transactionIds = postingTransactions.map((transaction) => transaction.id);
   if (transactionIds.length > 0) {
+    const cashEntries = await tx.cashBookEntry.findMany({
+      where: { transactionId: { in: transactionIds } },
+      select: { id: true }
+    });
+    await tx.doubleTransaction.deleteMany({
+      where: {
+        OR: [
+          { referenceNumber: saleNo },
+          { postingKey: { in: cashEntries.map((entry) => `C:CB-${entry.id}`) } }
+        ]
+      }
+    });
+  } else {
+    await tx.doubleTransaction.deleteMany({ where: { referenceNumber: saleNo } });
+  }
+  if (transactionIds.length > 0) {
     await tx.cashBookEntry.deleteMany({ where: { transactionId: { in: transactionIds } } });
   }
   await tx.transaction.deleteMany({
@@ -67,10 +84,10 @@ async function createSaleMoneyPostings(
   }
 ) {
   const salesAccount = await ensureSalesAccount(tx);
-  await tx.transaction.create({
+  const salesTransaction = await tx.transaction.create({
     data: {
       date: data.date,
-      source: "SALE",
+      source: POSTING_SOURCE.SALES,
       account: salesAccount.name,
       memo: data.saleNo,
       debit: new Prisma.Decimal("0"),
@@ -84,10 +101,10 @@ async function createSaleMoneyPostings(
     }
   });
 
-  await tx.transaction.create({
+  const invoiceTransaction = await tx.transaction.create({
     data: {
       date: data.date,
-      source: "INV",
+      source: POSTING_SOURCE.SALES,
       account: data.customerName,
       memo: data.saleNo,
       debit: data.saleAmount,
@@ -100,12 +117,21 @@ async function createSaleMoneyPostings(
       remarks: data.remarks
     }
   });
+  await postSaleDoubleEntry(tx, {
+    saleNo: data.saleNo,
+    invoiceTransactionId: invoiceTransaction.id,
+    salesTransactionId: salesTransaction.id,
+    date: data.date,
+    amount: data.saleAmount,
+    memo: data.saleNo,
+    remarks: data.remarks
+  });
 
   if (data.paidAmount.greaterThan(new Prisma.Decimal("0"))) {
     const payment = await tx.transaction.create({
       data: {
         date: data.date,
-        source: data.paymentType.toUpperCase(),
+        source: POSTING_SOURCE.CASHBOOK,
         account: data.customerName,
         memo: `Payment for ${data.saleNo}`,
         debit: new Prisma.Decimal("0"),
@@ -118,7 +144,7 @@ async function createSaleMoneyPostings(
         remarks: data.remarks
       }
     });
-    await tx.cashBookEntry.create({
+    const cashEntry = await tx.cashBookEntry.create({
       data: {
         date: data.date,
         accountType: "DR",
@@ -130,6 +156,17 @@ async function createSaleMoneyPostings(
         credit: new Prisma.Decimal("0"),
         transactionId: payment.id
       }
+    });
+    await postCashbookDoubleEntry(tx, {
+      cashBookEntryId: cashEntry.id,
+      transactionId: payment.id,
+      date: data.date,
+      accountNo: data.customerAccountNumber,
+      accountName: data.customerName,
+      transactionDebit: new Prisma.Decimal("0"),
+      transactionCredit: data.paidAmount,
+      memo: `Payment for ${data.saleNo}`,
+      remarks: data.remarks
     });
   }
 }
@@ -357,7 +394,7 @@ export async function POST(req: Request) {
       await tx.transaction.create({
         data: {
           date: txDate,
-          source: "GOLD",
+          source: POSTING_SOURCE.GOLD,
           account: customer.name,
           memo: `Gold received for ${updatedHeader.saleNo}`,
           debit: new Prisma.Decimal("0"),
@@ -573,7 +610,7 @@ export async function POST(req: Request) {
       await tx.transaction.create({
         data: {
           date: txDate,
-          source: "GOLD",
+          source: POSTING_SOURCE.GOLD,
           account: customer.name,
           memo: `Gold ${isGoldReceived ? "received" : "issued"} for ${updatedHeader.saleNo}`,
           debit: new Prisma.Decimal("0"),
@@ -861,7 +898,7 @@ export async function PUT(req: Request) {
         await tx.transaction.create({
           data: {
             date: txDate,
-            source: "GOLD",
+            source: POSTING_SOURCE.GOLD,
             account: customer.name,
             memo: `Gold issued for ${updatedHeader.saleNo}`,
             debit: new Prisma.Decimal("0"),

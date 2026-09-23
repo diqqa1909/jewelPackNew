@@ -1,4 +1,5 @@
 import { Prisma } from "@/lib/generated/prisma";
+import { POSTING_SOURCE, postCustomerPaymentDoubleEntry } from "@/lib/double-entry";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 
@@ -55,19 +56,30 @@ export async function POST(req: Request) {
 
     const referenceNumber = (body.referenceNumber ?? "").trim() || `PAY-${Date.now()}`;
     const paymentType = (body.paymentType ?? "Cash").trim() || "Cash";
-    const transaction = await prisma.transaction.create({
-      data: {
-        date: paymentDate,
-        source: paymentType.toUpperCase(),
-        account: customer.name,
-        memo: `Payment received from ${customer.name}`,
-        debit: new Prisma.Decimal("0"),
-        credit: amount,
-        accountNumber,
-        type: "PAYMENT",
+    const transaction = await prisma.$transaction(async (tx) => {
+      const created = await tx.transaction.create({
+        data: {
+          date: paymentDate,
+          source: POSTING_SOURCE.CASHBOOK,
+          account: customer.name,
+          memo: `Payment received from ${customer.name}`,
+          debit: new Prisma.Decimal("0"),
+          credit: amount,
+          accountNumber,
+          type: "PAYMENT",
+          referenceNumber,
+          remarks: (body.remarks ?? "").trim() || null
+        }
+      });
+      await postCustomerPaymentDoubleEntry(tx, {
         referenceNumber,
+        paymentTransactionId: created.id,
+        date: paymentDate,
+        amount,
+        memo: `Payment received from ${customer.name}`,
         remarks: (body.remarks ?? "").trim() || null
-      }
+      });
+      return created;
     });
 
     return NextResponse.json({

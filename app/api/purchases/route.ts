@@ -1,4 +1,5 @@
 import { Prisma } from "@/lib/generated/prisma";
+import { POSTING_SOURCE, deleteDoubleEntryPosting, postPurchaseDoubleEntry } from "@/lib/double-entry";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 
@@ -266,10 +267,10 @@ export async function POST(req: Request) {
           goldsmithCode: body.gsmCode,
           goldsmithName: selectedGoldsmithName
         });
-        await tx.transaction.create({
+        const purchaseTransaction = await tx.transaction.create({
           data: {
             date: purchaseDate,
-            source: "PUR",
+            source: POSTING_SOURCE.PURCHASES,
             account: account.account,
             memo: purchaseGroupNo,
             debit: new Prisma.Decimal("0"),
@@ -281,6 +282,14 @@ export async function POST(req: Request) {
             referenceNumber: purchaseGroupNo,
             remarks: (body.remarks ?? "").trim() || null
           }
+        });
+        await postPurchaseDoubleEntry(tx, {
+          purchaseGroupNo,
+          purchaseTransactionId: purchaseTransaction.id,
+          date: purchaseDate,
+          amount: groupTotalCost,
+          memo: purchaseGroupNo,
+          remarks: (body.remarks ?? "").trim() || null
         });
       }
 
@@ -414,6 +423,7 @@ export async function PATCH(req: Request) {
           type: "PURCHASE"
         }
       });
+      await deleteDoubleEntryPosting(tx, `P:${purchaseGroupNo}:PURCHASE`);
       if (purchaseType !== "Rate") return firstPurchase;
       const account = purchaseAccount({
         supplierId,
@@ -422,10 +432,10 @@ export async function PATCH(req: Request) {
         goldsmithCode: body.gsmCode,
         goldsmithName: selectedGoldsmithName
       });
-      await tx.transaction.create({
+      const purchaseTransaction = await tx.transaction.create({
         data: {
           date: purchaseDate,
-          source: "PUR",
+          source: POSTING_SOURCE.PURCHASES,
           account: account.account,
           memo: purchaseGroupNo,
           debit: new Prisma.Decimal("0"),
@@ -437,6 +447,14 @@ export async function PATCH(req: Request) {
           referenceNumber: purchaseGroupNo,
           remarks: (body.remarks ?? "").trim() || null
         }
+      });
+      await postPurchaseDoubleEntry(tx, {
+        purchaseGroupNo,
+        purchaseTransactionId: purchaseTransaction.id,
+        date: purchaseDate,
+        amount: groupTotalCost,
+        memo: purchaseGroupNo,
+        remarks: (body.remarks ?? "").trim() || null
       });
       return firstPurchase;
     });
@@ -480,6 +498,7 @@ export async function DELETE(req: Request) {
           type: "PURCHASE"
         }
       });
+      await deleteDoubleEntryPosting(tx, `P:${purchaseGroupNo}:PURCHASE`);
       await tx.purchase.deleteMany({ where: { id: { in: ids } } });
     });
 

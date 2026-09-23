@@ -1,4 +1,5 @@
 import { Prisma } from "@/lib/generated/prisma";
+import { POSTING_SOURCE } from "@/lib/double-entry";
 import { prisma } from "@/lib/prisma";
 import { normalizeCarat } from "@/lib/inventory-balance";
 import { NextResponse } from "next/server";
@@ -126,7 +127,7 @@ export async function POST(req: Request) {
       await tx.transaction.create({
         data: {
           date: txDate,
-          source: "GOLD",
+          source: POSTING_SOURCE.GOLD,
           account: customer.name,
           memo: `Gold received for ${grnNo}`,
           debit: new Prisma.Decimal("0"),
