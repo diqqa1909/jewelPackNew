@@ -21,6 +21,7 @@ type ReportType =
   | "customer-outstanding"
   | "supplier-outstanding"
   | "goldsmith-pending"
+  | "trial-balance"
   | "payments"
   | "cashbook";
 
@@ -46,6 +47,7 @@ const reports: Array<{ type: ReportType; label: string; description: string }> =
   { type: "customer-outstanding", label: "Customer Outstanding", description: "Customer account balances from account transactions." },
   { type: "supplier-outstanding", label: "Supplier Outstanding", description: "Open purchase balances." },
   { type: "goldsmith-pending", label: "Goldsmith Received", description: "Received pieces and gold weight by goldsmith." },
+  { type: "trial-balance", label: "Trial Balance", description: "Debit and credit balances for every account used in posted transactions." },
   { type: "payments", label: "Payments", description: "Customer payment transactions." },
   { type: "cashbook", label: "Cashbook", description: "Cash and bank debit/credit transaction report." }
 ];

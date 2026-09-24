@@ -1,4 +1,5 @@
 import { buttonClassName } from "@/components/ui/Button";
+import { purchaseGoldCredit24Kt, to24KtWeight } from "@/lib/gold-weight";
 import { prismaWithRetry } from "@/lib/prisma";
 import { Eye, Plus } from "lucide-react";
 import Link from "next/link";
@@ -13,11 +14,6 @@ function toNumber(value: unknown) {
 function fmt(value: unknown, fractionDigits = 3) {
   const n = toNumber(value);
   return n.toLocaleString("en-US", { minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits });
-}
-
-function realGoldWeight(goldWeight: unknown, wastageMg: unknown, carat: string | null) {
-  const karatValue = Number.parseFloat(carat ?? "") || 0;
-  return ((toNumber(goldWeight) + toNumber(wastageMg) / 1000) / 24) * karatValue;
 }
 
 export default async function GoldsmithTrackingPage({ params }: { params: { code: string } }) {
@@ -51,7 +47,7 @@ export default async function GoldsmithTrackingPage({ params }: { params: { code
       subcategoryName: isCashIssue ? "Cash Issue" : "Gold Issue",
       carat: isCashIssue ? "-" : issue.carat ?? "-",
       receivedGoldWeight: 0,
-      issuedGoldWeight: isCashIssue ? 0 : toNumber(issue.goldWeight),
+      issuedGoldWeight: isCashIssue ? 0 : to24KtWeight(issue.goldWeight, issue.carat),
       labourCharges: 0,
       labourChargePaid: isCashIssue ? toNumber(issue.cashAmount) : 0,
       labourChargeBalance: isCashIssue ? -toNumber(issue.cashAmount) : 0,
@@ -64,7 +60,7 @@ export default async function GoldsmithTrackingPage({ params }: { params: { code
     const isRatePurchase = purchase.purchaseType.trim().toLowerCase() === "rate";
     const creditedGoldWeight = isRatePurchase
       ? 0
-      : realGoldWeight(purchase.goldWeight, purchase.wastageMg, purchase.carat);
+      : purchaseGoldCredit24Kt(purchase.goldWeight, purchase.wastageMg, purchase.carat);
     const cashCredit = isRatePurchase ? toNumber(purchase.totalCost) : toNumber(purchase.labourCharges);
     return {
       id: `PUR-${purchase.id}`,
@@ -117,9 +113,9 @@ export default async function GoldsmithTrackingPage({ params }: { params: { code
             <thead className="bg-ebony-50 text-left text-xs font-bold text-ebony-700">
               <tr>
                 <th className="px-4 py-4">Worker Name</th>
-                <th className="px-4 py-4 text-right">Gold Dr</th>
-                <th className="px-4 py-4 text-right">Gold Cr</th>
-                <th className="px-4 py-4 text-right">Gold Bl</th>
+                <th className="px-4 py-4 text-right">Gold Dr 24KT</th>
+                <th className="px-4 py-4 text-right">Gold Cr 24KT</th>
+                <th className="px-4 py-4 text-right">Gold Bl 24KT</th>
                 <th className="px-4 py-4 text-right">Cash Dr</th>
                 <th className="px-4 py-4 text-right">Cash Cr</th>
                 <th className="px-4 py-4 text-right">Cash Bl</th>
@@ -173,9 +169,9 @@ export default async function GoldsmithTrackingPage({ params }: { params: { code
               <tr>
                 <th className="px-4 py-3">Date</th>
                 <th className="px-4 py-3">Item</th>
-                <th className="px-4 py-3 text-right">Gold Dr</th>
-                <th className="px-4 py-3 text-right">Gold Cr</th>
-                <th className="px-4 py-3 text-right">Gold Bl</th>
+                <th className="px-4 py-3 text-right">Gold Dr 24KT</th>
+                <th className="px-4 py-3 text-right">Gold Cr 24KT</th>
+                <th className="px-4 py-3 text-right">Gold Bl 24KT</th>
                 <th className="px-4 py-3 text-right">Cash Dr</th>
                 <th className="px-4 py-3 text-right">Cash Cr</th>
                 <th className="px-4 py-3 text-right">Cash Bl</th>

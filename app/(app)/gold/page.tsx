@@ -1,5 +1,6 @@
 import { GoldIssueButton } from "@/components/app/GoldIssueActions";
 import { SalesForm } from "@/components/app/SalesForm";
+import { purchaseGoldCredit24Kt, to24KtWeight } from "@/lib/gold-weight";
 import { prismaWithRetry } from "@/lib/prisma";
 import { ArrowDownLeft, ArrowUpRight, Eye, Filter, Gem, Plus, Search } from "lucide-react";
 import Link from "next/link";
@@ -281,7 +282,7 @@ export default async function GoldPage({
       goldsmithName: issue.goldsmith.name,
       item: "Gold Issue",
       carat: issue.carat,
-      issued: toNumber(issue.goldWeight),
+      issued: to24KtWeight(issue.goldWeight, issue.carat),
       received: 0,
       remarks: issue.remarks ?? ""
     })),
@@ -296,7 +297,9 @@ export default async function GoldPage({
       item: purchase.subcategoryName ?? purchase.subcategoryCode ?? "-",
       carat: purchase.carat ?? "-",
       issued: 0,
-      received: toNumber(purchase.goldWeight),
+      received: purchase.purchaseType.trim().toLowerCase() === "rate"
+        ? 0
+        : purchaseGoldCredit24Kt(purchase.goldWeight, purchase.wastageMg, purchase.carat),
       remarks: purchase.remarks ?? purchase.notes ?? ""
     }))
   ].sort((a, b) => a.date.getTime() - b.date.getTime() || a.id.localeCompare(b.id));
@@ -424,9 +427,9 @@ export default async function GoldPage({
   }
 
   const metricCards = [
-    { label: "Gold Issued", value: `${weight(totals.issued)} g`, icon: ArrowUpRight, tone: "text-amber-700 bg-amber-50" },
-    { label: "Gold Received", value: `${weight(totals.received)} g`, icon: ArrowDownLeft, tone: "text-emerald-700 bg-emerald-50" },
-    { label: "Gold Balance", value: `${weight(balanceTotal)} g`, icon: Gem, tone: "text-indigo-700 bg-indigo-50" }
+    { label: "Gold Issued 24KT", value: `${weight(totals.issued)} g`, icon: ArrowUpRight, tone: "text-amber-700 bg-amber-50" },
+    { label: "Gold Received 24KT", value: `${weight(totals.received)} g`, icon: ArrowDownLeft, tone: "text-emerald-700 bg-emerald-50" },
+    { label: "Gold Balance 24KT", value: `${weight(balanceTotal)} g`, icon: Gem, tone: "text-indigo-700 bg-indigo-50" }
   ];
 
   return (
@@ -504,7 +507,7 @@ export default async function GoldPage({
                 {from ? ` before ${dateInput(from)}` : " from beginning"}
               </div>
             </div>
-            <div className="text-2xl font-extrabold tabular-nums text-amber-800">{weight(openingBalance)} g</div>
+            <div className="text-2xl font-extrabold tabular-nums text-amber-800">{weight(openingBalance)} g 24KT</div>
           </div>
         </section>
       ) : null}
@@ -538,9 +541,9 @@ export default async function GoldPage({
               <tr>
                 <th className="px-4 py-3">Goldsmith</th>
                 <th className="px-4 py-3">Supplier</th>
-                <th className="px-4 py-3 text-right">Issued (g)</th>
-                <th className="px-4 py-3 text-right">Received (g)</th>
-                <th className="px-4 py-3 text-right">Balance (g)</th>
+                <th className="px-4 py-3 text-right">Issued 24KT (g)</th>
+                <th className="px-4 py-3 text-right">Received 24KT (g)</th>
+                <th className="px-4 py-3 text-right">Balance 24KT (g)</th>
                 <th className="px-4 py-3 text-right">Transactions</th>
                 <th className="px-4 py-3 text-center">Action</th>
               </tr>
@@ -591,9 +594,9 @@ export default async function GoldPage({
                 <th className="px-4 py-3">Supplier</th>
                 <th className="px-4 py-3">Item</th>
                 <th className="px-4 py-3">Karat</th>
-                <th className="px-4 py-3 text-right">Issued (g)</th>
-                <th className="px-4 py-3 text-right">Received (g)</th>
-                <th className="px-4 py-3 text-right">Balance (g)</th>
+                <th className="px-4 py-3 text-right">Issued 24KT (g)</th>
+                <th className="px-4 py-3 text-right">Received 24KT (g)</th>
+                <th className="px-4 py-3 text-right">Balance 24KT (g)</th>
                 <th className="px-4 py-3">Remarks</th>
               </tr>
             </thead>

@@ -4,13 +4,23 @@ import { buttonClassName } from "@/components/ui/Button";
 import { DeleteConfirmModal } from "@/components/ui/DeleteConfirmModal";
 import { GoldIssueButton } from "@/components/app/GoldIssueActions";
 import { useToast } from "@/components/ui/ToastProvider";
-import type { Goldsmith } from "@/lib/generated/prisma";
 import { cn } from "@/lib/utils";
 import { Hammer, Pencil, Plus, Search, Trash2, Users, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
-type GoldsmithRow = Goldsmith & {
+type GoldsmithRow = {
+  id?: number;
+  code: string;
+  name: string;
+  contact?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  address?: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  accountNumber: string;
+  rowType: "goldsmith" | "supplier";
   goldDr: number;
   goldCr: number;
   goldBl: number;
@@ -26,15 +36,24 @@ export function GoldsmithsTable({ initial }: Props) {
   const toast = useToast();
   const [rows, setRows] = useState<GoldsmithRow[]>(initial);
   const [editingCode, setEditingCode] = useState<string | null>(null);
+  const [editingSupplierId, setEditingSupplierId] = useState<number | null>(null);
+  const [formType, setFormType] = useState<"goldsmith" | "supplier">("goldsmith");
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
+  const [contact, setContact] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [address, setAddress] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [deleteTarget, setDeleteTarget] = useState<Goldsmith | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<GoldsmithRow | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [query, setQuery] = useState("");
 
-  const canSave = useMemo(() => code.trim() !== "" && name.trim() !== "" && !busy, [busy, code, name]);
+  const canSave = useMemo(
+    () => name.trim() !== "" && (formType === "supplier" || code.trim() !== "") && !busy,
+    [busy, code, formType, name]
+  );
   const filteredRows = useMemo(() => {
     const term = query.trim().toLowerCase();
     if (!term) return rows;
@@ -59,20 +78,33 @@ export function GoldsmithsTable({ initial }: Props) {
 
   function reset() {
     setEditingCode(null);
+    setEditingSupplierId(null);
+    setFormType("goldsmith");
     setCode("");
     setName("");
+    setContact("");
+    setPhone("");
+    setEmail("");
+    setAddress("");
   }
 
-  function openAddModal() {
+  function openAddModal(nextType: "goldsmith" | "supplier") {
     reset();
+    setFormType(nextType);
     setError("");
     setIsModalOpen(true);
   }
 
-  function openEditModal(row: Goldsmith) {
-    setEditingCode(row.code);
-    setCode(row.code);
+  function openEditModal(row: GoldsmithRow) {
+    setFormType(row.rowType);
+    setEditingCode(row.rowType === "goldsmith" ? row.code : null);
+    setEditingSupplierId(row.rowType === "supplier" ? row.id ?? null : null);
+    setCode(row.rowType === "goldsmith" ? row.code : row.accountNumber);
     setName(row.name);
+    setContact(row.contact ?? "");
+    setPhone(row.phone ?? "");
+    setEmail(row.email ?? "");
+    setAddress(row.address ?? "");
     setError("");
     setIsModalOpen(true);
   }
@@ -104,7 +136,7 @@ export function GoldsmithsTable({ initial }: Props) {
   async function save() {
     if (!canSave) return;
     const normalizedCode = code.trim().toUpperCase();
-    if (!editingCode && rows.some((row) => row.code.trim().toUpperCase() === normalizedCode)) {
+    if (formType === "goldsmith" && !editingCode && rows.some((row) => row.rowType === "goldsmith" && row.code.trim().toUpperCase() === normalizedCode)) {
       const message = `Goldsmith code ${normalizedCode} already exists`;
       setError(message);
       toast.error("Unable to add goldsmith", message);
@@ -113,30 +145,94 @@ export function GoldsmithsTable({ initial }: Props) {
     setBusy(true);
     setError("");
     try {
-      const res = await fetch("/api/goldsmiths", {
-        method: editingCode ? "PATCH" : "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ code: editingCode ?? normalizedCode, name })
-      });
-      const json = (await res.json().catch(() => null)) as { error?: string; goldsmith?: Goldsmith } | null;
-      if (!res.ok) throw new Error(json?.error ?? "Save failed");
-      const saved = json?.goldsmith;
-      if (!saved) throw new Error("Save failed");
+      if (formType === "goldsmith") {
+        const res = await fetch("/api/goldsmiths", {
+          method: editingCode ? "PATCH" : "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ code: editingCode ?? normalizedCode, name })
+        });
+        const json = (await res.json().catch(() => null)) as {
+          error?: string;
+          goldsmith?: { code: string; name: string; createdAt: Date; updatedAt: Date };
+        } | null;
+        if (!res.ok) throw new Error(json?.error ?? "Save failed");
+        const saved = json?.goldsmith;
+        if (!saved) throw new Error("Save failed");
 
-      setRows((prev) => {
-        const existing = prev.find((row) => row.code === saved.code);
-        const savedRow: GoldsmithRow = {
-          ...saved,
-          goldDr: existing?.goldDr ?? 0,
-          goldCr: existing?.goldCr ?? 0,
-          goldBl: existing?.goldBl ?? 0,
-          cashDr: existing?.cashDr ?? 0,
-          cashCr: existing?.cashCr ?? 0,
-          cashBl: existing?.cashBl ?? 0
-        };
-        return [...prev.filter((row) => row.code !== saved.code), savedRow].sort((a, b) => a.code.localeCompare(b.code));
-      });
-      toast.success(editingCode ? "Goldsmith updated" : "Goldsmith added");
+        setRows((prev) => {
+          const existing = prev.find((row) => row.rowType === "goldsmith" && row.code === saved.code);
+          const savedRow: GoldsmithRow = {
+            ...saved,
+            id: undefined,
+            contact: null,
+            phone: null,
+            email: null,
+            address: null,
+            accountNumber: `GSM-${saved.code}`,
+            rowType: "goldsmith",
+            goldDr: existing?.goldDr ?? 0,
+            goldCr: existing?.goldCr ?? 0,
+            goldBl: existing?.goldBl ?? 0,
+            cashDr: existing?.cashDr ?? 0,
+            cashCr: existing?.cashCr ?? 0,
+            cashBl: existing?.cashBl ?? 0
+          };
+          return [...prev.filter((row) => !(row.rowType === "goldsmith" && row.code === saved.code)), savedRow].sort(
+            (a, b) => a.name.localeCompare(b.name) || a.code.localeCompare(b.code)
+          );
+        });
+        toast.success(editingCode ? "Goldsmith updated" : "Goldsmith added");
+      } else {
+        const res = await fetch("/api/suppliers", {
+          method: editingSupplierId ? "PATCH" : "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id: editingSupplierId, name, contact, phone, email, address })
+        });
+        const json = (await res.json().catch(() => null)) as {
+          error?: string;
+          supplier?: {
+            id: number;
+            accountNumber: string | null;
+            name: string;
+            contact: string | null;
+            phone: string | null;
+            email: string | null;
+            address: string | null;
+            createdAt: Date;
+            updatedAt: Date;
+          };
+        } | null;
+        if (!res.ok) throw new Error(json?.error ?? "Save failed");
+        const saved = json?.supplier;
+        if (!saved) throw new Error("Save failed");
+        const supplierCode = saved.accountNumber ?? `SUP-${String(saved.id).padStart(4, "0")}`;
+        setRows((prev) => {
+          const existing = prev.find((row) => row.rowType === "supplier" && row.id === saved.id);
+          const savedRow: GoldsmithRow = {
+            id: saved.id,
+            code: supplierCode,
+            name: saved.name,
+            contact: saved.contact,
+            phone: saved.phone,
+            email: saved.email,
+            address: saved.address,
+            createdAt: saved.createdAt,
+            updatedAt: saved.updatedAt,
+            accountNumber: supplierCode,
+            rowType: "supplier",
+            goldDr: existing?.goldDr ?? 0,
+            goldCr: existing?.goldCr ?? 0,
+            goldBl: existing?.goldBl ?? 0,
+            cashDr: existing?.cashDr ?? 0,
+            cashCr: existing?.cashCr ?? 0,
+            cashBl: existing?.cashBl ?? 0
+          };
+          return [...prev.filter((row) => !(row.rowType === "supplier" && row.id === saved.id)), savedRow].sort(
+            (a, b) => a.name.localeCompare(b.name) || a.code.localeCompare(b.code)
+          );
+        });
+        toast.success(editingSupplierId ? "Supplier updated" : "Supplier added");
+      }
       reset();
       setIsModalOpen(false);
     } catch (e) {
@@ -177,16 +273,23 @@ export function GoldsmithsTable({ initial }: Props) {
             Create, manage, and track supplier goldsmith profiles used in purchases and worker records.
           </p>
         </div>
-        <button type="button" onClick={openAddModal} className={buttonClassName("primary", "h-10 px-4")}>
-          <Plus className="h-4 w-4" />
-          Add Goldsmith
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => openAddModal("supplier")} className={buttonClassName("secondary", "h-10 px-4")}>
+            <Plus className="h-4 w-4" />
+            Add Supplier
+          </button>
+          <button type="button" onClick={() => openAddModal("goldsmith")} className={buttonClassName("primary", "h-10 px-4")}>
+            <Plus className="h-4 w-4" />
+            Add Goldsmith
+          </button>
+        </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
-          { label: "Total Goldsmiths", value: rows.length.toLocaleString("en-US"), meta: "Profiles created" },
-          { label: "Active Suppliers", value: rows.length.toLocaleString("en-US"), meta: "Ready for purchases" },
+          { label: "Total Accounts", value: rows.length.toLocaleString("en-US"), meta: "Suppliers and goldsmiths" },
+          { label: "Goldsmiths", value: rows.filter((row) => row.rowType === "goldsmith").length.toLocaleString("en-US"), meta: "Worker profiles" },
+          { label: "Suppliers", value: rows.filter((row) => row.rowType === "supplier").length.toLocaleString("en-US"), meta: "Creditor profiles" },
           { label: "Purchase Links", value: "LKR 0", meta: "Purchase tracking placeholder" },
           { label: "Labour Pending", value: "LKR 0", meta: "Labour tracking placeholder" }
         ].map((stat) => (
@@ -212,7 +315,7 @@ export function GoldsmithsTable({ initial }: Props) {
       <div className="rounded-lg border border-ebony-100 bg-white shadow-sm">
         <div className="flex flex-col gap-3 border-b border-ebony-100 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-sm font-bold text-ebony-950">Goldsmith Directory</h2>
+            <h2 className="text-sm font-bold text-ebony-950">Suppliers / Goldsmiths Directory</h2>
             <p className="mt-1 text-xs font-semibold text-ebony-500">{filteredRows.length} records shown</p>
           </div>
           <label className="relative w-full sm:max-w-sm">
@@ -221,7 +324,7 @@ export function GoldsmithsTable({ initial }: Props) {
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search by GSM code or name..."
+              placeholder="Search by account, GSM code, or name..."
               className="h-10 w-full rounded-lg border border-ebony-200 bg-white pl-9 pr-3 text-sm font-medium text-ebony-900 outline-none placeholder:text-ebony-400 focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
             />
           </label>
@@ -236,7 +339,7 @@ export function GoldsmithsTable({ initial }: Props) {
             <p className="mt-2 max-w-md text-sm font-medium leading-6 text-ebony-600">
               Add your first supplier goldsmith to start recording purchases and labour tracking.
             </p>
-            <button type="button" onClick={openAddModal} className={buttonClassName("primary", "mt-5 h-10 px-4")}>
+            <button type="button" onClick={() => openAddModal("goldsmith")} className={buttonClassName("primary", "mt-5 h-10 px-4")}>
               <Plus className="h-4 w-4" />
               Add Goldsmith
             </button>
@@ -246,11 +349,11 @@ export function GoldsmithsTable({ initial }: Props) {
             <table className="min-w-[1180px] w-full text-sm">
               <thead className="bg-ebony-50 text-left text-[11px] font-bold uppercase tracking-wide text-ebony-600">
                 <tr>
-                  <th className="px-5 py-3">Goldsmith</th>
-                  <th className="px-5 py-3">GSM Code</th>
-                  <th className="px-3 py-3 text-right">Gold Dr</th>
-                  <th className="px-3 py-3 text-right">Gold Cr</th>
-                  <th className="px-3 py-3 text-right">Gold Bl</th>
+                  <th className="px-5 py-3">Supplier / Goldsmith</th>
+                  <th className="px-5 py-3">Account No</th>
+                  <th className="px-3 py-3 text-right">Gold Dr 24KT</th>
+                  <th className="px-3 py-3 text-right">Gold Cr 24KT</th>
+                  <th className="px-3 py-3 text-right">Gold Bl 24KT</th>
                   <th className="px-3 py-3 text-right">Cash Dr</th>
                   <th className="px-3 py-3 text-right">Cash Cr</th>
                   <th className="px-3 py-3 text-right">Cash Bl</th>
@@ -261,9 +364,11 @@ export function GoldsmithsTable({ initial }: Props) {
                 {filteredRows.map((row) => (
                   <tr
                     key={row.code}
-                    className="cursor-pointer bg-white transition hover:bg-gold-50/30"
-                    onClick={() => router.push(`/goldsmiths/${encodeURIComponent(row.code)}`)}
-                    title="View goldsmith tracking"
+                    className={`${row.rowType === "goldsmith" ? "cursor-pointer" : ""} bg-white transition hover:bg-gold-50/30`}
+                    onClick={() => {
+                      if (row.rowType === "goldsmith") router.push(`/goldsmiths/${encodeURIComponent(row.code)}`);
+                    }}
+                    title={row.rowType === "goldsmith" ? "View goldsmith tracking" : "Supplier creditor account"}
                   >
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-3">
@@ -272,11 +377,11 @@ export function GoldsmithsTable({ initial }: Props) {
                         </div>
                         <div className="min-w-0">
                           <div className="truncate font-bold text-ebony-950">{row.name}</div>
-                          <div className="mt-0.5 text-xs font-semibold text-ebony-500">{row.code}</div>
+                          <div className="mt-0.5 text-xs font-semibold text-ebony-500">{row.rowType === "goldsmith" ? "Goldsmith" : "Supplier"}</div>
                         </div>
                       </div>
                     </td>
-                    <td className="px-5 py-4 font-bold tabular-nums text-ebony-900">{row.code}</td>
+                    <td className="px-5 py-4 font-bold tabular-nums text-ebony-900">{row.accountNumber}</td>
                     <td className="px-3 py-4 text-right font-semibold tabular-nums text-ebony-800">{formatBalance(row.goldDr, 3)}</td>
                     <td className="px-3 py-4 text-right font-semibold tabular-nums text-ebony-800">{formatBalance(row.goldCr, 3)}</td>
                     <td className="px-3 py-4 text-right font-bold tabular-nums text-ebony-950">{formatBalance(row.goldBl, 3)}</td>
@@ -285,38 +390,56 @@ export function GoldsmithsTable({ initial }: Props) {
                     <td className="px-3 py-4 text-right font-bold tabular-nums text-ebony-950">{formatBalance(row.cashBl, 2)}</td>
                     <td className="px-5 py-4 text-right">
                       <div className="inline-flex items-center gap-2">
-                        <div onClick={(e) => e.stopPropagation()}>
-                          <GoldIssueButton
-                            goldsmith={{ code: row.code, name: row.name }}
-                            className="inline-flex h-9 items-center justify-center gap-1 rounded-lg border border-gold-200 bg-white px-3 text-xs font-bold text-gold-700 hover:bg-gold-50"
-                          />
-                        </div>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openEditModal(row);
-                          }}
-                          disabled={busy}
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-ebony-200 bg-white text-ebony-700 transition hover:bg-ebony-50 disabled:cursor-not-allowed disabled:opacity-60"
-                          aria-label={`Edit ${row.name}`}
-                          title="Edit"
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setDeleteTarget(row);
-                          }}
-                          disabled={busy}
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-red-200 bg-white text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
-                          aria-label={`Delete ${row.name}`}
-                          title="Delete"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        {row.rowType === "goldsmith" ? (
+                          <>
+                            <div onClick={(e) => e.stopPropagation()}>
+                              <GoldIssueButton
+                                goldsmith={{ code: row.code, name: row.name }}
+                                className="inline-flex h-9 items-center justify-center gap-1 rounded-lg border border-gold-200 bg-white px-3 text-xs font-bold text-gold-700 hover:bg-gold-50"
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openEditModal(row);
+                              }}
+                              disabled={busy}
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-ebony-200 bg-white text-ebony-700 transition hover:bg-ebony-50 disabled:cursor-not-allowed disabled:opacity-60"
+                              aria-label={`Edit ${row.name}`}
+                              title="Edit"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeleteTarget(row);
+                              }}
+                              disabled={busy}
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-red-200 bg-white text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                              aria-label={`Delete ${row.name}`}
+                              title="Delete"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openEditModal(row);
+                            }}
+                            disabled={busy}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-ebony-200 bg-white text-ebony-700 transition hover:bg-ebony-50 disabled:cursor-not-allowed disabled:opacity-60"
+                            aria-label={`Edit ${row.name}`}
+                            title="Edit"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -324,7 +447,7 @@ export function GoldsmithsTable({ initial }: Props) {
                 {filteredRows.length === 0 && (
                   <tr>
                     <td className="px-5 py-10 text-center text-sm font-medium text-ebony-600" colSpan={10}>
-                      No goldsmiths match your search.
+                      No suppliers or goldsmiths match your search.
                     </td>
                   </tr>
                 )}
@@ -356,10 +479,18 @@ export function GoldsmithsTable({ initial }: Props) {
               <div className="flex items-start justify-between gap-4 border-b border-ebony-100 px-5 py-4">
                 <div>
                   <h2 id="goldsmith-modal-title" className="text-lg font-extrabold text-ebony-950">
-                    {editingCode ? "Edit Goldsmith" : "Add Goldsmith"}
+                    {formType === "goldsmith"
+                      ? editingCode
+                        ? "Edit Goldsmith"
+                        : "Add Goldsmith"
+                      : editingSupplierId
+                        ? "Edit Supplier"
+                        : "Add Supplier"}
                   </h2>
                   <p className="mt-1 text-sm font-medium leading-6 text-ebony-600">
-                    Create a supplier goldsmith profile for purchase entry and worker tracking.
+                    {formType === "goldsmith"
+                      ? "Create a supplier goldsmith profile for purchase entry and worker tracking."
+                      : "Create a supplier creditor profile for purchases and outstanding balances."}
                   </p>
                 </div>
                 <button
@@ -381,26 +512,74 @@ export function GoldsmithsTable({ initial }: Props) {
                   </div>
                 )}
 
-                <label className="block">
-                  <span className="text-xs font-bold text-ebony-800">GSM Code *</span>
-                  <input
-                    value={code}
-                    onChange={(e) => setCode(e.target.value.toUpperCase())}
-                    readOnly={editingCode !== null}
-                    style={{ textTransform: "uppercase" }}
-                    className="mt-2 h-11 w-full rounded-lg border border-ebony-200 bg-white px-4 text-sm font-semibold text-ebony-900 outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20 read-only:bg-ebony-50 read-only:text-ebony-600"
-                    autoFocus
-                  />
-                </label>
+                {formType === "goldsmith" ? (
+                  <label className="block">
+                    <span className="text-xs font-bold text-ebony-800">GSM Code *</span>
+                    <input
+                      value={code}
+                      onChange={(e) => setCode(e.target.value.toUpperCase())}
+                      readOnly={editingCode !== null}
+                      style={{ textTransform: "uppercase" }}
+                      className="mt-2 h-11 w-full rounded-lg border border-ebony-200 bg-white px-4 text-sm font-semibold text-ebony-900 outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20 read-only:bg-ebony-50 read-only:text-ebony-600"
+                      autoFocus
+                    />
+                  </label>
+                ) : editingSupplierId ? (
+                  <label className="block">
+                    <span className="text-xs font-bold text-ebony-800">Supplier Account</span>
+                    <input
+                      value={code}
+                      readOnly
+                      className="mt-2 h-11 w-full rounded-lg border border-ebony-200 bg-ebony-50 px-4 text-sm font-semibold text-ebony-700 outline-none"
+                    />
+                  </label>
+                ) : null}
 
                 <label className="block">
-                  <span className="text-xs font-bold text-ebony-800">Goldsmith Name *</span>
+                  <span className="text-xs font-bold text-ebony-800">{formType === "goldsmith" ? "Goldsmith Name *" : "Supplier Name *"}</span>
                   <input
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     className="mt-2 h-11 w-full rounded-lg border border-ebony-200 bg-white px-4 text-sm font-semibold text-ebony-900 outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
                   />
                 </label>
+
+                {formType === "supplier" ? (
+                  <>
+                    <label className="block">
+                      <span className="text-xs font-bold text-ebony-800">Contact</span>
+                      <input
+                        value={contact}
+                        onChange={(e) => setContact(e.target.value)}
+                        className="mt-2 h-11 w-full rounded-lg border border-ebony-200 bg-white px-4 text-sm font-semibold text-ebony-900 outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-bold text-ebony-800">Phone</span>
+                      <input
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        className="mt-2 h-11 w-full rounded-lg border border-ebony-200 bg-white px-4 text-sm font-semibold text-ebony-900 outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-bold text-ebony-800">Email</span>
+                      <input
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        className="mt-2 h-11 w-full rounded-lg border border-ebony-200 bg-white px-4 text-sm font-semibold text-ebony-900 outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-bold text-ebony-800">Address</span>
+                      <textarea
+                        value={address}
+                        onChange={(e) => setAddress(e.target.value)}
+                        className="mt-2 min-h-20 w-full rounded-lg border border-ebony-200 bg-white px-4 py-3 text-sm font-semibold text-ebony-900 outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-400/20"
+                      />
+                    </label>
+                  </>
+                ) : null}
               </div>
 
               <div className="flex flex-col-reverse gap-2 border-t border-ebony-100 px-5 py-4 sm:flex-row sm:justify-end">
@@ -413,7 +592,7 @@ export function GoldsmithsTable({ initial }: Props) {
                   Cancel
                 </button>
                 <button type="submit" disabled={!canSave} className={cn(buttonClassName("primary", "h-10 px-4"), "justify-center")}>
-                  {busy ? "Saving..." : "Save Goldsmith"}
+                  {busy ? "Saving..." : formType === "goldsmith" ? "Save Goldsmith" : "Save Supplier"}
                 </button>
               </div>
             </form>

@@ -17,6 +17,7 @@ type ReportType =
   | "customer-outstanding"
   | "supplier-outstanding"
   | "goldsmith-pending"
+  | "trial-balance"
   | "payments"
   | "cashbook";
 
@@ -36,6 +37,7 @@ const REPORT_TITLES: Record<ReportType, string> = {
   "customer-outstanding": "Customer Outstanding",
   "supplier-outstanding": "Supplier Outstanding",
   "goldsmith-pending": "Goldsmith Received Stock",
+  "trial-balance": "Trial Balance",
   payments: "Payments",
   cashbook: "Cashbook"
 };
@@ -481,6 +483,111 @@ export async function GET(req: Request) {
       rows,
       totals: sumRows(rows, ["entries", "receivedQty", "receivedWeight"]),
       chartKey: "receivedWeight",
+      appliedFilters
+    });
+  }
+
+  if (type === "trial-balance") {
+    const [postings, ledgerAccounts, mappings, customers, suppliers, goldsmiths, purchases, sales] = await Promise.all([
+      prisma.doubleTransaction.findMany({
+        where: txDateWhere,
+        select: { postingKey: true, accountNumber: true, debit: true, credit: true },
+        orderBy: [{ accountNumber: "asc" }]
+      }),
+      prisma.generalLedgerAccount.findMany({
+        select: { accountNumber: true, name: true },
+        orderBy: [{ accountNumber: "asc" }]
+      }),
+      prisma.systemAccountMapping.findMany({
+        where: { key: { in: ["SALES_ACCOUNT", "PURCHASES_ACCOUNT", "DEBTORS_CONTROL_ACCOUNT", "CREDITORS_CONTROL_ACCOUNT"] } },
+        include: { account: true }
+      }),
+      prisma.customer.findMany({ where: { accountNumber: { not: null } }, select: { accountNumber: true } }),
+      prisma.supplier.findMany({ select: { id: true, accountNumber: true, goldsmithCode: true } }),
+      prisma.goldsmith.findMany({ select: { code: true } }),
+      prisma.purchase.findMany({
+        where: purchaseDateWhere,
+        select: { purchaseGroupNo: true, purchaseNo: true, totalCost: true }
+      }),
+      prisma.salesNTX.findMany({
+        where: saleDateWhere,
+        select: { saleNo: true, sellSubTotal: true }
+      })
+    ]);
+    const ledgerAccountByNumber = new Map(ledgerAccounts.map((account) => [account.accountNumber, account]));
+    const mappingByKey = new Map(mappings.map((mapping) => [mapping.key, mapping.account]));
+    const salesAccount = mappingByKey.get("SALES_ACCOUNT");
+    const purchasesAccount = mappingByKey.get("PURCHASES_ACCOUNT");
+    const debtorsAccount = mappingByKey.get("DEBTORS_CONTROL_ACCOUNT");
+    const creditorsAccount = mappingByKey.get("CREDITORS_CONTROL_ACCOUNT");
+    const customerAccounts = new Set(customers.map((customer) => (customer.accountNumber ?? "").trim()).filter(Boolean));
+    const supplierAccounts = new Set(
+      suppliers.flatMap((supplier) => [
+        (supplier.accountNumber ?? "").trim(),
+        `SUP-${String(supplier.id).padStart(4, "0")}`,
+        supplier.goldsmithCode ? `GSM-${supplier.goldsmithCode.trim()}` : ""
+      ]).filter(Boolean)
+    );
+    const goldsmithAccounts = new Set(goldsmiths.map((goldsmith) => `GSM-${goldsmith.code.trim()}`));
+    function trialBalanceAccount(accountNumber: string) {
+      const ledgerAccount = ledgerAccountByNumber.get(accountNumber);
+      if (ledgerAccount) return ledgerAccount;
+      if (customerAccounts.has(accountNumber)) return debtorsAccount ?? null;
+      if (supplierAccounts.has(accountNumber) || goldsmithAccounts.has(accountNumber)) return creditorsAccount ?? null;
+      return null;
+    }
+    const map = new Map<string, Row>();
+    function addTrialBalanceAmount(
+      account: { accountNumber: string; name: string } | null | undefined,
+      debit: unknown,
+      credit: unknown
+    ) {
+      if (!account) return;
+      const key = account.accountNumber;
+      const row = map.get(key) ?? { accountNumber: account.accountNumber, account: account.name, debit: 0, credit: 0, debitBalance: 0, creditBalance: 0 };
+      row.debit = toNumber(row.debit) + toNumber(debit);
+      row.credit = toNumber(row.credit) + toNumber(credit);
+      const balance = toNumber(row.debit) - toNumber(row.credit);
+      row.debitBalance = balance > 0 ? balance : 0;
+      row.creditBalance = balance < 0 ? Math.abs(balance) : 0;
+      map.set(key, row);
+    }
+    for (const posting of postings) {
+      const accountNumber = (posting.accountNumber ?? "").trim();
+      addTrialBalanceAmount(trialBalanceAccount(accountNumber), posting.debit, posting.credit);
+    }
+    const postedKeys = new Set(postings.map((posting) => posting.postingKey));
+    const purchaseTotalsByGroup = purchases.reduce((groupMap, purchase) => {
+      const key = purchase.purchaseGroupNo ?? purchase.purchaseNo;
+      groupMap.set(key, (groupMap.get(key) ?? 0) + toNumber(purchase.totalCost));
+      return groupMap;
+    }, new Map<string, number>());
+    for (const [purchaseGroupNo, amount] of purchaseTotalsByGroup.entries()) {
+      if (postedKeys.has(`P:${purchaseGroupNo}:PURCHASE`)) continue;
+      addTrialBalanceAmount(purchasesAccount, amount, 0);
+      addTrialBalanceAmount(creditorsAccount, 0, amount);
+    }
+    for (const sale of sales) {
+      if (postedKeys.has(`S:${sale.saleNo}:INVOICE`)) continue;
+      const amount = toNumber(sale.sellSubTotal);
+      addTrialBalanceAmount(debtorsAccount, amount, 0);
+      addTrialBalanceAmount(salesAccount, 0, amount);
+    }
+    const rows = Array.from(map.values())
+      .filter((row) => toNumber(row.debit) !== 0 || toNumber(row.credit) !== 0)
+      .sort((a, b) => String(a.accountNumber).localeCompare(String(b.accountNumber)));
+    return reportResponse({
+      type,
+      columns: [
+        { key: "accountNumber", label: "Account No" },
+        { key: "account", label: "Account" },
+        { key: "debit", label: "Debit", type: "currency" },
+        { key: "credit", label: "Credit", type: "currency" },
+        { key: "debitBalance", label: "Debit Balance", type: "currency" },
+        { key: "creditBalance", label: "Credit Balance", type: "currency" }
+      ],
+      rows,
+      totals: sumRows(rows, ["debit", "credit", "debitBalance", "creditBalance"]),
       appliedFilters
     });
   }

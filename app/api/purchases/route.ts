@@ -259,39 +259,37 @@ export async function POST(req: Request) {
         if (!firstPurchase) firstPurchase = created;
       }
 
-      if (purchaseType === "Rate") {
-        const account = purchaseAccount({
-          supplierId,
-          supplierAccountNumber: supplier?.accountNumber,
-          supplierName: supplier?.name,
-          goldsmithCode: body.gsmCode,
-          goldsmithName: selectedGoldsmithName
-        });
-        const purchaseTransaction = await tx.transaction.create({
-          data: {
-            date: purchaseDate,
-            source: POSTING_SOURCE.PURCHASES,
-            account: account.account,
-            memo: purchaseGroupNo,
-            debit: new Prisma.Decimal("0"),
-            credit: groupTotalCost,
-            goldIssued: new Prisma.Decimal("0"),
-            goldReceived: new Prisma.Decimal("0"),
-            accountNumber: account.accountNumber,
-            type: "PURCHASE",
-            referenceNumber: purchaseGroupNo,
-            remarks: (body.remarks ?? "").trim() || null
-          }
-        });
-        await postPurchaseDoubleEntry(tx, {
-          purchaseGroupNo,
-          purchaseTransactionId: purchaseTransaction.id,
+      const account = purchaseAccount({
+        supplierId,
+        supplierAccountNumber: supplier?.accountNumber,
+        supplierName: supplier?.name,
+        goldsmithCode: body.gsmCode,
+        goldsmithName: selectedGoldsmithName
+      });
+      const purchaseTransaction = await tx.transaction.create({
+        data: {
           date: purchaseDate,
-          amount: groupTotalCost,
+          source: POSTING_SOURCE.PURCHASES,
+          account: account.account,
           memo: purchaseGroupNo,
+          debit: new Prisma.Decimal("0"),
+          credit: groupTotalCost,
+          goldIssued: new Prisma.Decimal("0"),
+          goldReceived: new Prisma.Decimal("0"),
+          accountNumber: account.accountNumber,
+          type: "PURCHASE",
+          referenceNumber: purchaseGroupNo,
           remarks: (body.remarks ?? "").trim() || null
-        });
-      }
+        }
+      });
+      await postPurchaseDoubleEntry(tx, {
+        purchaseGroupNo,
+        purchaseTransactionId: purchaseTransaction.id,
+        date: purchaseDate,
+        amount: groupTotalCost,
+        memo: purchaseGroupNo,
+        remarks: (body.remarks ?? "").trim() || null
+      });
 
       return firstPurchase;
     });
@@ -424,7 +422,6 @@ export async function PATCH(req: Request) {
         }
       });
       await deleteDoubleEntryPosting(tx, `P:${purchaseGroupNo}:PURCHASE`);
-      if (purchaseType !== "Rate") return firstPurchase;
       const account = purchaseAccount({
         supplierId,
         supplierAccountNumber: supplier?.accountNumber,

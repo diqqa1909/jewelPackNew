@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/lib/generated/prisma";
-import { POSTING_SOURCE, postCashbookDoubleEntry, postSaleDoubleEntry } from "@/lib/double-entry";
+import { POSTING_SOURCE, postCustomerPaymentDoubleEntry, postSaleDoubleEntry } from "@/lib/double-entry";
 import { getInventoryBalanceRows, normalizeCarat } from "@/lib/inventory-balance";
 import { NextResponse } from "next/server";
 
@@ -144,7 +144,7 @@ async function createSaleMoneyPostings(
         remarks: data.remarks
       }
     });
-    const cashEntry = await tx.cashBookEntry.create({
+    await tx.cashBookEntry.create({
       data: {
         date: data.date,
         accountType: "DR",
@@ -157,14 +157,11 @@ async function createSaleMoneyPostings(
         transactionId: payment.id
       }
     });
-    await postCashbookDoubleEntry(tx, {
-      cashBookEntryId: cashEntry.id,
-      transactionId: payment.id,
+    await postCustomerPaymentDoubleEntry(tx, {
+      referenceNumber: data.saleNo,
+      paymentTransactionId: payment.id,
       date: data.date,
-      accountNo: data.customerAccountNumber,
-      accountName: data.customerName,
-      transactionDebit: new Prisma.Decimal("0"),
-      transactionCredit: data.paidAmount,
+      amount: data.paidAmount,
       memo: `Payment for ${data.saleNo}`,
       remarks: data.remarks
     });
